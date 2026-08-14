@@ -15,74 +15,452 @@ export default {
   },
 };
 
+const TEN_YEARS_AGO = new Date("2016-08-14T00:00:00Z");
+
 async function handleProperty(request, env) {
   const url = new URL(request.url);
   const listingKey = (url.searchParams.get("listingKey") || "").trim().toUpperCase();
+  const query = (url.searchParams.get("q") || "").trim();
 
-  if (!/^[A-Z]\d{7,9}$/.test(listingKey)) {
-    return json({ ok: false, error: "Valid MLS number required." }, 400);
-  }
   if (!env.AMPRE_TOKEN) {
     return json({ ok: false, error: "IDX connection is not configured." }, 503);
   }
 
-  const response = await amplifyFetch(
-    `https://query.ampre.ca/odata/Property('${encodeURIComponent(listingKey)}')`,
-    env
-  );
+  let subject = null;
+  let addressHistory = [];
+  let resolution = null;
 
-  if (response.status === 404) return json({ ok: false, error: "Listing not found." }, 404);
-  if (!response.ok) return json({ ok: false, error: "Unable to load MLS listing." }, 502);
-
-  const p = await response.json();
-  if (p.InternetAddressDisplayYN === false || p.InternetEntireListingDisplayYN === false) {
-    return json({ ok: false, error: "This listing is not permitted for full internet display." }, 403);
+  if (/^[A-Z]\d{7,9}$/.test(listingKey)) {
+    const response = await amplifyFetch(
+      `https://query.ampre.ca/odata/Property('${encodeURIComponent(listingKey)}')`,
+      env
+    );
+    if (response.status === 404) return json({ ok: false, error: "Listing not found." }, 404);
+    if (!response.ok) return json({ ok: false, error: "Unable to load MLS listing." }, 502);
+    subject = await response.json();
+    resolution = "mls";
+    addressHistory = await findSameAddressHistory(subject, env);
+  } else if (query) {
+    const found = await resolveAddress(query, env);
+    if (!found.subject) {
+      return json({
+        ok: false,
+        error: "We could not match that address in the last 10 years of MLS history.",
+        notForSale: true,
+        searchedHistoryYears: 10,
+        suggestion: "Try the full street address including city or postal code."
+      }, 404);
+    }
+    subject = found.subject;
+    addressHistory = found.history;
+    resolution = found.resolution;
+  } else {
+    return json({ ok: false, error: "Enter an MLS number or property address." }, 400);
   }
 
-  const [comparableContext] = await Promise.all([
-    buildComparableContext(p, listingKey, env),
-  ]);
+  const activeForSale = isActiveForSale(subject);
+  const displayAllowed = subject.InternetAddressDisplayYN !== false && subject.InternetEntireListingDisplayYN !== false;
 
-  return json({
-    ok: true,
-    property: {
-      listingKey: p.ListingKey,
-      address: p.UnparsedAddress,
-      city: p.City,
-      cityRegion: p.CityRegion || null,
-      postalCode: p.PostalCode,
-      listPrice: numberOrNull(p.ListPrice),
-      status: p.StandardStatus,
-      transactionType: p.TransactionType,
-      propertyType: p.PropertyType,
-      propertySubType: cleanText(p.PropertySubType),
-      beds: numberOrNull(p.BedroomsTotal),
-      baths: numberOrNull(p.BathroomsTotalInteger),
-      livingAreaRange: p.LivingAreaRange,
-      lotWidth: numberOrNull(p.LotWidth),
-      lotDepth: numberOrNull(p.LotDepth),
-      parkingTotal: numberOrNull(p.ParkingTotal),
-      garageType: p.GarageType,
-      basement: Array.isArray(p.Basement) ? p.Basement : [],
-      kitchensTotal: numberOrNull(p.KitchensTotal),
-      remarks: p.PublicRemarks,
-      originalEntryTimestamp: p.OriginalEntryTimestamp,
-      modificationTimestamp: p.ModificationTimestamp,
-      daysLive: daysSince(p.OriginalEntryTimestamp),
-      offerTiming: detectOfferTiming(p),
-      comparableContext,
-      showingFocus: buildShowingFocus(p),
-    },
+  if (activeForSale && !displayAllowed) {
+    return json({ ok: false, error: "This active listing is not permitted for full internet display." }, 403);
+  }
+
+  const comparableContext = await buildComparableContext(subject, subject.ListingKey, env, activeForSale);
+  const historySummary = summarizeHistory(addressHistory, subject);
+  const priceOpinion = buildPriceOpinion(subject, comparableContext, historySummary, activeForSale);
+
+  const property = normalizeSubject(subject, {
+    activeForSale,
+    resolution,
+    comparableContext,
+    historySummary,
+    priceOpinion,
   });
+
+  return json({ ok: true, property }, 200);
 }
 
-async function amplifyFetch(endpoint, env) {
-  return fetch(endpoint, {
-    headers: {
-      Authorization: `Bearer ${env.AMPRE_TOKEN}`,
-      Accept: "application/json",
+function normalizeSubject(p, extras) {
+  const activeForSale = extras.activeForSale;
+  return {
+    listingKey: p.ListingKey || null,
+    address: p.UnparsedAddress || buildAddress(p),
+    city: p.City || null,
+    cityRegion: p.CityRegion || null,
+    postalCode: p.PostalCode || null,
+    forSale: activeForSale,
+    marketStatus: activeForSale ? "For sale" : "Not for sale",
+    status: p.StandardStatus || p.MlsStatus || p.ContractStatus || null,
+    transactionType: p.TransactionType || null,
+    propertyType: p.PropertyType || null,
+    propertySubType: cleanText(p.PropertySubType),
+    beds: numberOrNull(p.BedroomsTotal),
+    baths: numberOrNull(p.BathroomsTotalInteger),
+    livingAreaRange: p.LivingAreaRange || null,
+    buildingAreaTotal: numberOrNull(p.BuildingAreaTotal),
+    lotWidth: numberOrNull(p.LotWidth),
+    lotDepth: numberOrNull(p.LotDepth),
+    parkingTotal: numberOrNull(p.ParkingTotal),
+    garageType: p.GarageType || null,
+    basement: Array.isArray(p.Basement) ? p.Basement : [],
+    kitchensTotal: numberOrNull(p.KitchensTotal),
+    remarks: activeForSale ? (p.PublicRemarks || null) : null,
+    listPrice: activeForSale ? numberOrNull(p.ListPrice) : null,
+    lastKnownListPrice: !activeForSale ? numberOrNull(p.ListPrice) : null,
+    originalEntryTimestamp: p.OriginalEntryTimestamp || null,
+    modificationTimestamp: p.ModificationTimestamp || null,
+    daysLive: activeForSale ? daysSince(p.OriginalEntryTimestamp) : null,
+    offerTiming: activeForSale ? detectOfferTiming(p) : {
+      type: "not_for_sale",
+      label: "Not for sale",
+      note: "No active for-sale listing was found for this property."
     },
-  });
+    comparableContext: extras.comparableContext,
+    priceOpinion: extras.priceOpinion,
+    historySummary: extras.historySummary,
+    showingFocus: activeForSale ? buildShowingFocus(p) : buildOffMarketFocus(p, extras.historySummary),
+    resolution: extras.resolution,
+  };
+}
+
+async function resolveAddress(input, env) {
+  const parsed = parseAddress(input);
+  const queries = [];
+
+  if (parsed.streetNumber && parsed.streetName) {
+    const filters = [
+      `StreetNumber eq '${odataString(parsed.streetNumber)}'`,
+      `contains(StreetName,'${odataString(parsed.streetName)}')`
+    ];
+    if (parsed.city) filters.push(`contains(City,'${odataString(parsed.city)}')`);
+    queries.push(filters);
+  }
+
+  const phrase = parsed.searchPhrase || input.split(",")[0].trim();
+  if (phrase.length >= 5) {
+    queries.push([`contains(UnparsedAddress,'${odataString(phrase)}')`]);
+  }
+
+  let records = [];
+  for (const filters of queries) {
+    records = await queryProperties(filters, env, 100, "ModificationTimestamp desc,ListingKey desc");
+    if (records.length) break;
+  }
+
+  if (!records.length && parsed.streetName) {
+    const filters = [`contains(StreetName,'${odataString(parsed.streetName)}')`];
+    if (parsed.city) filters.push(`contains(City,'${odataString(parsed.city)}')`);
+    records = await queryProperties(filters, env, 100, "ModificationTimestamp desc,ListingKey desc");
+  }
+
+  const recent = records.filter(withinTenYears);
+  const scored = recent
+    .map((r) => ({ r, score: addressMatchScore(input, parsed, r) }))
+    .filter((x) => x.score >= 62)
+    .sort((a, b) => b.score - a.score || dateMs(b.r.ModificationTimestamp) - dateMs(a.r.ModificationTimestamp));
+
+  if (!scored.length) return { subject: null, history: [], resolution: null };
+
+  const sameProperty = scored
+    .filter((x) => sameAddressAs(parsed, x.r))
+    .map((x) => x.r);
+
+  const active = sameProperty.find(isActiveForSale);
+  const subject = active || sameProperty.sort(mostRecentRecord)[0] || scored[0].r;
+
+  return {
+    subject,
+    history: sameProperty.length ? sameProperty : [subject],
+    resolution: active ? "address_live" : "address_history"
+  };
+}
+
+async function findSameAddressHistory(subject, env) {
+  if (!subject?.StreetNumber || !subject?.StreetName) return [subject].filter(Boolean);
+  const filters = [
+    `StreetNumber eq '${odataString(subject.StreetNumber)}'`,
+    `contains(StreetName,'${odataString(subject.StreetName)}')`
+  ];
+  if (subject.City) filters.push(`City eq '${odataString(subject.City)}'`);
+  const records = await queryProperties(filters, env, 100, "ModificationTimestamp desc,ListingKey desc");
+  const exact = records.filter(withinTenYears).filter((r) => samePhysicalAddress(subject, r));
+  return exact.length ? exact : [subject];
+}
+
+function parseAddress(input) {
+  let text = String(input || "").trim();
+  try {
+    if (/^https?:\/\//i.test(text)) {
+      const u = new URL(text);
+      text = decodeURIComponent(`${u.pathname} ${u.search}`).replace(/[+_\-]+/g, " ");
+    }
+  } catch {}
+
+  text = text.replace(/\s+/g, " ").trim();
+  const firstPart = text.split(",")[0].trim();
+  const city = text.split(",")[1]?.trim().split(/\s+/).slice(0, 2).join(" ") || null;
+  const m = firstPart.match(/^(\d+[A-Za-z]?)\s+(.+)$/);
+  if (!m) return { streetNumber: null, streetName: null, city, searchPhrase: firstPart };
+
+  const streetNumber = m[1];
+  let streetName = m[2]
+    .replace(/\b(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Crescent|Cres|Court|Ct|Boulevard|Blvd|Lane|Ln|Way|Trail|Tr|Place|Pl)\.?$/i, "")
+    .trim();
+
+  return { streetNumber, streetName, city, searchPhrase: `${streetNumber} ${streetName}` };
+}
+
+function addressMatchScore(input, parsed, r) {
+  let score = 0;
+  const normalizedInput = normalizeText(input);
+  const normalizedAddress = normalizeText(r.UnparsedAddress || buildAddress(r));
+  if (normalizedInput && normalizedAddress && normalizedAddress.includes(normalizedInput.split(" toronto")[0])) score += 45;
+  if (parsed.streetNumber && String(r.StreetNumber || "").toLowerCase() === parsed.streetNumber.toLowerCase()) score += 28;
+  if (parsed.streetName && normalizeText(r.StreetName).includes(normalizeText(parsed.streetName))) score += 25;
+  if (parsed.city && normalizeText(r.City).includes(normalizeText(parsed.city))) score += 8;
+  return Math.min(100, score);
+}
+
+function sameAddressAs(parsed, r) {
+  const numberMatch = !parsed.streetNumber || String(r.StreetNumber || "").toLowerCase() === parsed.streetNumber.toLowerCase();
+  const streetMatch = !parsed.streetName || normalizeText(r.StreetName).includes(normalizeText(parsed.streetName));
+  return numberMatch && streetMatch;
+}
+
+function samePhysicalAddress(a, b) {
+  const num = String(a.StreetNumber || "").trim().toLowerCase() === String(b.StreetNumber || "").trim().toLowerCase();
+  const street = normalizeText(a.StreetName) === normalizeText(b.StreetName);
+  const unitA = normalizeText(a.UnitNumber || a.ApartmentNumber || "");
+  const unitB = normalizeText(b.UnitNumber || b.ApartmentNumber || "");
+  const unit = !unitA || !unitB || unitA === unitB;
+  return num && street && unit;
+}
+
+function isActiveForSale(p) {
+  const status = `${p.StandardStatus || ""} ${p.MlsStatus || ""} ${p.ContractStatus || ""}`.toLowerCase();
+  const sale = /for sale/i.test(p.TransactionType || "") || !p.TransactionType;
+  const inactive = /closed|sold|expired|terminated|withdrawn|cancel|suspend|leased|rented|unavailable/i.test(status);
+  const active = /active|available|new/i.test(status);
+  return sale && active && !inactive;
+}
+
+function withinTenYears(r) {
+  const d = validDate(r.OriginalEntryTimestamp) || validDate(r.ModificationTimestamp) || validDate(r.SystemModificationTimestamp);
+  return !d || d >= TEN_YEARS_AGO;
+}
+
+function summarizeHistory(history, subject) {
+  const records = dedupe(history.filter(Boolean)).filter(withinTenYears).sort(mostRecentRecord);
+  const latest = records[0] || subject;
+  const latestSold = records
+    .map((r) => historicalSoldSummary(r))
+    .filter(Boolean)
+    .sort((a, b) => dateMs(b.date) - dateMs(a.date))[0] || null;
+
+  return {
+    years: 10,
+    appearanceCount: records.length,
+    lastStatus: latest?.StandardStatus || latest?.MlsStatus || latest?.ContractStatus || null,
+    lastListPrice: numberOrNull(latest?.ListPrice),
+    lastSeenDate: dateOnly(latest?.OriginalEntryTimestamp || latest?.ModificationTimestamp),
+    latestSold,
+  };
+}
+
+function historicalSoldSummary(r) {
+  const status = `${r.StandardStatus || ""} ${r.MlsStatus || ""} ${r.ContractStatus || ""}`;
+  const soldLike = /closed|sold/i.test(status);
+  const price = firstFiniteNumber(r, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"]);
+  const date = firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"]);
+  if (!soldLike || !price || !validDate(date)) return null;
+  return { price, date: dateOnly(date) };
+}
+
+async function buildComparableContext(subject, currentListingKey, env, activeForSale) {
+  const base = [];
+  if (subject.CityRegion) base.push(`CityRegion eq '${odataString(subject.CityRegion)}'`);
+  else if (subject.City) base.push(`City eq '${odataString(subject.City)}'`);
+  if (subject.PropertyType) base.push(`PropertyType eq '${odataString(subject.PropertyType)}'`);
+  if (subject.TransactionType && /for sale/i.test(subject.TransactionType)) base.push(`TransactionType eq '${odataString(subject.TransactionType)}'`);
+
+  const [recentRaw, unavailableRaw, activeRaw] = await Promise.all([
+    queryProperties(base, env, 180, "ModificationTimestamp desc,ListingKey desc"),
+    queryProperties([...base, `ContractStatus ne 'Available'`], env, 140, "ModificationTimestamp desc,ListingKey desc"),
+    queryProperties([...base, `ContractStatus eq 'Available'`], env, 100, "ModificationTimestamp desc,ListingKey desc"),
+  ]);
+
+  const raw = dedupe([...recentRaw, ...unavailableRaw, ...activeRaw])
+    .filter((r) => r.ListingKey !== currentListingKey)
+    .filter(withinTenYears);
+
+  const marketIndex = buildTemporalMarketIndex(raw, subject);
+
+  const candidates = raw
+    .map((r) => normalizeComparable(subject, r, marketIndex))
+    .filter((c) => c.price && c.similarity >= 28)
+    .sort(compareMatch);
+
+  const sold = candidates.filter((c) => c.source === "sold").slice(0, 8);
+  const active = candidates.filter((c) => c.source === "active").slice(0, 8);
+  const historical = candidates.filter((c) => c.source === "historical").slice(0, 10);
+
+  let selected = [];
+  let source = "";
+  if (sold.length >= 3) {
+    selected = sold.slice(0, 7);
+    source = "sold";
+  } else if (sold.length + active.length >= 4) {
+    selected = [...sold.slice(0, 4), ...active.slice(0, 5)].sort(compareMatch).slice(0, 7);
+    source = sold.length ? "blended" : "active";
+  } else if (active.length + historical.length >= 3) {
+    selected = [...active.slice(0, 5), ...historical.slice(0, 6)].sort(compareMatch).slice(0, 7);
+    source = active.length ? "market_blend" : "historical";
+  } else {
+    selected = candidates.slice(0, 5);
+    source = selected[0]?.source || "";
+  }
+
+  const latestSold = sold
+    .filter((c) => c.soldDate)
+    .sort((a, b) => b.soldDate.getTime() - a.soldDate.getTime())[0] || null;
+
+  if (!selected.length) {
+    return {
+      available: false,
+      source: null,
+      area: subject.CityRegion || subject.City || null,
+      matchCount: 0,
+      latestSold: latestSold ? soldSummary(latestSold) : null,
+      method: "THM Similarity Engine v2",
+      basis: "No reliable match set returned from the current IDX feed."
+    };
+  }
+
+  const band = similarityWeightedBand(selected);
+  const avgScore = selected.reduce((sum, item) => sum + item.similarity, 0) / selected.length;
+  const sourceLabel = sourceLabelFor(source);
+  const confidence = confidenceLabel(selected.length, avgScore, source);
+
+  return {
+    available: true,
+    source,
+    sourceLabel,
+    area: subject.CityRegion || subject.City || null,
+    matchCount: selected.length,
+    confidence,
+    rangeLow: band.low,
+    midpoint: band.mid,
+    rangeHigh: band.high,
+    latestSold: latestSold ? soldSummary(latestSold) : null,
+    method: "THM Similarity Engine v2",
+    basis: buildBasisText(subject, selected),
+    historicalAdjustedCount: selected.filter((x) => x.source === "historical").length,
+    activeCount: selected.filter((x) => x.source === "active").length,
+    soldCount: selected.filter((x) => x.source === "sold").length,
+    activeForSale,
+  };
+}
+
+function normalizeComparable(subject, r, marketIndex) {
+  const status = `${r.StandardStatus || ""} ${r.MlsStatus || ""} ${r.ContractStatus || ""}`;
+  const soldLike = /closed|sold/i.test(status);
+  const activeLike = isActiveForSale(r);
+  const soldPrice = firstFiniteNumber(r, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"]);
+  const soldDateRaw = firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"]);
+  const soldDate = validDate(soldDateRaw);
+  const listPrice = numberOrNull(r.ListPrice);
+  const recordDate = soldDate || validDate(r.OriginalEntryTimestamp) || validDate(r.ModificationTimestamp);
+
+  let source = null;
+  let price = null;
+  if (soldLike && soldPrice) {
+    source = "sold";
+    price = soldPrice;
+  } else if (activeLike && listPrice) {
+    source = "active";
+    price = listPrice;
+  } else if (!activeLike && listPrice) {
+    source = "historical";
+    price = timeAdjustHistoricalPrice(listPrice, recordDate, marketIndex);
+  }
+
+  const similarity = similarityScore(subject, r);
+  const recency = recencyWeight(recordDate);
+  const reliability = source === "sold" ? 1 : source === "active" ? 0.78 : 0.58;
+
+  return { record: r, source, price, rawListPrice: listPrice, soldPrice, soldDate, similarity, recency, reliability };
+}
+
+function buildTemporalMarketIndex(raw, subject) {
+  const nowYear = new Date().getFullYear();
+  const groups = new Map();
+  for (const r of raw) {
+    const price = numberOrNull(r.ListPrice);
+    const d = validDate(r.OriginalEntryTimestamp) || validDate(r.ModificationTimestamp);
+    if (!price || !d) continue;
+    const sim = similarityScore(subject, r);
+    if (sim < 30) continue;
+    const year = d.getFullYear();
+    if (!groups.has(year)) groups.set(year, []);
+    groups.get(year).push(price);
+  }
+
+  const recentYears = [nowYear, nowYear - 1];
+  const recentPrices = recentYears.flatMap((y) => groups.get(y) || []);
+  const recentMedian = median(recentPrices);
+  return { groups, recentMedian };
+}
+
+function timeAdjustHistoricalPrice(price, date, index) {
+  if (!price || !date || !index?.recentMedian) return price;
+  const yearPrices = index.groups.get(date.getFullYear()) || [];
+  const oldMedian = median(yearPrices);
+  if (!oldMedian || yearPrices.length < 3) {
+    const years = Math.max(0, new Date().getFullYear() - date.getFullYear());
+    const gentleFallback = Math.pow(1.025, Math.min(years, 10));
+    return roundMarket(price * gentleFallback);
+  }
+  const factor = clamp(index.recentMedian / oldMedian, 0.65, 1.65);
+  return roundMarket(price * factor);
+}
+
+function buildPriceOpinion(subject, comp, history, activeForSale) {
+  if (!comp?.available) {
+    return {
+      available: false,
+      label: activeForSale ? "THM comp range unavailable" : "THM price opinion unavailable",
+      note: "The current IDX match set is too thin to produce a responsible range."
+    };
+  }
+
+  return {
+    available: true,
+    low: comp.rangeLow,
+    midpoint: comp.midpoint,
+    high: comp.rangeHigh,
+    label: activeForSale ? "THM comp range" : "THM price opinion",
+    confidence: comp.confidence,
+    note: activeForSale
+      ? `${comp.sourceLabel}; similarity and recency weighted.`
+      : `${comp.sourceLabel}; includes up to 10 years of MLS history with older list prices time-adjusted to the current local asking level. This is not an appraisal or CMA.`,
+    historyCount: history?.appearanceCount || 0,
+  };
+}
+
+async function queryProperties(filters, env, top = 100, orderby = "ModificationTimestamp desc,ListingKey desc") {
+  const params = new URLSearchParams();
+  params.set("$top", String(top));
+  if (filters?.length) params.set("$filter", filters.join(" and "));
+  params.set("$orderby", orderby);
+
+  try {
+    const response = await amplifyFetch(`https://query.ampre.ca/odata/Property?${params.toString()}`, env);
+    if (!response.ok) return [];
+    const body = await response.json();
+    return Array.isArray(body.value) ? body.value : [];
+  } catch {
+    return [];
+  }
 }
 
 function detectOfferTiming(p) {
@@ -128,124 +506,10 @@ function detectOfferTiming(p) {
   };
 }
 
-async function buildComparableContext(subject, currentListingKey, env) {
-  const base = [];
-  if (subject.CityRegion) base.push(`CityRegion eq '${odataString(subject.CityRegion)}'`);
-  else if (subject.City) base.push(`City eq '${odataString(subject.City)}'`);
-  if (subject.PropertyType) base.push(`PropertyType eq '${odataString(subject.PropertyType)}'`);
-  if (subject.TransactionType) base.push(`TransactionType eq '${odataString(subject.TransactionType)}'`);
-
-  const soldFilter = [...base, `(StandardStatus eq 'Closed' or contains(MlsStatus,'Sold'))`];
-  const activeFilter = [...base, `(StandardStatus eq 'Active' or ContractStatus eq 'Available')`];
-
-  const [soldRaw, activeRaw] = await Promise.all([
-    queryProperties(soldFilter, env, 80),
-    queryProperties(activeFilter, env, 80),
-  ]);
-
-  let broadRaw = [];
-  if (soldRaw.length < 3 || activeRaw.length < 3) {
-    broadRaw = await queryProperties(base, env, 80);
-  }
-
-  const soldPool = dedupe([...soldRaw, ...broadRaw])
-    .filter((c) => c.ListingKey !== currentListingKey)
-    .map((c) => normalizeCandidate(subject, c, "sold"))
-    .filter((c) => c.isSoldLike && c.price);
-
-  const activePool = dedupe([...activeRaw, ...broadRaw])
-    .filter((c) => c.ListingKey !== currentListingKey)
-    .map((c) => normalizeCandidate(subject, c, "active"))
-    .filter((c) => c.isActiveLike && c.price);
-
-  const soldMatches = soldPool.sort(compareMatch).slice(0, 7);
-  const activeMatches = activePool.sort(compareMatch).slice(0, 7);
-
-  let basis = null;
-  if (soldMatches.length >= 3) basis = { source: "sold", matches: soldMatches };
-  else if (activeMatches.length >= 3) basis = { source: "active", matches: activeMatches };
-  else if (soldMatches.length) basis = { source: "sold", matches: soldMatches };
-  else if (activeMatches.length) basis = { source: "active", matches: activeMatches };
-
-  const latestSold = soldPool
-    .filter((c) => c.soldDate)
-    .sort((a, b) => b.soldDate.getTime() - a.soldDate.getTime())[0] || null;
-
-  if (!basis || !basis.matches.length) {
-    return {
-      available: false,
-      source: null,
-      area: subject.CityRegion || subject.City || null,
-      matchCount: 0,
-      latestSold: latestSold ? soldSummary(latestSold) : null,
-      method: "THM Similarity Engine"
-    };
-  }
-
-  const band = similarityWeightedBand(basis.matches);
-  const avgScore = basis.matches.reduce((sum, item) => sum + item.similarity, 0) / basis.matches.length;
-  const confidence = basis.matches.length >= 5 && avgScore >= 68
-    ? "Strong match set"
-    : basis.matches.length >= 3 && avgScore >= 52
-      ? "Good match set"
-      : "Broad match set";
-
-  return {
-    available: true,
-    source: basis.source,
-    sourceLabel: basis.source === "sold" ? "Recent sold matches" : "Live asking competition",
-    area: subject.CityRegion || subject.City || null,
-    matchCount: basis.matches.length,
-    confidence,
-    rangeLow: band.low,
-    midpoint: band.mid,
-    rangeHigh: band.high,
-    latestSold: latestSold ? soldSummary(latestSold) : null,
-    method: "THM Similarity Engine",
-    basis: buildBasisText(subject, basis.matches)
-  };
-}
-
-async function queryProperties(filters, env, top = 80) {
-  if (!filters.length) return [];
-  const params = new URLSearchParams();
-  params.set("$top", String(top));
-  params.set("$filter", filters.join(" and "));
-  params.set("$orderby", "ModificationTimestamp desc,ListingKey desc");
-
-  try {
-    const response = await amplifyFetch(`https://query.ampre.ca/odata/Property?${params.toString()}`, env);
-    if (!response.ok) return [];
-    const body = await response.json();
-    return Array.isArray(body.value) ? body.value : [];
-  } catch {
-    return [];
-  }
-}
-
-function normalizeCandidate(subject, record, preferredSource) {
-  const statusText = `${record.StandardStatus || ""} ${record.MlsStatus || ""} ${record.ContractStatus || ""}`;
-  const isSoldLike = /\bclosed\b|\bsold\b/i.test(statusText);
-  const isActiveLike = /\bactive\b|\bavailable\b|\bnew\b/i.test(statusText) && !isSoldLike;
-  const soldPrice = firstFiniteNumber(record, [
-    "ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"
-  ]);
-  const soldDateRaw = firstValue(record, [
-    "PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"
-  ]);
-  const soldDate = validDate(soldDateRaw);
-  const price = preferredSource === "sold" ? soldPrice : firstFiniteNumber(record, ["ListPrice"]);
-  const similarity = similarityScore(subject, record);
-  const recencyDate = soldDate || validDate(record.OriginalEntryTimestamp) || validDate(record.ModificationTimestamp);
-  const recency = recencyWeight(recencyDate);
-
-  return { record, price, soldPrice, soldDate, isSoldLike, isActiveLike, similarity, recency };
-}
-
 function similarityScore(subject, c) {
   let earned = 0;
   let possible = 0;
-  const add = (weight, value) => { possible += weight; earned += weight * Math.max(0, Math.min(1, value)); };
+  const add = (weight, value) => { possible += weight; earned += weight * clamp(value, 0, 1); };
 
   if (subject.CityRegion && c.CityRegion) add(18, sameText(subject.CityRegion, c.CityRegion) ? 1 : 0);
   else if (subject.City && c.City) add(12, sameText(subject.City, c.City) ? 1 : 0);
@@ -258,7 +522,8 @@ function similarityScore(subject, c) {
   const bathA = numberOrNull(subject.BathroomsTotalInteger), bathB = numberOrNull(c.BathroomsTotalInteger);
   if (bathA != null && bathB != null) add(9, diffScore(bathA, bathB, 2));
 
-  const areaA = rangeMid(subject.LivingAreaRange), areaB = rangeMid(c.LivingAreaRange);
+  const areaA = rangeMid(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal);
+  const areaB = rangeMid(c.LivingAreaRange) || numberOrNull(c.BuildingAreaTotal);
   if (areaA && areaB) add(14, ratioCloseness(areaA, areaB, 0.45));
 
   const lotWA = numberOrNull(subject.LotWidth), lotWB = numberOrNull(c.LotWidth);
@@ -278,26 +543,24 @@ function similarityScore(subject, c) {
 }
 
 function compareMatch(a, b) {
-  const aWeight = a.similarity * 0.82 + a.recency * 18;
-  const bWeight = b.similarity * 0.82 + b.recency * 18;
+  const aWeight = a.similarity * 0.75 + a.recency * 17 + a.reliability * 8;
+  const bWeight = b.similarity * 0.75 + b.recency * 17 + b.reliability * 8;
   return bWeight - aWeight;
 }
 
 function similarityWeightedBand(matches) {
   const items = matches.map((m) => ({
     price: m.price,
-    weight: Math.max(0.05, Math.pow(m.similarity / 100, 2) * (0.45 + 0.55 * m.recency))
+    weight: Math.max(0.04, Math.pow(m.similarity / 100, 2) * (0.35 + 0.45 * m.recency + 0.20 * m.reliability))
   })).sort((a, b) => a.price - b.price);
 
-  let low = weightedQuantile(items, 0.20);
+  let low = weightedQuantile(items, 0.18);
   let mid = weightedQuantile(items, 0.50);
-  let high = weightedQuantile(items, 0.80);
-
+  let high = weightedQuantile(items, 0.82);
   if (items.length > 1 && low === high) {
     low = items[0].price;
     high = items[items.length - 1].price;
   }
-
   return { low: roundMarket(low), mid: roundMarket(mid), high: roundMarket(high) };
 }
 
@@ -313,44 +576,79 @@ function weightedQuantile(items, q) {
   return items[items.length - 1]?.price || 0;
 }
 
-function soldSummary(candidate) {
-  return {
-    price: candidate.soldPrice || candidate.price,
-    date: candidate.soldDate ? candidate.soldDate.toISOString().slice(0, 10) : null
-  };
+function soldSummary(c) {
+  return { price: c.soldPrice || c.price, date: dateOnly(c.soldDate) };
+}
+
+function sourceLabelFor(source) {
+  if (source === "sold") return "Recent sold matches";
+  if (source === "blended") return "Sold + live market matches";
+  if (source === "active") return "Live asking competition";
+  if (source === "market_blend") return "Live + historical MLS matches";
+  if (source === "historical") return "10-year historical MLS matches";
+  return "THM market matches";
+}
+
+function confidenceLabel(count, avgScore, source) {
+  const reliability = source === "sold" ? 1 : source === "blended" ? 0.9 : source === "active" ? 0.78 : 0.65;
+  const composite = avgScore * 0.65 + Math.min(count, 7) / 7 * 20 + reliability * 15;
+  if (composite >= 72) return "Strong";
+  if (composite >= 58) return "Good";
+  return "Indicative";
 }
 
 function buildBasisText(subject, matches) {
   const bits = [];
-  if (subject.CityRegion) bits.push("same micro-area");
-  if (subject.PropertySubType) bits.push(cleanText(subject.PropertySubType));
-  if (subject.BedroomsTotal != null) bits.push(`${subject.BedroomsTotal}±1 bed weighted`);
-  if (subject.LivingAreaRange) bits.push("size overlap");
-  if (subject.LotWidth || subject.LotDepth) bits.push("lot similarity");
+  const subtypeHits = matches.filter((m) => sameText(subject.PropertySubType, m.record.PropertySubType)).length;
+  if (subject.PropertySubType && subtypeHits) bits.push(`${subtypeHits}/${matches.length} same subtype`);
+  const bed = numberOrNull(subject.BedroomsTotal);
+  if (bed != null) {
+    const nearBeds = matches.filter((m) => {
+      const b = numberOrNull(m.record.BedroomsTotal);
+      return b != null && Math.abs(b - bed) <= 1;
+    }).length;
+    if (nearBeds) bits.push(`${nearBeds}/${matches.length} within ±1 bed`);
+  }
+  if (subject.LivingAreaRange || subject.LotWidth) bits.push("size/lot weighted");
   bits.push("recency weighted");
-  return bits.slice(0, 4).join(" · ");
+  return bits.join(" · ");
 }
 
 function buildShowingFocus(p) {
-  const remarks = `${p.PublicRemarks || ""} ${p.PublicRemarksExtras || ""}`;
-  const basement = arrayText(p.Basement);
-  const kitchens = numberOrNull(p.KitchensTotal) || 0;
-  const separate = /separate entrance|side entrance|private entrance/i.test(`${remarks} ${basement}`);
-  const permit = /permit|zoning|approval|legal(?:ly)?|retrofit/i.test(remarks);
+  const remarks = String(p.PublicRemarks || "");
+  if (/separate entrance|apartment|unit|income|multi-generational|multi generational/i.test(remarks)) {
+    return { title: "Verify unit potential", note: "Check entrances, ceiling heights, egress, utilities and whether any secondary-unit use/alterations are legal and permitted." };
+  }
+  if (/renovat|updated|upgrade|newly/i.test(remarks)) {
+    return { title: "Verify renovation quality", note: "Look past finishes: ask about permits, ages of major systems, workmanship and what was actually replaced." };
+  }
+  if (numberOrNull(p.LotWidth) && numberOrNull(p.LotDepth)) {
+    return { title: "Walk the lot + structure", note: "Check grading, drainage, exterior condition, garage/parking utility and how the lot actually feels in person." };
+  }
+  return { title: "Condition + layout", note: "Verify the condition, natural light, room scale, noise, mechanical systems and anything photos cannot show." };
+}
 
-  if ((kitchens > 1 || separate) && permit) {
-    return { title: "Verify suite legality + permits", note: "Check entrances, kitchen setup, egress and municipal approvals before valuing income potential." };
-  }
-  if (kitchens > 1 || separate) {
-    return { title: "Verify secondary-unit setup", note: "Check separation, egress, utilities and whether the configuration is legally recognized." };
-  }
-  if (/finished/i.test(basement)) {
-    return { title: "Inspect finished basement closely", note: "Check moisture, ceiling height, egress and quality of the finished work." };
-  }
-  if (p.LotDepth && Number(p.LotDepth) >= 130) {
-    return { title: "Walk the full lot", note: "Verify rear access, usable depth, grading and any structures or encroachments." };
-  }
-  return { title: "Verify condition + layout", note: "Focus on the items that could materially change value, repair cost or offer strategy." };
+function buildOffMarketFocus(p, history) {
+  const bits = [];
+  if (history?.appearanceCount) bits.push(`${history.appearanceCount} MLS appearance${history.appearanceCount === 1 ? "" : "s"} found in 10 years`);
+  if (history?.lastStatus) bits.push(`last status: ${history.lastStatus}`);
+  return {
+    title: "Off-market value check",
+    note: bits.length ? bits.join(" · ") : "No active listing. THM is estimating from available historical and current neighbourhood records."
+  };
+}
+
+function buildAddress(p) {
+  return [p.StreetNumber, p.StreetName, p.StreetSuffix, p.UnitNumber, p.City, p.StateOrProvince, p.PostalCode].filter(Boolean).join(" ");
+}
+
+function mostRecentRecord(a, b) {
+  return dateMs(b.OriginalEntryTimestamp || b.ModificationTimestamp) - dateMs(a.OriginalEntryTimestamp || a.ModificationTimestamp);
+}
+
+function dateMs(value) {
+  const d = validDate(value);
+  return d ? d.getTime() : 0;
 }
 
 function daysSince(value) {
@@ -360,44 +658,61 @@ function daysSince(value) {
 }
 
 function recencyWeight(date) {
-  if (!date) return 0.35;
-  const days = Math.max(0, (Date.now() - date.getTime()) / 86400000);
-  if (days <= 30) return 1;
-  if (days <= 90) return 0.82;
-  if (days <= 180) return 0.62;
-  if (days <= 365) return 0.42;
-  return 0.25;
+  if (!date) return 0.25;
+  const months = Math.max(0, (Date.now() - date.getTime()) / (86400000 * 30.44));
+  return Math.max(0.12, Math.exp(-months / 30));
+}
+
+function diffScore(a, b, maxDiff) { return Math.max(0, 1 - Math.abs(a - b) / maxDiff); }
+function ratioCloseness(a, b, tolerance) { return Math.max(0, 1 - Math.abs(a - b) / Math.max(a, b) / tolerance); }
+function sameText(a, b) { return normalizeText(a) === normalizeText(b); }
+function cleanText(value) { return typeof value === "string" ? value.trim() : value || null; }
+function normalizeText(value) { return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
+function arrayText(value) { return Array.isArray(value) ? value.join(" ") : String(value || ""); }
+
+function tokenOverlap(a, b) {
+  const A = new Set(normalizeText(a).split(" ").filter(Boolean));
+  const B = new Set(normalizeText(b).split(" ").filter(Boolean));
+  if (!A.size || !B.size) return 0;
+  let hit = 0;
+  for (const x of A) if (B.has(x)) hit++;
+  return hit / Math.max(A.size, B.size);
 }
 
 function rangeMid(value) {
   if (!value) return null;
   const nums = String(value).match(/\d[\d,]*/g)?.map((n) => Number(n.replace(/,/g, ""))).filter(Number.isFinite) || [];
   if (!nums.length) return null;
-  return nums.length >= 2 ? (nums[0] + nums[1]) / 2 : nums[0];
+  return nums.length === 1 ? nums[0] : (nums[0] + nums[1]) / 2;
 }
 
-function diffScore(a, b, tolerance) {
-  return Math.max(0, 1 - Math.abs(a - b) / Math.max(1, tolerance));
+function numberOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
-function ratioCloseness(a, b, tolerance) {
-  const diff = Math.abs(a - b) / Math.max(a, b);
-  return Math.max(0, 1 - diff / tolerance);
+function firstFiniteNumber(record, keys) {
+  for (const key of keys) {
+    const n = Number(record?.[key]);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
 }
 
-function tokenOverlap(a, b) {
-  const aa = new Set(String(a).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
-  const bb = new Set(String(b).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
-  if (!aa.size || !bb.size) return 0;
-  let shared = 0;
-  aa.forEach((token) => { if (bb.has(token)) shared += 1; });
-  return shared / Math.max(aa.size, bb.size);
+function firstValue(record, keys) {
+  for (const key of keys) if (record?.[key] != null && record[key] !== "") return record[key];
+  return null;
 }
 
-function dedupe(records) {
-  const map = new Map();
-  records.forEach((r) => { if (r?.ListingKey && !map.has(r.ListingKey)) map.set(r.ListingKey, r); });
-  return [...map.values()];
+function validDate(value) {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function dateOnly(value) {
+  const d = validDate(value);
+  return d ? d.toISOString().slice(0, 10) : null;
 }
 
 function roundMarket(value) {
@@ -406,14 +721,36 @@ function roundMarket(value) {
   return Math.round(value / step) * step;
 }
 
-function odataString(value) { return String(value).replace(/'/g, "''"); }
-function cleanText(value) { return typeof value === "string" ? value.trim() : value; }
-function sameText(a, b) { return cleanText(String(a)).toLowerCase() === cleanText(String(b)).toLowerCase(); }
-function arrayText(value) { return Array.isArray(value) ? value.join(" ") : (value || ""); }
-function numberOrNull(value) { const n = Number(value); return Number.isFinite(n) ? n : null; }
-function firstFiniteNumber(record, keys) { for (const key of keys) { const n = Number(record[key]); if (Number.isFinite(n) && n > 0) return n; } return null; }
-function firstValue(record, keys) { for (const key of keys) { if (record[key] != null && record[key] !== "") return record[key]; } return null; }
-function validDate(value) { if (!value) return null; const d = new Date(value); return Number.isNaN(d.getTime()) ? null : d; }
+function median(values) {
+  const nums = values.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  if (!nums.length) return null;
+  const mid = Math.floor(nums.length / 2);
+  return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+}
+
+function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+function odataString(value) { return String(value || "").replace(/'/g, "''"); }
+
+function dedupe(records) {
+  const seen = new Set();
+  const out = [];
+  for (const r of records || []) {
+    const key = r?.ListingKey || JSON.stringify([r?.UnparsedAddress, r?.OriginalEntryTimestamp, r?.ListPrice]);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out;
+}
+
+async function amplifyFetch(endpoint, env) {
+  return fetch(endpoint, {
+    headers: {
+      Authorization: `Bearer ${env.AMPRE_TOKEN}`,
+      Accept: "application/json",
+    },
+  });
+}
 
 async function handleLead(request, env) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -466,6 +803,7 @@ async function handleLead(request, env) {
 }
 
 function clean(value, max) { return typeof value === "string" ? value.trim().slice(0, max) : ""; }
+
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
