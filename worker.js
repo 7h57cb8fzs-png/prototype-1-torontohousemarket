@@ -30,22 +30,10 @@ async function handleProperty(request, env) {
     return json({ ok: false, error: "IDX connection is not configured." }, 503);
   }
 
-  const select = [
-    "ListingKey","UnparsedAddress","City","PostalCode","ListPrice","StandardStatus",
-    "TransactionType","PropertyType","PropertySubType","BedroomsTotal",
-    "BathroomsTotalInteger","LivingAreaRange","LotWidth","LotDepth","ParkingTotal",
-    "GarageType","Basement","KitchensTotal","PublicRemarks","OriginalEntryTimestamp",
-    "ModificationTimestamp","InternetAddressDisplayYN","InternetEntireListingDisplayYN"
-  ].join(",");
-
-  const endpoint = `https://query.ampre.ca/odata/Property('${encodeURIComponent(listingKey)}')?$select=${select}`;
-
-  const response = await fetch(endpoint, {
-    headers: {
-      Authorization: `Bearer ${env.AMPRE_TOKEN}`,
-      Accept: "application/json",
-    },
-  });
+  const response = await amplifyFetch(
+    `https://query.ampre.ca/odata/Property('${encodeURIComponent(listingKey)}')`,
+    env
+  );
 
   if (response.status === 404) return json({ ok: false, error: "Listing not found." }, 404);
   if (!response.ok) return json({ ok: false, error: "Unable to load MLS listing." }, 502);
@@ -56,12 +44,16 @@ async function handleProperty(request, env) {
     return json({ ok: false, error: "This listing is not permitted for full internet display." }, 403);
   }
 
+  const offerTiming = detectOfferTiming(p);
+  const soldContext = await getNearbySoldContext(p, listingKey, env);
+
   return json({
     ok: true,
     property: {
       listingKey: p.ListingKey,
       address: p.UnparsedAddress,
       city: p.City,
+      cityRegion: p.CityRegion || null,
       postalCode: p.PostalCode,
       listPrice: p.ListPrice,
       status: p.StandardStatus,
@@ -80,8 +72,183 @@ async function handleProperty(request, env) {
       remarks: p.PublicRemarks,
       originalEntryTimestamp: p.OriginalEntryTimestamp,
       modificationTimestamp: p.ModificationTimestamp,
+      offerTiming,
+      soldContext,
     },
   });
+}
+
+async function amplifyFetch(endpoint, env) {
+  return fetch(endpoint, {
+    headers: {
+      Authorization: `Bearer ${env.AMPRE_TOKEN}`,
+      Accept: "application/json",
+    },
+  });
+}
+
+function detectOfferTiming(p) {
+  const remarkFields = [
+    "PrivateRemarks",
+    "PrivateRemarksExtras",
+    "BrokerageRemarks",
+    "BrokerRemarks",
+    "RemarksForBrokerage",
+    "PublicRemarksExtras",
+    "PublicRemarks",
+  ];
+
+  const availableRemarks = remarkFields
+    .map((key) => (typeof p[key] === "string" ? p[key].trim() : ""))
+    .filter(Boolean);
+
+  const text = availableRemarks.join(" \n");
+  if (!text) {
+    return {
+      type: "anytime",
+      label: "Offers anytime",
+      note: "No offer date detected in IDX-accessible remarks. Realtor verification required.",
+    };
+  }
+
+  const offerParts = text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .filter((part) => /\boffer(?:s|ing)?\b|offer presentation|presentation of offers/i.test(part));
+
+  const relevant = offerParts.join(" ");
+
+  if (/\b(any\s*time|offers?\s+anytime|offers?\s+welcome\s+anytime|accept(?:ing|ed)?\s+offers?\s+anytime)\b/i.test(relevant)) {
+    return {
+      type: "anytime",
+      label: "Offers anytime",
+      note: "No scheduled offer presentation detected. Realtor verification required.",
+    };
+  }
+
+  const monthDate = relevant.match(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?\b/i);
+  const numericDate = relevant.match(/\b\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?\b/);
+  const time = relevant.match(/\b\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b/i);
+  const date = monthDate?.[0] || numericDate?.[0] || null;
+
+  if (relevant && (date || time)) {
+    const pieces = [date, time?.[0]].filter(Boolean);
+    return {
+      type: "scheduled",
+      label: `Offer date: ${pieces.join(" · ")}`,
+      note: "Offer timing detected in IDX-accessible remarks. Realtor will verify before submission.",
+    };
+  }
+
+  if (relevant && /offer presentation|present(?:ing|ation)? offers|review(?:ing)? offers/i.test(relevant)) {
+    return {
+      type: "verify",
+      label: "Offer presentation mentioned",
+      note: "A specific offer-presentation reference was detected; exact timing requires Realtor verification.",
+    };
+  }
+
+  return {
+    type: "anytime",
+    label: "Offers anytime",
+    note: "No offer date detected in IDX-accessible remarks. Realtor verification required.",
+  };
+}
+
+async function getNearbySoldContext(p, currentListingKey, env) {
+  const baseFilters = ["StandardStatus eq 'Closed'", "TransactionType eq 'For Sale'"];
+  const areaFilter = p.CityRegion
+    ? `CityRegion eq '${odataString(p.CityRegion)}'`
+    : p.City
+      ? `City eq '${odataString(p.City)}'`
+      : null;
+
+  if (areaFilter) baseFilters.push(areaFilter);
+  if (p.PropertyType) baseFilters.push(`PropertyType eq '${odataString(p.PropertyType)}'`);
+
+  const strictFilters = [...baseFilters];
+  if (p.PropertySubType) strictFilters.push(`PropertySubType eq '${odataString(p.PropertySubType)}'`);
+  if (Number.isFinite(p.BedroomsTotal)) {
+    const minBeds = Math.max(0, Number(p.BedroomsTotal) - 1);
+    const maxBeds = Number(p.BedroomsTotal) + 1;
+    strictFilters.push(`BedroomsTotal ge ${minBeds}`, `BedroomsTotal le ${maxBeds}`);
+  }
+
+  let records = await querySold(strictFilters, env);
+  if (records.length < 3) records = await querySold(baseFilters, env);
+
+  const sold = records
+    .filter((record) => record.ListingKey !== currentListingKey)
+    .map((record) => {
+      const price = firstFiniteNumber(record, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice"]);
+      const dateRaw = firstValue(record, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate"]);
+      const date = validDate(dateRaw);
+      return price && date ? { price, date } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  if (!sold.length) {
+    return {
+      available: false,
+      area: p.CityRegion || p.City || null,
+      sampleSize: 0,
+    };
+  }
+
+  const recent = sold.slice(0, 5);
+  const prices = recent.map((item) => item.price).sort((a, b) => a - b);
+  const latest = sold[0];
+
+  return {
+    available: true,
+    area: p.CityRegion || p.City || null,
+    sampleSize: recent.length,
+    rangeLow: prices[0],
+    rangeHigh: prices[prices.length - 1],
+    latestSoldPrice: latest.price,
+    latestSoldDate: latest.date.toISOString().slice(0, 10),
+  };
+}
+
+async function querySold(filters, env) {
+  const params = new URLSearchParams();
+  params.set("$top", "40");
+  params.set("$filter", filters.join(" and "));
+  params.set("$orderby", "ModificationTimestamp desc,ListingKey desc");
+
+  try {
+    const response = await amplifyFetch(`https://query.ampre.ca/odata/Property?${params.toString()}`, env);
+    if (!response.ok) return [];
+    const body = await response.json();
+    return Array.isArray(body.value) ? body.value : [];
+  } catch {
+    return [];
+  }
+}
+
+function odataString(value) {
+  return String(value).replace(/'/g, "''");
+}
+
+function firstFiniteNumber(record, keys) {
+  for (const key of keys) {
+    const value = Number(record[key]);
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
+}
+
+function firstValue(record, keys) {
+  for (const key of keys) {
+    if (record[key] != null && record[key] !== "") return record[key];
+  }
+  return null;
+}
+
+function validDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 async function handleLead(request, env) {
