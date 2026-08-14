@@ -4,9 +4,15 @@ const snapshotSection = document.getElementById("snapshotSection");
 const snapshotProperty = document.getElementById("snapshotProperty");
 const snapshotMeta = document.getElementById("snapshotMeta");
 const propertySummary = document.getElementById("propertySummary");
+const marketIntel = document.getElementById("marketIntel");
 const liveAddress = document.getElementById("liveAddress");
 const liveDetails = document.getElementById("liveDetails");
 const livePrice = document.getElementById("livePrice");
+const offerTimingValue = document.getElementById("offerTimingValue");
+const offerTimingNote = document.getElementById("offerTimingNote");
+const soldRangeValue = document.getElementById("soldRangeValue");
+const soldRangeNote = document.getElementById("soldRangeNote");
+const latestSoldValue = document.getElementById("latestSoldValue");
 
 const leadModal = document.getElementById("leadModal");
 const closeModal = document.getElementById("closeModal");
@@ -41,6 +47,24 @@ function money(value) {
   }).format(value);
 }
 
+function compactMoney(value) {
+  if (typeof value !== "number") return "—";
+  if (value >= 1000000) return `$${(value / 1000000).toFixed(value % 1000000 === 0 ? 0 : 2)}M`;
+  if (value >= 1000) return `$${Math.round(value / 1000)}K`;
+  return money(value);
+}
+
+function soldDate(value) {
+  if (!value) return "—";
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-CA", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  }).format(date);
+}
+
 function detectMlsKey(value) {
   const match = value.trim().toUpperCase().match(/\b[A-Z]\d{7,9}\b/);
   return match ? match[0] : null;
@@ -57,6 +81,38 @@ function setBaseSnapshot() {
   document.getElementById("valueSignalText").textContent = "Lot, layout, parking, condition, location and useful property features.";
   document.getElementById("nextMoveSignal").textContent = "Worth a closer look?";
   document.getElementById("nextMoveText").textContent = "We turn the first read into a simple buyer action — not a meaningless AI score.";
+
+  offerTimingValue.textContent = "Checking…";
+  offerTimingNote.textContent = "We check the IDX-accessible listing remarks for offer instructions.";
+  soldRangeValue.textContent = "Checking…";
+  soldRangeNote.textContent = "Recent similar-type sales in the neighbourhood.";
+  latestSoldValue.textContent = "Checking…";
+}
+
+function renderMarketIntel(listing) {
+  marketIntel.classList.remove("hidden");
+
+  const offer = listing.offerTiming;
+  if (offer?.label) {
+    offerTimingValue.textContent = offer.label;
+    offerTimingNote.textContent = offer.note || "Realtor verification required.";
+  } else {
+    offerTimingValue.textContent = "Offers anytime";
+    offerTimingNote.textContent = "No offer date detected in IDX-accessible remarks. Realtor verification required.";
+  }
+
+  const sold = listing.soldContext;
+  if (sold?.available) {
+    soldRangeValue.textContent = sold.rangeLow === sold.rangeHigh
+      ? compactMoney(sold.rangeLow)
+      : `${compactMoney(sold.rangeLow)} – ${compactMoney(sold.rangeHigh)}`;
+    soldRangeNote.textContent = `${sold.sampleSize} recent similar-type sold${sold.sampleSize === 1 ? "" : "s"} used for this quick range.`;
+    latestSoldValue.textContent = `${compactMoney(sold.latestSoldPrice)} · ${soldDate(sold.latestSoldDate)}`;
+  } else {
+    soldRangeValue.textContent = "Not enough sold data";
+    soldRangeNote.textContent = "No reliable recent sold-price sample was returned by the current IDX feed.";
+    latestSoldValue.textContent = "Not available";
+  }
 }
 
 function renderListing(listing) {
@@ -72,9 +128,14 @@ function renderListing(listing) {
   ].filter(Boolean);
   liveDetails.textContent = facts.join(" · ");
   livePrice.textContent = money(listing.listPrice);
+  renderMarketIntel(listing);
 
   document.getElementById("priceSignal").textContent = listing.listPrice ? `${money(listing.listPrice)} asking` : "Price available";
-  document.getElementById("priceSignalText").textContent = "Live asking price loaded. Comparable-sale analysis is the next intelligence layer.";
+  if (listing.soldContext?.available) {
+    document.getElementById("priceSignalText").textContent = `Nearby sold context: ${compactMoney(listing.soldContext.rangeLow)}–${compactMoney(listing.soldContext.rangeHigh)} from a small recent similar-type sample.`;
+  } else {
+    document.getElementById("priceSignalText").textContent = "Live asking price loaded. Sold-price context is shown only when the current IDX feed returns a reliable sample.";
+  }
 
   const domText = listing.daysOnMarket != null ? `${listing.daysOnMarket} days` : "Live status";
   document.getElementById("marketSignal").textContent = domText;
@@ -106,6 +167,7 @@ analysisForm.addEventListener("submit", async (event) => {
   setBaseSnapshot();
   liveListing = null;
   propertySummary.classList.add("hidden");
+  marketIntel.classList.add("hidden");
   snapshotProperty.textContent = activeProperty;
   snapshotMeta.textContent = "A fast first read — no registration.";
   snapshotSection.classList.remove("hidden");
