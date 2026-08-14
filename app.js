@@ -1,33 +1,44 @@
-const analysisForm = document.getElementById("analysisForm");
-const propertyInput = document.getElementById("propertyInput");
-const snapshotSection = document.getElementById("snapshotSection");
-const snapshotProperty = document.getElementById("snapshotProperty");
-const snapshotMeta = document.getElementById("snapshotMeta");
-const propertySummary = document.getElementById("propertySummary");
-const marketIntel = document.getElementById("marketIntel");
-const liveAddress = document.getElementById("liveAddress");
-const liveDetails = document.getElementById("liveDetails");
-const livePrice = document.getElementById("livePrice");
-const matchMethod = document.getElementById("matchMethod");
-const offerTimingValue = document.getElementById("offerTimingValue");
-const offerTimingNote = document.getElementById("offerTimingNote");
-const soldRangeValue = document.getElementById("soldRangeValue");
-const soldRangeNote = document.getElementById("soldRangeNote");
-const latestSoldValue = document.getElementById("latestSoldValue");
-const latestSoldNote = document.getElementById("latestSoldNote");
-const listingTempoValue = document.getElementById("listingTempoValue");
-const listingTempoNote = document.getElementById("listingTempoNote");
+const $ = (id) => document.getElementById(id);
 
-const leadModal = document.getElementById("leadModal");
-const closeModal = document.getElementById("closeModal");
-const doneButton = document.getElementById("doneButton");
-const leadForm = document.getElementById("leadForm");
-const leadFormPanel = document.getElementById("leadFormPanel");
-const leadSuccessPanel = document.getElementById("leadSuccessPanel");
-const modalProperty = document.getElementById("modalProperty");
-const modalPropertyDisplay = document.getElementById("modalPropertyDisplay");
-const leadSubmit = document.getElementById("leadSubmit");
-const leadError = document.getElementById("leadError");
+const analysisForm = $("analysisForm");
+const propertyInput = $("propertyInput");
+const snapshotSection = $("snapshotSection");
+const snapshotProperty = $("snapshotProperty");
+const snapshotMeta = $("snapshotMeta");
+const propertySummary = $("propertySummary");
+const marketIntel = $("marketIntel");
+const liveAddress = $("liveAddress");
+const liveDetails = $("liveDetails");
+const livePrice = $("livePrice");
+const listingLabel = $("listingLabel");
+const marketStatusPill = $("marketStatusPill");
+const matchMethod = $("matchMethod");
+const offerTimingValue = $("offerTimingValue");
+const offerTimingNote = $("offerTimingNote");
+const soldRangeValue = $("soldRangeValue");
+const soldRangeNote = $("soldRangeNote");
+const latestSoldValue = $("latestSoldValue");
+const latestSoldNote = $("latestSoldNote");
+const listingTempoValue = $("listingTempoValue");
+const listingTempoNote = $("listingTempoNote");
+const decisionTitle = $("decisionTitle");
+const decisionText = $("decisionText");
+const seeHomeButton = $("seeHomeButton");
+
+const leadModal = $("leadModal");
+const closeModal = $("closeModal");
+const doneButton = $("doneButton");
+const leadForm = $("leadForm");
+const leadFormPanel = $("leadFormPanel");
+const leadSuccessPanel = $("leadSuccessPanel");
+const modalProperty = $("modalProperty");
+const modalPropertyDisplay = $("modalPropertyDisplay");
+const leadSubmit = $("leadSubmit");
+const leadError = $("leadError");
+const modalEyebrow = $("modalEyebrow");
+const modalTitle = $("modalTitle");
+const nextStepLabel = $("nextStepLabel");
+const showingTiming = $("showingTiming");
 
 let activeProperty = "";
 let liveListing = null;
@@ -54,9 +65,9 @@ function compactMoney(value) {
   return money(value);
 }
 
-function soldDate(value) {
+function formatDate(value) {
   if (!value) return "—";
-  const date = new Date(`${value}T12:00:00`);
+  const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
@@ -66,83 +77,70 @@ function detectMlsKey(value) {
   return match ? match[0] : null;
 }
 
-function setBaseSnapshot() {
-  document.getElementById("priceSignal").textContent = "Compare before offering";
-  document.getElementById("priceSignalText").textContent = "We put the asking price in context against the closest matches.";
-  document.getElementById("marketSignal").textContent = "Finding matches";
-  document.getElementById("marketSignalText").textContent = "Micro-area, property type, size, lot, layout utility and recency.";
-  document.getElementById("flagSignal").textContent = "What to verify";
-  document.getElementById("flagSignalText").textContent = "Surface details worth checking before you get emotionally committed.";
-  document.getElementById("valueSignal").textContent = "What may support value";
-  document.getElementById("valueSignalText").textContent = "Lot, layout, parking, condition, location and useful property features.";
-  document.getElementById("showingSignal").textContent = "Go in prepared";
-  document.getElementById("showingSignalText").textContent = "Know what matters most to verify inside this specific property.";
-  document.getElementById("nextMoveSignal").textContent = "Worth a closer look?";
-  document.getElementById("nextMoveText").textContent = "A simple buyer action — not a meaningless AI score.";
+function setText(id, title, note) {
+  $(id).textContent = title;
+  const noteEl = $(`${id}Text`);
+  if (noteEl) noteEl.textContent = note;
+}
 
-  matchMethod.textContent = "Similarity-weighted property matching";
+function setBaseSnapshot() {
+  setText("priceSignal", "Analyzing price", "Building the closest available market set.");
+  setText("marketSignal", "Finding matches", "Micro-area, property type, size, lot, utility and recency.");
+  setText("flagSignal", "What to verify", "Surface details that can change value or strategy.");
+  setText("valueSignal", "What supports value", "Lot, layout, parking, condition and useful property features.");
+  setText("showingSignal", "Property focus", "The most useful thing to verify next.");
+  setText("nextMoveSignal", "Clear next step", "A practical buyer action — not a fake score.");
+
+  matchMethod.textContent = "THM Similarity Engine v2";
   offerTimingValue.textContent = "Checking…";
-  offerTimingNote.textContent = "Checking listing instructions.";
+  offerTimingNote.textContent = "Checking property status and offer instructions.";
   soldRangeValue.textContent = "Checking…";
-  soldRangeNote.textContent = "Finding the closest property matches.";
+  soldRangeNote.textContent = "Building the closest market range.";
   latestSoldValue.textContent = "Checking…";
-  latestSoldNote.textContent = "Price · sold date";
+  latestSoldNote.textContent = "Verified sold when available.";
   listingTempoValue.textContent = "Checking…";
-  listingTempoNote.textContent = "How fresh this listing is.";
+  listingTempoNote.textContent = "Current listing or 10-year MLS history.";
 }
 
 function renderMarketPulse(listing) {
   marketIntel.classList.remove("hidden");
-  const offer = listing.offerTiming;
-  offerTimingValue.textContent = offer?.label || "Offers anytime*";
-  offerTimingNote.textContent = offer?.note || "Verify with the listing brokerage.";
-
   const comp = listing.comparableContext;
-  if (comp?.available) {
-    soldRangeValue.textContent = comp.rangeLow === comp.rangeHigh
-      ? compactMoney(comp.rangeLow)
-      : `${compactMoney(comp.rangeLow)} – ${compactMoney(comp.rangeHigh)}`;
-    const source = comp.source === "sold" ? "sold matches" : "live asking matches";
-    soldRangeNote.textContent = `${comp.matchCount} ${source} · ${comp.confidence}`;
-    matchMethod.textContent = `${comp.method} · ${comp.sourceLabel}`;
+  const opinion = listing.priceOpinion;
+
+  offerTimingValue.textContent = listing.offerTiming?.label || (listing.forSale ? "Offers anytime*" : "Not for sale");
+  offerTimingNote.textContent = listing.offerTiming?.note || "Verify status before relying on it.";
+
+  if (opinion?.available) {
+    soldRangeValue.textContent = `${compactMoney(opinion.low)} – ${compactMoney(opinion.high)}`;
+    soldRangeNote.textContent = `${listing.forSale ? "THM comp range" : "THM price opinion"} · ${opinion.confidence} confidence`;
+    matchMethod.textContent = `${comp?.method || "THM Similarity Engine v2"} · ${comp?.sourceLabel || "market history"}`;
   } else {
-    soldRangeValue.textContent = "Building market set";
-    soldRangeNote.textContent = "Closest live property matches are still being expanded.";
-    matchMethod.textContent = "THM Similarity Engine";
+    soldRangeValue.textContent = "Range unavailable";
+    soldRangeNote.textContent = opinion?.note || "Not enough reliable data to force a number.";
+    matchMethod.textContent = comp?.method || "THM Similarity Engine v2";
   }
 
-  if (comp?.latestSold?.price && comp?.latestSold?.date) {
-    latestSoldValue.textContent = `${compactMoney(comp.latestSold.price)} · ${soldDate(comp.latestSold.date)}`;
-    latestSoldNote.textContent = "Latest usable sold record in the match pool";
+  const sold = comp?.latestSold || listing.historySummary?.latestSold;
+  if (sold?.price && sold?.date) {
+    latestSoldValue.textContent = `${compactMoney(sold.price)} · ${formatDate(sold.date)}`;
+    latestSoldNote.textContent = "Verified sold price + date from available MLS data";
+  } else if (!listing.forSale && listing.historySummary?.appearanceCount) {
+    latestSoldValue.textContent = `${listing.historySummary.appearanceCount} MLS record${listing.historySummary.appearanceCount === 1 ? "" : "s"}`;
+    latestSoldNote.textContent = "No verified sold price exposed by this IDX feed";
   } else {
-    latestSoldValue.textContent = "Unavailable in IDX";
-    latestSoldNote.textContent = "We will not substitute an asking price for a sold price.";
+    latestSoldValue.textContent = "Sold not exposed";
+    latestSoldNote.textContent = "We do not substitute an asking price for a sold price";
   }
 
-  const days = listing.daysLive;
-  if (typeof days === "number") {
-    listingTempoValue.textContent = days === 0 ? "Listed today" : days === 1 ? "1 day live" : `${days} days live`;
-    listingTempoNote.textContent = listing.status ? `${listing.status} · freshness affects urgency` : "Listing freshness affects urgency";
+  if (listing.forSale) {
+    const days = listing.daysLive;
+    listingTempoValue.textContent = typeof days === "number" ? (days === 0 ? "Listed today" : `${days} day${days === 1 ? "" : "s"} live`) : (listing.status || "Active");
+    listingTempoNote.textContent = `${listing.status || "Active"} · listing freshness affects urgency`;
   } else {
-    listingTempoValue.textContent = listing.status || "Live listing";
-    listingTempoNote.textContent = "Current listing status";
+    const h = listing.historySummary;
+    listingTempoValue.textContent = h?.lastSeenDate ? `Last MLS: ${formatDate(h.lastSeenDate)}` : "No active listing";
+    listingTempoNote.textContent = h?.lastStatus ? `Last status: ${h.lastStatus} · searched 10 years` : "Searched up to 10 years of MLS history";
   }
-}
-
-function marketPosition(listing) {
-  const comp = listing.comparableContext;
-  const ask = listing.listPrice;
-  if (!comp?.available || typeof ask !== "number" || !comp.midpoint) {
-    return { title: `${money(ask)} asking`, note: "Comparable context is still limited by the current property match set." };
-  }
-
-  const delta = (ask - comp.midpoint) / comp.midpoint;
-  const pct = Math.abs(delta * 100).toFixed(1).replace(".0", "");
-  const range = `${compactMoney(comp.rangeLow)}–${compactMoney(comp.rangeHigh)}`;
-
-  if (ask < comp.rangeLow) return { title: "Below THM match band", note: `${pct}% below the similarity-weighted midpoint · band ${range}.` };
-  if (ask > comp.rangeHigh) return { title: "Above THM match band", note: `${pct}% above the similarity-weighted midpoint · band ${range}.` };
-  return { title: "Inside THM match band", note: `${pct}% from the similarity-weighted midpoint · band ${range}.` };
 }
 
 function renderListing(listing) {
@@ -156,55 +154,77 @@ function renderListing(listing) {
     listing.baths != null ? `${listing.baths} bath` : null,
     listing.livingAreaRange || null
   ].filter(Boolean);
-  liveDetails.textContent = facts.join(" · ");
-  livePrice.textContent = money(listing.listPrice);
+  liveDetails.textContent = facts.join(" · ") || "Property identified from MLS history";
+
+  marketStatusPill.textContent = listing.forSale ? "FOR SALE" : "NOT FOR SALE";
+  marketStatusPill.className = `market-status-pill ${listing.forSale ? "is-live" : "is-off"}`;
+  listingLabel.textContent = listing.forSale ? "LIVE LISTING" : "OFF-MARKET PROPERTY";
+
+  if (listing.forSale) {
+    livePrice.textContent = money(listing.listPrice);
+  } else if (listing.priceOpinion?.available) {
+    livePrice.innerHTML = `<span class="price-caption">THM PRICE OPINION</span>${money(listing.priceOpinion.midpoint)}`;
+  } else {
+    livePrice.innerHTML = `<span class="price-caption">STATUS</span>Not for sale`;
+  }
+
   renderMarketPulse(listing);
 
-  const position = marketPosition(listing);
-  document.getElementById("priceSignal").textContent = position.title;
-  document.getElementById("priceSignalText").textContent = position.note;
-
   const comp = listing.comparableContext;
-  if (comp?.available) {
-    document.getElementById("marketSignal").textContent = `${comp.matchCount} close matches`;
-    document.getElementById("marketSignalText").textContent = `${comp.basis || "Similarity + recency weighted"} · ${comp.sourceLabel}.`;
+  const opinion = listing.priceOpinion;
+
+  if (listing.forSale) {
+    if (opinion?.available && listing.listPrice) {
+      const delta = (listing.listPrice - opinion.midpoint) / opinion.midpoint;
+      const pct = Math.abs(delta * 100).toFixed(1).replace(".0", "");
+      if (listing.listPrice < opinion.low) setText("priceSignal", "Below THM range", `${pct}% below midpoint · ${compactMoney(opinion.low)}–${compactMoney(opinion.high)}.`);
+      else if (listing.listPrice > opinion.high) setText("priceSignal", "Above THM range", `${pct}% above midpoint · ${compactMoney(opinion.low)}–${compactMoney(opinion.high)}.`);
+      else setText("priceSignal", "Inside THM range", `${pct}% from midpoint · ${compactMoney(opinion.low)}–${compactMoney(opinion.high)}.`);
+    } else {
+      setText("priceSignal", `${money(listing.listPrice)} asking`, "The current match set is too thin for a responsible range.");
+    }
   } else {
-    document.getElementById("marketSignal").textContent = "Broad market context";
-    document.getElementById("marketSignalText").textContent = "We avoid forcing weak properties into the comp set just to produce a number.";
+    setText("priceSignal", "Not for sale", opinion?.available
+      ? `THM indicative value: ${compactMoney(opinion.low)}–${compactMoney(opinion.high)} · midpoint ${compactMoney(opinion.midpoint)}.`
+      : "No active listing and not enough reliable data for a price opinion.");
+  }
+
+  if (comp?.available) {
+    setText("marketSignal", `${comp.matchCount} closest matches`, `${comp.basis || "Similarity + recency weighted"} · ${comp.sourceLabel}.`);
+  } else {
+    setText("marketSignal", "10-year history scan", "THM checked the available neighbourhood/property history without forcing weak comps.");
   }
 
   const flags = [];
   if (Array.isArray(listing.basement) && listing.basement.length) flags.push(listing.basement.join(", "));
   if (listing.kitchensTotal > 1) flags.push(`${listing.kitchensTotal} kitchens`);
   if (listing.remarks && /permit|approval|zoning|legal/i.test(listing.remarks)) flags.push("Verify approvals / permits");
-  document.getElementById("flagSignal").textContent = flags.length ? flags[0] : "No obvious listing flag";
-  document.getElementById("flagSignalText").textContent = flags.length > 1 ? flags.slice(1).join(" · ") : "Still verify condition, representations and material property details.";
+  setText("flagSignal", flags[0] || (listing.forSale ? "No obvious listing flag" : "History-based profile"),
+    flags.length > 1 ? flags.slice(1).join(" · ") : (listing.forSale ? "Still verify condition and material facts." : "Off-market profile uses the most recent MLS record found in the 10-year search."));
 
   const valueBits = [];
   if (listing.lotWidth && listing.lotDepth) valueBits.push(`${listing.lotWidth} × ${listing.lotDepth} ft lot`);
   if (listing.parkingTotal) valueBits.push(`${listing.parkingTotal} parking`);
   if (listing.garageType) valueBits.push(listing.garageType);
-  document.getElementById("valueSignal").textContent = valueBits[0] || "Property strengths";
-  document.getElementById("valueSignalText").textContent = valueBits.slice(1).join(" · ") || "Focus on features that materially support utility and resale value.";
+  setText("valueSignal", valueBits[0] || "Property utility", valueBits.slice(1).join(" · ") || "Focus on features that materially support utility and resale value.");
 
-  if (listing.showingFocus) {
-    document.getElementById("showingSignal").textContent = listing.showingFocus.title;
-    document.getElementById("showingSignalText").textContent = listing.showingFocus.note;
-  }
+  if (listing.showingFocus) setText("showingSignal", listing.showingFocus.title, listing.showingFocus.note);
 
-  const offerScheduled = listing.offerTiming?.type === "scheduled";
-  if (offerScheduled) {
-    document.getElementById("nextMoveSignal").textContent = "See it before offer time";
-    document.getElementById("nextMoveText").textContent = "If interested, inspect early enough to verify the property before deciding on offer strategy.";
-  } else if (comp?.available && listing.listPrice < comp.rangeLow) {
-    document.getElementById("nextMoveSignal").textContent = "Worth seeing quickly";
-    document.getElementById("nextMoveText").textContent = "The asking price sits below the current THM match band; verify why before assuming it is a bargain.";
-  } else if (comp?.available && listing.listPrice > comp.rangeHigh) {
-    document.getElementById("nextMoveSignal").textContent = "View, then negotiate";
-    document.getElementById("nextMoveText").textContent = "The ask sits above the THM match band; condition and uniqueness need to justify the premium.";
+  if (!listing.forSale) {
+    setText("nextMoveSignal", "Value review, not a showing", "This property is not currently for sale. Use the THM range as a starting point, then verify condition and ownership context before relying on it.");
+    decisionTitle.textContent = "Not for sale. Want a deeper value review?";
+    decisionText.textContent = "We can refine the range with a Realtor review, property condition and more detailed local comparables.";
+    seeHomeButton.textContent = "Get Value Review →";
+  } else if (listing.offerTiming?.type === "scheduled") {
+    setText("nextMoveSignal", "See it before offer time", "Inspect early enough to verify the property before deciding on offer strategy.");
+    decisionTitle.textContent = "See this home. Get the full AI Buyer Brief.";
+    decisionText.textContent = "We start arranging the earliest available showing while deeper analysis runs in parallel.";
+    seeHomeButton.textContent = "See This Home →";
   } else {
-    document.getElementById("nextMoveSignal").textContent = "Worth seeing";
-    document.getElementById("nextMoveText").textContent = "Use the showing to validate condition, layout and the details that can change your offer strategy.";
+    setText("nextMoveSignal", "Worth seeing", "Use the showing to validate condition, layout and the details that can change your offer strategy.");
+    decisionTitle.textContent = "See this home. Get the full AI Buyer Brief.";
+    decisionText.textContent = "We start arranging the earliest available showing while deeper analysis runs in parallel.";
+    seeHomeButton.textContent = "See This Home →";
   }
 }
 
@@ -218,26 +238,26 @@ analysisForm.addEventListener("submit", async (event) => {
   propertySummary.classList.add("hidden");
   marketIntel.classList.add("hidden");
   snapshotProperty.textContent = activeProperty;
-  snapshotMeta.textContent = "A fast first read — no registration.";
+  snapshotMeta.textContent = "Checking live MLS + up to 10 years of property history…";
   snapshotSection.classList.remove("hidden");
   setTimeout(() => snapshotSection.scrollIntoView({ behavior: "smooth", block: "start" }), 70);
 
   const listingKey = detectMlsKey(activeProperty);
-  if (!listingKey) {
-    snapshotMeta.textContent = "Snapshot ready. Live MLS matching for addresses and listing links is the next resolver layer.";
-    return;
-  }
+  const apiUrl = listingKey
+    ? `/api/property?listingKey=${encodeURIComponent(listingKey)}`
+    : `/api/property?q=${encodeURIComponent(activeProperty)}`;
 
-  snapshotMeta.textContent = "Loading live listing + THM match set…";
   try {
-    const response = await fetch(`/api/property?listingKey=${encodeURIComponent(listingKey)}`);
+    const response = await fetch(apiUrl);
     const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error(result.error || "Unable to load listing.");
+    if (!response.ok || !result.ok) throw new Error(result.error || "Unable to identify this property.");
     renderListing(result.property);
-    snapshotProperty.textContent = result.property.address || listingKey;
-    snapshotMeta.textContent = `MLS ${listingKey} · Live property intelligence`;
+    snapshotProperty.textContent = result.property.address || activeProperty;
+    snapshotMeta.textContent = result.property.forSale
+      ? `${result.property.listingKey ? `MLS ${result.property.listingKey} · ` : ""}Live property intelligence`
+      : `NOT FOR SALE · THM checked up to 10 years of available MLS history`;
   } catch (error) {
-    snapshotMeta.textContent = "Live property intelligence could not be loaded right now.";
+    snapshotMeta.textContent = error instanceof Error ? error.message : "Property intelligence could not be loaded.";
   }
 });
 
@@ -252,13 +272,25 @@ function openLeadModal() {
   leadFormPanel.classList.remove("hidden");
   leadSuccessPanel.classList.add("hidden");
   leadSubmit.disabled = false;
-  leadSubmit.textContent = "Request Showing + Full AI Brief";
+
+  if (liveListing?.forSale === false) {
+    modalEyebrow.textContent = "✦ VALUE REVIEW";
+    modalTitle.textContent = "Refine this off-market value.";
+    nextStepLabel.textContent = "NEXT STEP";
+    showingTiming.innerHTML = `<option value="value_review">Full value review</option><option value="contact_me">Contact me about this property</option>`;
+    leadSubmit.textContent = "Request Full Value Review";
+  } else {
+    modalEyebrow.textContent = "⚡ SEE THIS HOME";
+    modalTitle.textContent = "Let’s get you inside.";
+    nextStepLabel.textContent = "WHEN DO YOU WANT TO SEE IT?";
+    showingTiming.innerHTML = `<option value="asap">ASAP</option><option value="few_hours">Within a few hours</option><option value="later_today">Later today</option><option value="within_24h">Within 24 hours</option>`;
+    leadSubmit.textContent = "Request Showing + Full AI Brief";
+  }
   leadModal.classList.remove("hidden");
 }
 
 function hideLeadModal() { leadModal.classList.add("hidden"); }
-
-document.getElementById("seeHomeButton").addEventListener("click", openLeadModal);
+seeHomeButton.addEventListener("click", openLeadModal);
 closeModal.addEventListener("click", hideLeadModal);
 doneButton.addEventListener("click", hideLeadModal);
 leadModal.addEventListener("click", (event) => { if (event.target === leadModal) hideLeadModal(); });
@@ -267,7 +299,6 @@ document.addEventListener("keydown", (event) => { if (event.key === "Escape") hi
 leadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!activeProperty) return;
-
   const form = new FormData(leadForm);
   const payload = {
     property_input: activeProperty,
@@ -295,6 +326,6 @@ leadForm.addEventListener("submit", async (event) => {
     leadError.textContent = error instanceof Error ? error.message : "Unable to send your request.";
     leadError.classList.remove("hidden");
     leadSubmit.disabled = false;
-    leadSubmit.textContent = "Request Showing + Full AI Brief";
+    leadSubmit.textContent = liveListing?.forSale === false ? "Request Full Value Review" : "Request Showing + Full AI Brief";
   }
 });
