@@ -11,7 +11,8 @@ insert into public.app_settings(key,value) values
   ('service_hours','{"timezone":"America/Toronto","start":"09:00","end":"21:00","days":[0,1,2,3,4,5,6]}'::jsonb),
   ('assignment_method','"round_robin"'::jsonb),
   ('reassignment_minutes','5'::jsonb),
-  ('cashback_max_cad','10000'::jsonb)
+  ('cashback_max_cad','10000'::jsonb),
+  ('service_area','["Toronto","York","Peel","Durham","Halton"]'::jsonb)
 on conflict (key) do nothing;
 
 create table if not exists public.agents (
@@ -19,7 +20,7 @@ create table if not exists public.agents (
   code text unique not null,
   display_name text not null,
   active boolean not null default true,
-  assignment_order integer not null,
+  assignment_order integer not null unique,
   mobile text,
   email text,
   created_at timestamptz not null default now(),
@@ -32,17 +33,18 @@ on conflict (code) do nothing;
 
 create table if not exists public.round_robin_state (
   id boolean primary key default true check (id),
-  last_agent_id uuid references public.agents(id),
+  last_assignment_order integer,
   updated_at timestamptz not null default now()
 );
-insert into public.round_robin_state(id) values (true) on conflict do nothing;
+insert into public.round_robin_state(id,last_assignment_order) values (true,null) on conflict do nothing;
 
 create table if not exists public.analysis_sessions (
   id uuid primary key default gen_random_uuid(),
   property_input text not null,
   listing_key text,
   status text not null default 'submitted',
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create table if not exists public.leads (
@@ -74,6 +76,12 @@ create table if not exists public.lead_events (
   created_at timestamptz not null default now()
 );
 
+create index if not exists leads_owner_agent_id_idx on public.leads(owner_agent_id);
+create index if not exists leads_next_action_at_idx on public.leads(next_action_at);
+create index if not exists leads_created_at_idx on public.leads(created_at desc);
+create index if not exists lead_events_lead_id_idx on public.lead_events(lead_id);
+create index if not exists analysis_sessions_listing_key_idx on public.analysis_sessions(listing_key);
+
 alter table public.app_settings enable row level security;
 alter table public.agents enable row level security;
 alter table public.round_robin_state enable row level security;
@@ -99,32 +107,40 @@ as $$
 declare
   v_analysis_id uuid;
   v_agent_id uuid;
-  v_last uuid;
-  v_sla int := 5;
+  v_agent_order integer;
+  v_last_order integer;
+  v_sla integer := 5;
 begin
-  select coalesce((value #>> '{}')::int,5)
+  select coalesce((value #>> '{}')::integer,5)
     into v_sla
   from app_settings
   where key='first_response_sla_minutes';
 
-  select last_agent_id into v_last
+  select last_assignment_order
+    into v_last_order
   from round_robin_state
   where id=true
   for update;
 
-  select a.id into v_agent_id
+  select a.id, a.assignment_order
+    into v_agent_id, v_agent_order
   from agents a
   where a.active=true
-    and (v_last is null or a.id <> v_last)
+    and (v_last_order is null or a.assignment_order > v_last_order)
   order by a.assignment_order asc
   limit 1;
 
   if v_agent_id is null then
-    select a.id into v_agent_id
+    select a.id, a.assignment_order
+      into v_agent_id, v_agent_order
     from agents a
     where a.active=true
     order by a.assignment_order asc
     limit 1;
+  end if;
+
+  if v_agent_id is null then
+    raise exception 'No active agent available';
   end if;
 
   insert into analysis_sessions(property_input, listing_key)
@@ -142,12 +158,14 @@ begin
   )
   returning id into lead_id;
 
-  update round_robin_state set last_agent_id=v_agent_id,updated_at=now() where id=true;
+  update round_robin_state
+  set last_assignment_order=v_agent_order,updated_at=now()
+  where id=true;
 
   insert into lead_events(lead_id,event_type,payload)
   values
     (lead_id,'lead_captured',jsonb_build_object('showing_timing',p_showing_timing)),
-    (lead_id,'agent_assigned',jsonb_build_object('agent_id',v_agent_id,'sla_minutes',v_sla));
+    (lead_id,'agent_assigned',jsonb_build_object('agent_id',v_agent_id,'assignment_order',v_agent_order,'sla_minutes',v_sla));
 
   agent_id := v_agent_id;
   return next;
