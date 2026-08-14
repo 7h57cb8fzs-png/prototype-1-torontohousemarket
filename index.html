@@ -6,100 +6,23 @@
   <meta name="description" content="Toronto House Market — See the home fast. Know what you're walking into." />
   <title>Toronto House Market</title>
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/offmarket.css" />
 </head>
 <body>
-  <header class="site-header">
-    <div class="wrap nav">
-      <a class="brand" href="#top" aria-label="Toronto House Market home">
-        <span class="brand-mark">THM</span><span>Toronto House Market</span>
-      </a>
-      <div class="nav-right">
-        <div class="brokerage">Real estate services through<br /><strong>CENTURY 21 Leading Edge Realty Inc. Brokerage</strong></div>
-        <button class="outline-btn" type="button" data-scroll="#top">Analyze a Home</button>
-      </div>
-    </div>
-  </header>
-
-  <main id="top">
-    <section class="hero">
-      <div class="wrap hero-inner">
-        <div class="eyebrow">⚡ FAST SHOWING + AI BUYER BRIEF</div>
-        <h1>Found a home?<br /><span>See it fast. Know what you’re walking into.</span></h1>
-        <p class="hero-copy">Paste the MLS number, address, or listing link. Get an instant Buyer Decision Snapshot before you give us your contact information.</p>
-        <form id="analysisForm" class="search-box">
-          <input id="propertyInput" name="property" autocomplete="off" placeholder="MLS #, address, or Realtor.ca link" required />
-          <button class="primary-btn" type="submit">Analyze This Home</button>
-        </form>
-        <div class="hero-note">Instant Buyer Decision Snapshot · No registration required</div>
-        <div class="proof-row"><span>Price context</span><span>Buyer flags</span><span>Clear next move</span></div>
-      </div>
-    </section>
-
-    <section class="value-strip">
-      <div class="wrap value-grid">
-        <div><strong>Analyze first</strong><span>Get value before we ask for your number.</span></div>
-        <div><strong>Decide smarter</strong><span>See what matters before the showing.</span></div>
-        <div><strong>Move fast</strong><span>Interested? We start arranging access immediately.</span></div>
-      </div>
-    </section>
-
-    <section id="snapshotSection" class="snapshot hidden">
-      <div class="wrap snapshot-wrap">
-        <div class="section-kicker-row">
-          <div><div class="eyebrow">✦ INSTANT BUYER DECISION SNAPSHOT</div><h2 id="snapshotProperty">Selected property</h2><p id="snapshotMeta">A fast first read — no registration.</p></div>
-          <span class="free-pill">NO REGISTRATION</span>
-        </div>
-
-        <div class="snapshot-shell">
-          <div id="propertySummary" class="property-summary hidden">
-            <div><span class="mini-label">LIVE LISTING</span><h3 id="liveAddress">—</h3><p id="liveDetails">—</p></div>
-            <div class="listing-price" id="livePrice">—</div>
-          </div>
-
-          <div id="marketIntel" class="market-intel hidden">
-            <div class="pulse-title"><span>THM MARKET PULSE</span><small id="matchMethod">Similarity-weighted property matching</small></div>
-            <div class="pulse-grid">
-              <div class="intel-item offer-intel"><span class="mini-label">OFFER STATUS</span><strong id="offerTimingValue">Checking…</strong><small id="offerTimingNote">Checking listing instructions.</small></div>
-              <div class="intel-item"><span class="mini-label">THM COMP RANGE</span><strong id="soldRangeValue">Checking…</strong><small id="soldRangeNote">Finding the closest property matches.</small></div>
-              <div class="intel-item"><span class="mini-label">LATEST SOLD</span><strong id="latestSoldValue">Checking…</strong><small id="latestSoldNote">Price · sold date</small></div>
-              <div class="intel-item"><span class="mini-label">LISTING TEMPO</span><strong id="listingTempoValue">Checking…</strong><small id="listingTempoNote">How fresh this listing is.</small></div>
-            </div>
-          </div>
-
-          <div class="snapshot-card">
-            <div class="snapshot-grid">
-              <article><span class="mini-label">MARKET POSITION</span><strong id="priceSignal">Compare before offering</strong><p id="priceSignalText">We put the asking price in context against the closest matches.</p></article>
-              <article><span class="mini-label">COMP BASIS</span><strong id="marketSignal">Finding matches</strong><p id="marketSignalText">Micro-area, property type, size, lot, layout utility and recency.</p></article>
-              <article><span class="mini-label">PROPERTY FLAGS</span><strong id="flagSignal">What to verify</strong><p id="flagSignalText">Surface details worth checking before you get emotionally committed.</p></article>
-              <article><span class="mini-label">VALUE DRIVERS</span><strong id="valueSignal">What may support value</strong><p id="valueSignalText">Lot, layout, parking, condition, location and useful property features.</p></article>
-              <article><span class="mini-label">SHOWING FOCUS</span><strong id="showingSignal">Go in prepared</strong><p id="showingSignalText">Know what matters most to verify inside this specific property.</p></article>
-              <article><span class="mini-label">NEXT MOVE</span><strong id="nextMoveSignal">Worth a closer look?</strong><p id="nextMoveText">A simple buyer action — not a meaningless AI score.</p></article>
-            </div>
-            <div class="decision-bar">
-              <div><span class="mini-label">INTERESTED?</span><h3>See this home. Get the full AI Buyer Brief.</h3><p>We start arranging the earliest available showing while the deeper property analysis runs in parallel.</p></div>
-              <button class="white-btn" id="seeHomeButton" type="button">See This Home →</button>
-            </div>
-          </div>
-        </div>
-
-        <p class="disclaimer">AI-assisted preliminary analysis for buyer education and decision support. THM comp context is a similarity-weighted screening tool, not an appraisal or CMA. Offer timing and sold information depend on data available to this IDX feed and must be verified by your Realtor. MLS facts, property condition, legal status, permits, financing, inspections and other material matters require appropriate professional verification.</p>
-      </div>
-    </section>
-
-    <section class="how"><div class="wrap"><div class="section-head"><h2>One property. One clear next move.</h2><p>Useful first. Contact information only when you’re actually interested.</p></div><div class="steps"><article><span>01</span><h3>Analyze the home</h3><p>Paste the property. No account. No long form.</p></article><article><span>02</span><h3>Get the snapshot</h3><p>Price context, market pressure, flags, value drivers and what to verify.</p></article><article><span>03</span><h3>See it fast</h3><p>Request the showing and your full AI Buyer Brief starts at the same time.</p></article></div></div></section>
-    <section class="closing"><div class="wrap"><div class="closing-card"><div><h2>You find the home. We help you decide — and get you inside.</h2><p>Toronto + York + Peel + Durham + Halton.</p></div><button class="white-btn" type="button" data-scroll="#top">Analyze a Home</button></div></div></section>
-  </main>
-
-  <footer><div class="wrap footer-grid"><p>Toronto House Market. Real estate services through <strong>CENTURY 21 Leading Edge Realty Inc. Brokerage</strong>. Showing timing depends on listing, seller and property-access availability.</p><p>Eligible buyers may receive up to $10,000 cashback. Eligibility and amount depend on the transaction.</p></div></footer>
-
-  <div id="leadModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal-card"><button class="close-btn" id="closeModal" type="button" aria-label="Close">×</button>
-      <div id="leadFormPanel"><div class="eyebrow">⚡ SEE THIS HOME</div><h2>Let’s get you inside.</h2><p class="modal-copy">Minimal details. We’ll take it from here.</p>
-        <form id="leadForm" class="lead-form"><input type="hidden" name="property_input" id="modalProperty" /><input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off" aria-hidden="true" /><label>PROPERTY<input id="modalPropertyDisplay" readonly /></label><div class="two-col"><label>NAME<input name="name" autocomplete="name" required /></label><label>MOBILE<input name="mobile" autocomplete="tel" inputmode="tel" required /></label></div><div class="two-col"><label>EMAIL<input name="email" type="email" autocomplete="email" /></label><label>WHEN DO YOU WANT TO SEE IT?<select name="showing_timing"><option value="asap">ASAP</option><option value="few_hours">Within a few hours</option><option value="later_today">Later today</option><option value="within_24h">Within 24 hours</option></select></label></div><div class="cashback">Eligible buyers may receive <strong>up to $10,000 cashback</strong>. Eligibility and amount depend on the transaction.</div><p id="leadError" class="form-error hidden"></p><button id="leadSubmit" class="primary-btn full" type="submit">Request Showing + Full AI Brief</button><small class="service-note">Current Realtor response target: within 5 minutes during service hours. Showing time is subject to property availability.</small></form>
-      </div>
-      <div id="leadSuccessPanel" class="success-panel hidden"><div class="success-check">✓</div><h2>We’re on it.</h2><p>Your showing request and full Buyer Brief are now moving at the same time.</p><div class="status-list"><div><span>1</span><p><strong>Showing request routed</strong><small>Your assigned Realtor workflow has started.</small></p></div><div><span>AI</span><p><strong>Full AI Buyer Brief started</strong><small>Deeper property intelligence runs in parallel.</small></p></div><div><span>→</span><p><strong>Next: Realtor contact</strong><small>We confirm access and work toward the earliest available showing.</small></p></div></div><button class="primary-btn full" type="button" id="doneButton">Done</button></div>
-    </div>
-  </div>
-  <script src="/app.js"></script>
-</body>
-</html>
+<header class="site-header"><div class="wrap nav"><a class="brand" href="#top"><span class="brand-mark">THM</span><span>Toronto House Market</span></a><div class="nav-right"><div class="brokerage">Real estate services through<br><strong>CENTURY 21 Leading Edge Realty Inc. Brokerage</strong></div><button class="outline-btn" type="button" data-scroll="#top">Analyze a Home</button></div></div></header>
+<main id="top">
+<section class="hero"><div class="wrap hero-inner"><div class="eyebrow">⚡ FAST SHOWING + AI BUYER BRIEF</div><h1>Found a home?<br><span>See it fast. Know what you’re walking into.</span></h1><p class="hero-copy">Paste the MLS number, address, or listing link. If it is not currently for sale, THM checks up to 10 years of available MLS history and builds an indicative price opinion.</p><form id="analysisForm" class="search-box"><input id="propertyInput" name="property" autocomplete="off" placeholder="MLS #, address, or Realtor.ca link" required><button class="primary-btn" type="submit">Analyze This Home</button></form><div class="hero-note">Instant Buyer Decision Snapshot · No registration required</div><div class="proof-row"><span>For-sale status</span><span>Price context</span><span>10-year MLS history</span></div></div></section>
+<section class="value-strip"><div class="wrap value-grid"><div><strong>Analyze first</strong><span>Get useful property context before we ask for your number.</span></div><div><strong>On or off market</strong><span>Active listing or historical MLS-based value context.</span></div><div><strong>Move intelligently</strong><span>Showing when listed; value review when off market.</span></div></div></section>
+<section id="snapshotSection" class="snapshot hidden"><div class="wrap snapshot-wrap"><div class="section-kicker-row"><div><div class="eyebrow">✦ INSTANT BUYER DECISION SNAPSHOT</div><h2 id="snapshotProperty">Selected property</h2><p id="snapshotMeta">A fast first read — no registration.</p></div><span class="free-pill">NO REGISTRATION</span></div>
+<div class="snapshot-shell">
+<div id="propertySummary" class="property-summary hidden"><div><div class="summary-label-row"><span class="mini-label" id="listingLabel">LIVE LISTING</span><span id="marketStatusPill" class="market-status-pill is-live">FOR SALE</span></div><h3 id="liveAddress">—</h3><p id="liveDetails">—</p></div><div class="listing-price" id="livePrice">—</div></div>
+<div id="marketIntel" class="market-intel hidden"><div class="pulse-title"><span>THM MARKET PULSE</span><small id="matchMethod">THM Similarity Engine v2</small></div><div class="pulse-grid"><div class="intel-item offer-intel"><span class="mini-label">STATUS / OFFER</span><strong id="offerTimingValue">Checking…</strong><small id="offerTimingNote">Checking property status.</small></div><div class="intel-item"><span class="mini-label">THM VALUE RANGE</span><strong id="soldRangeValue">Checking…</strong><small id="soldRangeNote">Building the closest market range.</small></div><div class="intel-item"><span class="mini-label">LATEST VERIFIED SOLD</span><strong id="latestSoldValue">Checking…</strong><small id="latestSoldNote">Price + sold date when available.</small></div><div class="intel-item"><span class="mini-label">LISTING / HISTORY</span><strong id="listingTempoValue">Checking…</strong><small id="listingTempoNote">Current listing or 10-year MLS history.</small></div></div></div>
+<div class="snapshot-card"><div class="snapshot-grid"><article><span class="mini-label">MARKET POSITION</span><strong id="priceSignal">Analyzing price</strong><p id="priceSignalText">Building the closest available market set.</p></article><article><span class="mini-label">COMP BASIS</span><strong id="marketSignal">Finding matches</strong><p id="marketSignalText">Micro-area, property type, size, lot, utility and recency.</p></article><article><span class="mini-label">PROPERTY FLAGS</span><strong id="flagSignal">What to verify</strong><p id="flagSignalText">Surface details that can change value or strategy.</p></article><article><span class="mini-label">VALUE DRIVERS</span><strong id="valueSignal">What supports value</strong><p id="valueSignalText">Lot, layout, parking, condition and useful property features.</p></article><article><span class="mini-label">PROPERTY FOCUS</span><strong id="showingSignal">Property focus</strong><p id="showingSignalText">The most useful thing to verify next.</p></article><article><span class="mini-label">NEXT MOVE</span><strong id="nextMoveSignal">Clear next step</strong><p id="nextMoveText">A practical buyer action — not a fake score.</p></article></div><div class="decision-bar"><div><span class="mini-label">NEXT STEP</span><h3 id="decisionTitle">See this home. Get the full AI Buyer Brief.</h3><p id="decisionText">We start arranging the earliest available showing while deeper analysis runs in parallel.</p></div><button class="white-btn" id="seeHomeButton" type="button">See This Home →</button></div></div>
+</div><p class="disclaimer">AI-assisted preliminary analysis for buyer education and decision support. THM ranges are similarity- and recency-weighted screening estimates, not appraisals or CMAs. Off-market opinions may use up to 10 years of available MLS history and time-adjust older list-price records when verified sold prices are not exposed by the IDX feed. Offer timing, sold information, property condition, legal status, permits and other material matters require professional verification.</p></div></section>
+<section class="how"><div class="wrap"><div class="section-head"><h2>One property. One clear next move.</h2><p>Useful first. Contact information only when you want a showing or deeper review.</p></div><div class="steps"><article><span>01</span><h3>Identify the home</h3><p>MLS number, address or listing link.</p></article><article><span>02</span><h3>Read the market context</h3><p>Active status, history, value range, flags and closest matches.</p></article><article><span>03</span><h3>Take the right action</h3><p>See it fast if listed. Request a deeper value review if it is off market.</p></article></div></div></section>
+<section class="closing"><div class="wrap"><div class="closing-card"><div><h2>You find the home. We help you understand it — listed or not.</h2><p>Toronto + York + Peel + Durham + Halton.</p></div><button class="white-btn" type="button" data-scroll="#top">Analyze a Home</button></div></div></section>
+</main>
+<footer><div class="wrap footer-grid"><p>Toronto House Market. Real estate services through <strong>CENTURY 21 Leading Edge Realty Inc. Brokerage</strong>. Showing timing depends on listing, seller and property-access availability.</p><p>Eligible buyers may receive up to $10,000 cashback. Eligibility and amount depend on the transaction.</p></div></footer>
+<div id="leadModal" class="modal-backdrop hidden" role="dialog" aria-modal="true"><div class="modal-card"><button class="close-btn" id="closeModal" type="button">×</button><div id="leadFormPanel"><div class="eyebrow" id="modalEyebrow">⚡ SEE THIS HOME</div><h2 id="modalTitle">Let’s get you inside.</h2><p class="modal-copy">Minimal details. We’ll take it from here.</p><form id="leadForm" class="lead-form"><input type="hidden" name="property_input" id="modalProperty"><input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off" aria-hidden="true"><label>PROPERTY<input id="modalPropertyDisplay" readonly></label><div class="two-col"><label>NAME<input name="name" autocomplete="name" required></label><label>MOBILE<input name="mobile" autocomplete="tel" inputmode="tel" required></label></div><div class="two-col"><label>EMAIL<input name="email" type="email" autocomplete="email"></label><label><span id="nextStepLabel">WHEN DO YOU WANT TO SEE IT?</span><select id="showingTiming" name="showing_timing"><option value="asap">ASAP</option><option value="few_hours">Within a few hours</option><option value="later_today">Later today</option><option value="within_24h">Within 24 hours</option></select></label></div><div class="cashback">Eligible buyers may receive <strong>up to $10,000 cashback</strong>. Eligibility and amount depend on the transaction.</div><p id="leadError" class="form-error hidden"></p><button id="leadSubmit" class="primary-btn full" type="submit">Request Showing + Full AI Brief</button><small class="service-note">Showing time is subject to property availability. Off-market value opinions are preliminary and require Realtor verification.</small></form></div><div id="leadSuccessPanel" class="success-panel hidden"><div class="success-check">✓</div><h2>We’re on it.</h2><p>Your request has been received.</p><div class="status-list"><div><span>1</span><p><strong>Request routed</strong><small>Your assigned Realtor workflow has started.</small></p></div><div><span>AI</span><p><strong>Full review started</strong><small>Deeper property intelligence runs in parallel.</small></p></div></div><button class="primary-btn full" type="button" id="doneButton">Done</button></div></div></div>
+<script src="/app.js"></script>
+</body></html>
