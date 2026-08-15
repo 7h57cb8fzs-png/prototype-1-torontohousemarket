@@ -2,28 +2,31 @@ const $ = (id) => document.getElementById(id);
 
 const analysisForm = $("analysisForm");
 const propertyInput = $("propertyInput");
+const inputStatus = $("inputStatus");
 const snapshotSection = $("snapshotSection");
 const snapshotProperty = $("snapshotProperty");
 const snapshotMeta = $("snapshotMeta");
-const propertySummary = $("propertySummary");
-const marketIntel = $("marketIntel");
-const liveAddress = $("liveAddress");
-const liveDetails = $("liveDetails");
-const livePrice = $("livePrice");
-const listingLabel = $("listingLabel");
+const resultEyebrow = $("resultEyebrow");
+const linkValidationBadge = $("linkValidationBadge");
 const marketStatusPill = $("marketStatusPill");
-const matchMethod = $("matchMethod");
-const offerTimingValue = $("offerTimingValue");
-const offerTimingNote = $("offerTimingNote");
-const soldRangeValue = $("soldRangeValue");
-const soldRangeNote = $("soldRangeNote");
-const latestSoldValue = $("latestSoldValue");
-const latestSoldNote = $("latestSoldNote");
-const listingTempoValue = $("listingTempoValue");
-const listingTempoNote = $("listingTempoNote");
-const decisionTitle = $("decisionTitle");
-const decisionText = $("decisionText");
+const mlsBadge = $("mlsBadge");
+const liveAddress = $("liveAddress");
+const livePrice = $("livePrice");
+const liveDetails = $("liveDetails");
+const activeActionBox = $("activeActionBox");
+const offMarketActionBox = $("offMarketActionBox");
 const seeHomeButton = $("seeHomeButton");
+const deepReportButton = $("deepReportButton");
+const sellerReportButton = $("sellerReportButton");
+const detailsGrid = $("detailsGrid");
+const remarksToggle = $("remarksToggle");
+const listingRemarks = $("listingRemarks");
+
+const photoPlaceholder = $("photoPlaceholder");
+const photoMainButton = $("photoMainButton");
+const mainPhoto = $("mainPhoto");
+const photoThumbs = $("photoThumbs");
+const photoCountBadge = $("photoCountBadge");
 
 const leadModal = $("leadModal");
 const closeModal = $("closeModal");
@@ -33,15 +36,34 @@ const leadFormPanel = $("leadFormPanel");
 const leadSuccessPanel = $("leadSuccessPanel");
 const modalProperty = $("modalProperty");
 const modalPropertyDisplay = $("modalPropertyDisplay");
-const leadSubmit = $("leadSubmit");
-const leadError = $("leadError");
+const leadMode = $("leadMode");
 const modalEyebrow = $("modalEyebrow");
 const modalTitle = $("modalTitle");
+const modalCopy = $("modalCopy");
 const nextStepLabel = $("nextStepLabel");
 const showingTiming = $("showingTiming");
+const sellerTimelineWrap = $("sellerTimelineWrap");
+const sellerTimeline = $("sellerTimeline");
+const leadSubmit = $("leadSubmit");
+const leadError = $("leadError");
+const serviceNote = $("serviceNote");
+const successTitle = $("successTitle");
+const successCopy = $("successCopy");
+const successStepOne = $("successStepOne");
+const successStepOneNote = $("successStepOneNote");
+
+const galleryModal = $("galleryModal");
+const galleryImage = $("galleryImage");
+const galleryCounter = $("galleryCounter");
+const galleryClose = $("galleryClose");
+const galleryPrev = $("galleryPrev");
+const galleryNext = $("galleryNext");
 
 let activeProperty = "";
 let liveListing = null;
+let photos = [];
+let galleryIndex = 0;
+let currentLeadMode = "showing";
 
 document.querySelectorAll("[data-scroll]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -67,165 +89,48 @@ function compactMoney(value) {
 
 function formatDate(value) {
   if (!value) return "—";
-  const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: "numeric" }).format(date);
+  const d = new Date(value.length === 10 ? `${value}T12:00:00` : value);
+  if (Number.isNaN(d.getTime())) return value;
+  return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: "numeric" }).format(d);
 }
 
 function detectMlsKey(value) {
-  const match = value.trim().toUpperCase().match(/\b[A-Z]\d{7,9}\b/);
+  const match = String(value || "").trim().toUpperCase().match(/\b[A-Z]\d{7,9}\b/);
   return match ? match[0] : null;
 }
 
 function setText(id, title, note) {
-  $(id).textContent = title;
+  const el = $(id);
+  if (el) el.textContent = title || "—";
   const noteEl = $(`${id}Text`);
-  if (noteEl) noteEl.textContent = note;
+  if (noteEl) noteEl.textContent = note || "";
 }
 
-function setBaseSnapshot() {
-  setText("priceSignal", "Analyzing price", "Building the closest available market set.");
-  setText("marketSignal", "Finding matches", "Micro-area, property type, size, lot, utility and recency.");
-  setText("flagSignal", "What to verify", "Surface details that can change value or strategy.");
-  setText("valueSignal", "What supports value", "Lot, layout, parking, condition and useful property features.");
-  setText("showingSignal", "Property focus", "The most useful thing to verify next.");
-  setText("nextMoveSignal", "Clear next step", "A practical buyer action — not a fake score.");
+function resetResult() {
+  linkValidationBadge.classList.add("hidden");
+  photoPlaceholder.classList.remove("hidden");
+  photoMainButton.classList.add("hidden");
+  photoThumbs.classList.add("hidden");
+  photoThumbs.innerHTML = "";
+  photos = [];
+  detailsGrid.innerHTML = "";
+  remarksToggle.classList.add("hidden");
+  listingRemarks.classList.add("hidden");
+  listingRemarks.textContent = "";
 
-  matchMethod.textContent = "THM Similarity Engine v2";
-  offerTimingValue.textContent = "Checking…";
-  offerTimingNote.textContent = "Checking property status and offer instructions.";
-  soldRangeValue.textContent = "Checking…";
-  soldRangeNote.textContent = "Building the closest market range.";
-  latestSoldValue.textContent = "Checking…";
-  latestSoldNote.textContent = "Verified sold when available.";
-  listingTempoValue.textContent = "Checking…";
-  listingTempoNote.textContent = "Current listing or 10-year MLS history.";
-}
+  setText("priceSignal", "Analyzing", "Building the closest market context.");
+  setText("marketSignal", "Checking", "Reading listing freshness and nearby competition.");
+  setText("flagSignal", "Checking", "Looking for details that can change value or strategy.");
+  setText("showingSignal", "Checking", "What to verify when you are physically inside.");
 
-function renderMarketPulse(listing) {
-  marketIntel.classList.remove("hidden");
-  const comp = listing.comparableContext;
-  const opinion = listing.priceOpinion;
-
-  offerTimingValue.textContent = listing.offerTiming?.label || (listing.forSale ? "Offers anytime*" : "Not for sale");
-  offerTimingNote.textContent = listing.offerTiming?.note || "Verify status before relying on it.";
-
-  if (opinion?.available) {
-    soldRangeValue.textContent = `${compactMoney(opinion.low)} – ${compactMoney(opinion.high)}`;
-    soldRangeNote.textContent = `${listing.forSale ? "THM comp range" : "THM price opinion"} · ${opinion.confidence} confidence`;
-    matchMethod.textContent = `${comp?.method || "THM Similarity Engine v2"} · ${comp?.sourceLabel || "market history"}`;
-  } else {
-    soldRangeValue.textContent = "Range unavailable";
-    soldRangeNote.textContent = opinion?.note || "Not enough reliable data to force a number.";
-    matchMethod.textContent = comp?.method || "THM Similarity Engine v2";
-  }
-
-  const sold = comp?.latestSold || listing.historySummary?.latestSold;
-  if (sold?.price && sold?.date) {
-    latestSoldValue.textContent = `${compactMoney(sold.price)} · ${formatDate(sold.date)}`;
-    latestSoldNote.textContent = "Verified sold price + date from available MLS data";
-  } else if (!listing.forSale && listing.historySummary?.appearanceCount) {
-    latestSoldValue.textContent = `${listing.historySummary.appearanceCount} MLS record${listing.historySummary.appearanceCount === 1 ? "" : "s"}`;
-    latestSoldNote.textContent = "No verified sold price exposed by this IDX feed";
-  } else {
-    latestSoldValue.textContent = "Sold not exposed";
-    latestSoldNote.textContent = "We do not substitute an asking price for a sold price";
-  }
-
-  if (listing.forSale) {
-    const days = listing.daysLive;
-    listingTempoValue.textContent = typeof days === "number" ? (days === 0 ? "Listed today" : `${days} day${days === 1 ? "" : "s"} live`) : (listing.status || "Active");
-    listingTempoNote.textContent = `${listing.status || "Active"} · listing freshness affects urgency`;
-  } else {
-    const h = listing.historySummary;
-    listingTempoValue.textContent = h?.lastSeenDate ? `Last MLS: ${formatDate(h.lastSeenDate)}` : "No active listing";
-    listingTempoNote.textContent = h?.lastStatus ? `Last status: ${h.lastStatus} · searched 10 years` : "Searched up to 10 years of MLS history";
-  }
-}
-
-function renderListing(listing) {
-  liveListing = listing;
-  propertySummary.classList.remove("hidden");
-  liveAddress.textContent = listing.address || activeProperty;
-
-  const facts = [
-    listing.propertySubType,
-    listing.beds != null ? `${listing.beds} bed` : null,
-    listing.baths != null ? `${listing.baths} bath` : null,
-    listing.livingAreaRange || null
-  ].filter(Boolean);
-  liveDetails.textContent = facts.join(" · ") || "Property identified from MLS history";
-
-  marketStatusPill.textContent = listing.forSale ? "FOR SALE" : "NOT FOR SALE";
-  marketStatusPill.className = `market-status-pill ${listing.forSale ? "is-live" : "is-off"}`;
-  listingLabel.textContent = listing.forSale ? "LIVE LISTING" : "OFF-MARKET PROPERTY";
-
-  if (listing.forSale) {
-    livePrice.textContent = money(listing.listPrice);
-  } else if (listing.priceOpinion?.available) {
-    livePrice.innerHTML = `<span class="price-caption">THM PRICE OPINION</span>${money(listing.priceOpinion.midpoint)}`;
-  } else {
-    livePrice.innerHTML = `<span class="price-caption">STATUS</span>Not for sale`;
-  }
-
-  renderMarketPulse(listing);
-
-  const comp = listing.comparableContext;
-  const opinion = listing.priceOpinion;
-
-  if (listing.forSale) {
-    if (opinion?.available && listing.listPrice) {
-      const delta = (listing.listPrice - opinion.midpoint) / opinion.midpoint;
-      const pct = Math.abs(delta * 100).toFixed(1).replace(".0", "");
-      if (listing.listPrice < opinion.low) setText("priceSignal", "Below THM range", `${pct}% below midpoint · ${compactMoney(opinion.low)}–${compactMoney(opinion.high)}.`);
-      else if (listing.listPrice > opinion.high) setText("priceSignal", "Above THM range", `${pct}% above midpoint · ${compactMoney(opinion.low)}–${compactMoney(opinion.high)}.`);
-      else setText("priceSignal", "Inside THM range", `${pct}% from midpoint · ${compactMoney(opinion.low)}–${compactMoney(opinion.high)}.`);
-    } else {
-      setText("priceSignal", `${money(listing.listPrice)} asking`, "The current match set is too thin for a responsible range.");
-    }
-  } else {
-    setText("priceSignal", "Not for sale", opinion?.available
-      ? `THM indicative value: ${compactMoney(opinion.low)}–${compactMoney(opinion.high)} · midpoint ${compactMoney(opinion.midpoint)}.`
-      : "No active listing and not enough reliable data for a price opinion.");
-  }
-
-  if (comp?.available) {
-    setText("marketSignal", `${comp.matchCount} closest matches`, `${comp.basis || "Similarity + recency weighted"} · ${comp.sourceLabel}.`);
-  } else {
-    setText("marketSignal", "10-year history scan", "THM checked the available neighbourhood/property history without forcing weak comps.");
-  }
-
-  const flags = [];
-  if (Array.isArray(listing.basement) && listing.basement.length) flags.push(listing.basement.join(", "));
-  if (listing.kitchensTotal > 1) flags.push(`${listing.kitchensTotal} kitchens`);
-  if (listing.remarks && /permit|approval|zoning|legal/i.test(listing.remarks)) flags.push("Verify approvals / permits");
-  setText("flagSignal", flags[0] || (listing.forSale ? "No obvious listing flag" : "History-based profile"),
-    flags.length > 1 ? flags.slice(1).join(" · ") : (listing.forSale ? "Still verify condition and material facts." : "Off-market profile uses the most recent MLS record found in the 10-year search."));
-
-  const valueBits = [];
-  if (listing.lotWidth && listing.lotDepth) valueBits.push(`${listing.lotWidth} × ${listing.lotDepth} ft lot`);
-  if (listing.parkingTotal) valueBits.push(`${listing.parkingTotal} parking`);
-  if (listing.garageType) valueBits.push(listing.garageType);
-  setText("valueSignal", valueBits[0] || "Property utility", valueBits.slice(1).join(" · ") || "Focus on features that materially support utility and resale value.");
-
-  if (listing.showingFocus) setText("showingSignal", listing.showingFocus.title, listing.showingFocus.note);
-
-  if (!listing.forSale) {
-    setText("nextMoveSignal", "Value review, not a showing", "This property is not currently for sale. Use the THM range as a starting point, then verify condition and ownership context before relying on it.");
-    decisionTitle.textContent = "Not for sale. Want a deeper value review?";
-    decisionText.textContent = "We can refine the range with a Realtor review, property condition and more detailed local comparables.";
-    seeHomeButton.textContent = "Get Value Review →";
-  } else if (listing.offerTiming?.type === "scheduled") {
-    setText("nextMoveSignal", "See it before offer time", "Inspect early enough to verify the property before deciding on offer strategy.");
-    decisionTitle.textContent = "See this home. Get the full AI Buyer Brief.";
-    decisionText.textContent = "We start arranging the earliest available showing while deeper analysis runs in parallel.";
-    seeHomeButton.textContent = "See This Home →";
-  } else {
-    setText("nextMoveSignal", "Worth seeing", "Use the showing to validate condition, layout and the details that can change your offer strategy.");
-    decisionTitle.textContent = "See this home. Get the full AI Buyer Brief.";
-    decisionText.textContent = "We start arranging the earliest available showing while deeper analysis runs in parallel.";
-    seeHomeButton.textContent = "See This Home →";
-  }
+  $("soldRangeValue").textContent = "—";
+  $("soldRangeNote").textContent = "Analyzing matches";
+  $("compCountValue").textContent = "—";
+  $("compCountNote").textContent = "Similarity + recency weighted";
+  $("offerTimingValue").textContent = "—";
+  $("offerTimingNote").textContent = "Checking";
+  $("listingTempoValue").textContent = "—";
+  $("listingTempoNote").textContent = "Checking";
 }
 
 analysisForm.addEventListener("submit", async (event) => {
@@ -233,83 +138,297 @@ analysisForm.addEventListener("submit", async (event) => {
   activeProperty = propertyInput.value.trim();
   if (!activeProperty) return;
 
-  setBaseSnapshot();
+  resetResult();
   liveListing = null;
-  propertySummary.classList.add("hidden");
-  marketIntel.classList.add("hidden");
+  inputStatus.className = "input-status";
+  inputStatus.textContent = "Checking live MLS, link validity and property history…";
   snapshotProperty.textContent = activeProperty;
-  snapshotMeta.textContent = "Checking live MLS + up to 10 years of property history…";
+  snapshotMeta.textContent = "Checking live MLS…";
   snapshotSection.classList.remove("hidden");
-  setTimeout(() => snapshotSection.scrollIntoView({ behavior: "smooth", block: "start" }), 70);
+  setTimeout(() => snapshotSection.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
 
-  const listingKey = detectMlsKey(activeProperty);
-  const apiUrl = listingKey
-    ? `/api/property?listingKey=${encodeURIComponent(listingKey)}`
+  const mls = detectMlsKey(activeProperty);
+  const apiUrl = mls && !/^https?:\/\//i.test(activeProperty)
+    ? `/api/property?listingKey=${encodeURIComponent(mls)}`
     : `/api/property?q=${encodeURIComponent(activeProperty)}`;
 
   try {
     const response = await fetch(apiUrl);
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || "Unable to identify this property.");
-    renderListing(result.property);
-    snapshotProperty.textContent = result.property.address || activeProperty;
-    snapshotMeta.textContent = result.property.forSale
-      ? `${result.property.listingKey ? `MLS ${result.property.listingKey} · ` : ""}Live property intelligence`
-      : `NOT FOR SALE · THM checked up to 10 years of available MLS history`;
+
+    liveListing = result.property;
+    renderListing(liveListing);
+
+    inputStatus.className = "input-status ok";
+    inputStatus.textContent = liveListing.inputValidation?.label || "Property matched to live MLS data.";
+    snapshotProperty.textContent = liveListing.address || activeProperty;
+    snapshotMeta.textContent = liveListing.forSale
+      ? `${liveListing.listingKey ? `MLS ${liveListing.listingKey} · ` : ""}active listing · FastShow available`
+      : "Not currently for sale · historical MLS context available";
   } catch (error) {
-    snapshotMeta.textContent = error instanceof Error ? error.message : "Property intelligence could not be loaded.";
+    inputStatus.className = "input-status error";
+    inputStatus.textContent = error instanceof Error ? error.message : "We could not validate that property.";
+    snapshotMeta.textContent = inputStatus.textContent;
   }
 });
 
-function openLeadModal() {
+function renderListing(listing) {
+  resultEyebrow.textContent = listing.forSale ? "LIVE PROPERTY · FASTSHOW READY" : "OFF-MARKET PROPERTY INTELLIGENCE";
+
+  if (listing.inputValidation) {
+    linkValidationBadge.textContent = `✓ ${listing.inputValidation.label}`;
+    linkValidationBadge.classList.remove("hidden");
+  }
+
+  marketStatusPill.textContent = listing.forSale ? "FOR SALE" : "NOT FOR SALE";
+  marketStatusPill.className = `market-status-pill ${listing.forSale ? "is-live" : "is-off"}`;
+  mlsBadge.textContent = listing.listingKey ? `MLS ${listing.listingKey}` : "MLS HISTORY";
+
+  liveAddress.textContent = listing.address || activeProperty;
+  livePrice.innerHTML = listing.forSale
+    ? money(listing.listPrice)
+    : listing.priceOpinion?.available
+      ? `<span class="price-caption">THM INDICATIVE VALUE</span>${money(listing.priceOpinion.midpoint)}`
+      : `<span class="price-caption">STATUS</span>Not for sale`;
+
+  const facts = [
+    listing.propertySubType,
+    listing.beds != null ? `${listing.beds} bed` : null,
+    listing.baths != null ? `${listing.baths} bath` : null,
+    listing.livingAreaRange ? `${listing.livingAreaRange} sq ft` : null,
+  ].filter(Boolean);
+  liveDetails.textContent = facts.join(" · ") || "Property identified from available MLS history";
+
+  activeActionBox.classList.toggle("hidden", !listing.forSale);
+  offMarketActionBox.classList.toggle("hidden", listing.forSale);
+
+  renderPhotos(listing.photos || []);
+  renderQuickFacts(listing);
+  renderAiSnapshot(listing);
+  renderMarketPulse(listing);
+  renderDetails(listing);
+}
+
+function renderPhotos(items) {
+  photos = Array.isArray(items) ? items : [];
+  if (!photos.length) {
+    photoPlaceholder.classList.remove("hidden");
+    photoMainButton.classList.add("hidden");
+    photoThumbs.classList.add("hidden");
+    return;
+  }
+
+  photoPlaceholder.classList.add("hidden");
+  photoMainButton.classList.remove("hidden");
+  mainPhoto.src = photos[0].url;
+  photoCountBadge.textContent = `View ${photos.length} photo${photos.length === 1 ? "" : "s"}`;
+
+  const secondary = photos.slice(1, 3);
+  photoThumbs.innerHTML = secondary.map((photo, index) => `
+    <button type="button" data-photo-index="${index + 1}" aria-label="Open property photo ${index + 2}">
+      <img src="${escapeAttr(photo.url)}" alt="Property photo ${index + 2}" loading="lazy" />
+    </button>`).join("");
+  photoThumbs.classList.toggle("hidden", secondary.length === 0);
+
+  photoThumbs.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", () => openGallery(Number(button.dataset.photoIndex || 0)));
+  });
+}
+
+function renderQuickFacts(listing) {
+  $("factBeds").textContent = listing.beds ?? "—";
+  $("factBaths").textContent = listing.baths ?? "—";
+  $("factType").textContent = listing.propertySubType || listing.propertyType || "—";
+  $("factLot").textContent = listing.lotWidth && listing.lotDepth ? `${listing.lotWidth} × ${listing.lotDepth} ft` : "—";
+  $("factParking").textContent = listing.parkingTotal ?? "—";
+  $("factTax").textContent = listing.details?.annualTax ? `${money(listing.details.annualTax)}${listing.details.taxYear ? ` (${listing.details.taxYear})` : ""}` : "—";
+}
+
+function renderAiSnapshot(listing) {
+  const opinion = listing.priceOpinion;
+  const comp = listing.comparableContext;
+
+  if (listing.forSale) {
+    if (opinion?.available && listing.listPrice) {
+      if (listing.listPrice < opinion.low) setText("priceSignal", "Below THM range", `${money(listing.listPrice)} asking vs. ${compactMoney(opinion.low)}–${compactMoney(opinion.high)} THM range.`);
+      else if (listing.listPrice > opinion.high) setText("priceSignal", "Above THM range", `${money(listing.listPrice)} asking vs. ${compactMoney(opinion.low)}–${compactMoney(opinion.high)} THM range.`);
+      else setText("priceSignal", "Inside THM range", `${money(listing.listPrice)} asking sits inside ${compactMoney(opinion.low)}–${compactMoney(opinion.high)}.`);
+    } else {
+      setText("priceSignal", `${money(listing.listPrice)} asking`, "The current match set is too thin to force a price range.");
+    }
+  } else {
+    setText("priceSignal", "Not currently listed", opinion?.available
+      ? `Indicative THM value: ${compactMoney(opinion.low)}–${compactMoney(opinion.high)}.`
+      : "A deeper report can refine value using broader local and historical context.");
+  }
+
+  if (listing.forSale) {
+    const days = listing.daysLive;
+    const urgency = typeof days === "number" ? (days <= 3 ? "Fresh listing" : days <= 14 ? `${days} days live` : `${days} days on market`) : "Active listing";
+    setText("marketSignal", urgency, listing.offerTiming?.note || "Listing freshness and offer context help frame urgency.");
+  } else {
+    setText("marketSignal", "Off market", "No active for-sale listing was found. Showing is not available through THM right now.");
+  }
+
+  const flags = [];
+  if (Array.isArray(listing.basement) && listing.basement.length) flags.push(listing.basement.join(" + "));
+  if (listing.kitchensTotal > 1) flags.push(`${listing.kitchensTotal} kitchens`);
+  if (listing.remarks && /permit|approval|zoning|legal/i.test(listing.remarks)) flags.push("Verify permits / legal use");
+  setText("flagSignal", flags[0] || "Verify material facts", flags.slice(1).join(" · ") || "Condition, legal use and major systems still need in-person / professional verification.");
+
+  if (listing.showingFocus) setText("showingSignal", listing.showingFocus.title, listing.showingFocus.note);
+  else setText("showingSignal", listing.forSale ? "Condition + layout" : "Deep property review", listing.forSale ? "Use the showing to validate what photos and MLS fields cannot." : "Use history and local context to understand likely value and seller opportunity.");
+}
+
+function renderMarketPulse(listing) {
+  const opinion = listing.priceOpinion;
+  const comp = listing.comparableContext;
+
+  $("soldRangeValue").textContent = opinion?.available ? `${compactMoney(opinion.low)} – ${compactMoney(opinion.high)}` : "Range unavailable";
+  $("soldRangeNote").textContent = opinion?.available ? `${opinion.confidence || "Indicative"} confidence · ${comp?.sourceLabel || "market matches"}` : "We do not force weak comps.";
+
+  $("compCountValue").textContent = comp?.available ? `${comp.matchCount} closest matches` : "Thin match set";
+  $("compCountNote").textContent = comp?.basis || "Similarity + recency weighted";
+
+  $("offerTimingValue").textContent = listing.forSale ? (listing.offerTiming?.label || "Active") : "Not for sale";
+  $("offerTimingNote").textContent = listing.forSale ? (listing.offerTiming?.note || "Verify before relying on offer timing.") : "No active showing workflow.";
+
+  if (listing.forSale) {
+    $("listingTempoValue").textContent = typeof listing.daysLive === "number" ? (listing.daysLive === 0 ? "Listed today" : `${listing.daysLive} day${listing.daysLive === 1 ? "" : "s"} live`) : (listing.status || "Active");
+    $("listingTempoNote").textContent = listing.details?.listedAt ? `Listed ${formatDate(listing.details.listedAt)}` : "Live listing";
+  } else {
+    $("listingTempoValue").textContent = listing.historySummary?.lastSeenDate ? `Last MLS ${formatDate(listing.historySummary.lastSeenDate)}` : "10-year history scan";
+    $("listingTempoNote").textContent = listing.historySummary?.appearanceCount ? `${listing.historySummary.appearanceCount} MLS appearance${listing.historySummary.appearanceCount === 1 ? "" : "s"}` : "Historical MLS context";
+  }
+}
+
+function renderDetails(listing) {
+  const d = listing.details || {};
+  const items = [
+    ["STYLE", joinValue(d.architecturalStyle) || "—"],
+    ["CONSTRUCTION", joinValue(d.construction) || "—"],
+    ["HEATING", joinValue(d.heating) || "—"],
+    ["COOLING", joinValue(d.cooling) || "—"],
+    ["BASEMENT", Array.isArray(listing.basement) && listing.basement.length ? listing.basement.join(", ") : "—"],
+    ["PARKING", joinValue(d.parking) || (listing.garageType ? `${listing.garageType} garage` : "—")],
+    ["POSSESSION", d.possession || "—"],
+    ["CROSS STREET", d.crossStreet || "—"],
+    ["INTERIOR", joinValue(d.interior) || "—"],
+    ["POOL", joinValue(d.pool) || "—"],
+    ["DIRECTION", d.direction || "—"],
+    ["LISTING OFFICE", d.listingOffice || "—"],
+  ];
+
+  detailsGrid.innerHTML = items.map(([label, value]) => `<div class="detail-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`).join("");
+
+  if (listing.remarks) {
+    listingRemarks.textContent = listing.remarks;
+    remarksToggle.classList.remove("hidden");
+  }
+}
+
+remarksToggle.addEventListener("click", () => {
+  const opening = listingRemarks.classList.contains("hidden");
+  listingRemarks.classList.toggle("hidden");
+  remarksToggle.textContent = opening ? "Hide listing remarks ↑" : "Read listing remarks ↓";
+});
+
+seeHomeButton.addEventListener("click", () => openLeadModal("showing"));
+deepReportButton.addEventListener("click", () => openLeadModal("buyer_offmarket"));
+sellerReportButton.addEventListener("click", () => openLeadModal("seller"));
+
+document.querySelectorAll("[data-addon]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const addon = button.dataset.addon;
+    if (addon === "seller") openLeadModal("seller");
+    else if (liveListing?.forSale) openLeadModal("showing", addon);
+    else openLeadModal("buyer_offmarket", addon);
+  });
+});
+
+function openLeadModal(mode, addon = null) {
+  if (!liveListing) return;
+  currentLeadMode = mode;
+  leadMode.value = mode;
   modalProperty.value = activeProperty;
-  modalPropertyDisplay.value = liveListing?.address || activeProperty;
+  modalPropertyDisplay.value = liveListing.address || activeProperty;
   leadForm.reset();
   modalProperty.value = activeProperty;
-  modalPropertyDisplay.value = liveListing?.address || activeProperty;
+  modalPropertyDisplay.value = liveListing.address || activeProperty;
+  leadMode.value = mode;
   leadError.classList.add("hidden");
   leadError.textContent = "";
   leadFormPanel.classList.remove("hidden");
   leadSuccessPanel.classList.add("hidden");
+  sellerTimelineWrap.classList.add("hidden");
   leadSubmit.disabled = false;
 
-  if (liveListing?.forSale === false) {
-    modalEyebrow.textContent = "✦ VALUE REVIEW";
-    modalTitle.textContent = "Refine this off-market value.";
-    nextStepLabel.textContent = "NEXT STEP";
-    showingTiming.innerHTML = `<option value="value_review">Full value review</option><option value="contact_me">Contact me about this property</option>`;
-    leadSubmit.textContent = "Request Full Value Review";
-  } else {
-    modalEyebrow.textContent = "⚡ SEE THIS HOME";
-    modalTitle.textContent = "Let’s get you inside.";
+  if (mode === "showing") {
+    modalEyebrow.textContent = "⚡ THM FASTSHOW · 1–24H TARGET";
+    modalTitle.textContent = addon ? `${addonLabel(addon)} + fast showing.` : "Let’s get you inside.";
+    modalCopy.textContent = "We route your request immediately. Your full AI Buyer Brief starts in parallel.";
     nextStepLabel.textContent = "WHEN DO YOU WANT TO SEE IT?";
-    showingTiming.innerHTML = `<option value="asap">ASAP</option><option value="few_hours">Within a few hours</option><option value="later_today">Later today</option><option value="within_24h">Within 24 hours</option>`;
-    leadSubmit.textContent = "Request Showing + Full AI Brief";
+    showingTiming.innerHTML = `<option value="asap">ASAP</option><option value="within_6h">Within 6 hours</option><option value="within_24h">Within 24 hours</option>`;
+    leadSubmit.textContent = addon ? `Request Showing + ${addonLabel(addon)}` : "Request Fast Showing + AI Brief";
+    serviceNote.textContent = "Target showing window: 1–24 hours, subject to listing/seller availability. Current Realtor response target: within 5 minutes during service hours.";
+  } else if (mode === "seller") {
+    modalEyebrow.textContent = "✦ SELLER AI REPORT";
+    modalTitle.textContent = "Own this home? See the seller side.";
+    modalCopy.textContent = "Get an AI-assisted value range, market position and sale-readiness review — without putting the home on the market.";
+    nextStepLabel.textContent = "REPORT TYPE";
+    showingTiming.innerHTML = `<option value="seller_report">Seller AI Deep Report</option>`;
+    sellerTimelineWrap.classList.remove("hidden");
+    leadSubmit.textContent = "Request Seller AI Report";
+    serviceNote.textContent = "Preliminary AI-assisted value review. A Realtor review is required before relying on pricing or listing strategy.";
+  } else {
+    modalEyebrow.textContent = "✦ OFF-MARKET AI REPORT";
+    modalTitle.textContent = addon ? `${addonLabel(addon)} for this property.` : "Go deeper on this off-market home.";
+    modalCopy.textContent = "No active listing was found. We can still build a deeper property-value and history report.";
+    nextStepLabel.textContent = "NEXT STEP";
+    showingTiming.innerHTML = `<option value="buyer_offmarket_report">AI Deep Property Report</option><option value="buyer_offmarket_contact">Talk to a Realtor about this property</option>`;
+    leadSubmit.textContent = addon ? `Request ${addonLabel(addon)}` : "Request AI Deep Property Report";
+    serviceNote.textContent = "This property is not currently for sale. Any value range is preliminary and requires verification.";
   }
+
   leadModal.classList.remove("hidden");
 }
 
+function addonLabel(addon) {
+  if (addon === "renovation") return "Renovation Lens";
+  if (addon === "income") return "Income / Suite Lens";
+  if (addon === "offer") return "Offer Strategy";
+  return "AI Deep Report";
+}
+
 function hideLeadModal() { leadModal.classList.add("hidden"); }
-seeHomeButton.addEventListener("click", openLeadModal);
 closeModal.addEventListener("click", hideLeadModal);
 doneButton.addEventListener("click", hideLeadModal);
 leadModal.addEventListener("click", (event) => { if (event.target === leadModal) hideLeadModal(); });
-document.addEventListener("keydown", (event) => { if (event.key === "Escape") hideLeadModal(); });
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    hideLeadModal();
+    closeGallery();
+  }
+});
 
 leadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!activeProperty) return;
   const form = new FormData(leadForm);
+  let timing = String(form.get("showing_timing") || "asap");
+  if (currentLeadMode === "seller") timing = sellerTimeline.value || "seller_curious";
+
   const payload = {
     property_input: activeProperty,
     listing_key: liveListing?.listingKey || detectMlsKey(activeProperty),
     name: String(form.get("name") || "").trim(),
     mobile: String(form.get("mobile") || "").trim(),
     email: String(form.get("email") || "").trim(),
-    showing_timing: String(form.get("showing_timing") || "asap"),
+    showing_timing: timing,
     website: String(form.get("website") || "").trim(),
     page_url: window.location.href,
-    referrer: document.referrer || null
+    referrer: document.referrer || null,
   };
 
   leadSubmit.disabled = true;
@@ -317,15 +436,74 @@ leadForm.addEventListener("submit", async (event) => {
   leadError.classList.add("hidden");
 
   try {
-    const response = await fetch("/api/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const response = await fetch("/api/lead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     const result = await response.json();
     if (!response.ok || !result.ok) throw new Error(result.error || "Unable to send your request.");
+
     leadFormPanel.classList.add("hidden");
     leadSuccessPanel.classList.remove("hidden");
+
+    if (currentLeadMode === "showing") {
+      successTitle.textContent = "We’re on it.";
+      successCopy.textContent = "Your showing request and AI Buyer Brief are now moving at the same time.";
+      successStepOne.textContent = "Fast showing request routed";
+      successStepOneNote.textContent = "We’re working toward the earliest available access within the 1–24 hour target window.";
+    } else if (currentLeadMode === "seller") {
+      successTitle.textContent = "Seller report started.";
+      successCopy.textContent = "Your off-market seller request has been routed for deeper value review.";
+      successStepOne.textContent = "Seller request routed";
+      successStepOneNote.textContent = "The property will be reviewed from a seller / valuation perspective.";
+    } else {
+      successTitle.textContent = "Deep report started.";
+      successCopy.textContent = "Your off-market property request has been routed for deeper analysis.";
+      successStepOne.textContent = "Property report routed";
+      successStepOneNote.textContent = "We’ll refine the history, market context and value range.";
+    }
   } catch (error) {
     leadError.textContent = error instanceof Error ? error.message : "Unable to send your request.";
     leadError.classList.remove("hidden");
     leadSubmit.disabled = false;
-    leadSubmit.textContent = liveListing?.forSale === false ? "Request Full Value Review" : "Request Showing + Full AI Brief";
+    leadSubmit.textContent = currentLeadMode === "showing" ? "Request Fast Showing + AI Brief" : currentLeadMode === "seller" ? "Request Seller AI Report" : "Request AI Deep Property Report";
   }
 });
+
+photoMainButton.addEventListener("click", () => openGallery(0));
+galleryClose.addEventListener("click", closeGallery);
+galleryPrev.addEventListener("click", () => changeGallery(-1));
+galleryNext.addEventListener("click", () => changeGallery(1));
+galleryModal.addEventListener("click", (event) => { if (event.target === galleryModal) closeGallery(); });
+
+function openGallery(index) {
+  if (!photos.length) return;
+  galleryIndex = Math.max(0, Math.min(index, photos.length - 1));
+  renderGallery();
+  galleryModal.classList.remove("hidden");
+}
+
+function closeGallery() { galleryModal.classList.add("hidden"); }
+
+function changeGallery(delta) {
+  if (!photos.length) return;
+  galleryIndex = (galleryIndex + delta + photos.length) % photos.length;
+  renderGallery();
+}
+
+function renderGallery() {
+  galleryImage.src = photos[galleryIndex].url;
+  galleryCounter.textContent = `${galleryIndex + 1} / ${photos.length}`;
+}
+
+function joinValue(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).join(", ");
+  return value || "";
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+}
+
+function escapeAttr(value) { return escapeHtml(value); }
