@@ -457,23 +457,26 @@ async function buildComparableContext(subject, env, activeForSale) {
   else if (subject.City) base.push(`City eq '${odataString(subject.City)}'`);
   if (subject.PropertyType) base.push(`PropertyType eq '${odataString(subject.PropertyType)}'`);
 
-  const raw = await queryProperties(base, env, 220, "ModificationTimestamp desc,ListingKey desc");
-  const candidates = dedupe(raw)
+  const raw = await queryProperties(base, env, 400, "ModificationTimestamp desc,ListingKey desc");
+  let candidates = dedupe(raw)
     .filter((r) => r.ListingKey !== subject.ListingKey)
-    .filter(withinTenYears)
+    .filter(isRecentSold)
     .map((r) => normalizeComparable(subject, r))
-    .filter((c) => c.price && c.similarity >= 32)
-    .sort(compareComparable)
-    .slice(0, 10);
+    .filter((c) => c.price && c.closeDate && c.similarity >= 45)
+    .sort(compareComparable);
 
-  if (candidates.length < 3) return unavailableComp("The current MLS match set is too thin to force a range.", candidates.length);
+  if (candidates.length >= 5) {
+    const prices = candidates.map((c) => c.price).sort((a, b) => a - b);
+    const median = prices[Math.floor(prices.length / 2)];
+    candidates = candidates.filter((c) => c.price >= median * 0.55 && c.price <= median * 1.8);
+  }
 
-  const selected = candidates.slice(0, 7);
+  if (candidates.length < 3) return unavailableComp("The current recent-sold MLS match set is too thin to force a range.", candidates.length);
+
+  const selected = candidates.slice(0, 5);
   const band = weightedBand(selected);
   const avgScore = selected.reduce((sum, x) => sum + x.similarity, 0) / selected.length;
-  const soldCount = selected.filter((x) => x.source === "sold").length;
-  const activeCount = selected.filter((x) => x.source === "active").length;
-  const confidence = avgScore >= 72 && selected.length >= 5 ? "Strong" : avgScore >= 58 ? "Good" : "Indicative";
+  const confidence = avgScore >= 78 && selected.length >= 5 ? "High" : avgScore >= 64 ? "Medium" : "Low";
 
   return {
     available: true,
@@ -482,11 +485,12 @@ async function buildComparableContext(subject, env, activeForSale) {
     rangeLow: band.low,
     midpoint: band.mid,
     rangeHigh: band.high,
-    soldCount,
-    activeCount,
-    historicalCount: selected.length - soldCount - activeCount,
-    sourceLabel: soldCount >= 3 ? "sold-led match set" : activeCount >= 3 ? "live-market match set" : "blended MLS match set",
+    soldCount: selected.length,
+    activeCount: 0,
+    historicalCount: 0,
+    sourceLabel: "recent sold MLS comparables",
     basis: buildBasisText(subject, selected),
+    comparables: selected.map(publicComparable),
     activeForSale,
   };
 }
@@ -515,6 +519,32 @@ function normalizeComparable(subject, r) {
     similarity: similarityScore(subject, r),
     recency: recencyWeight(recordDate),
     reliability: source === "sold" ? 1 : source === "active" ? 0.82 : 0.58,
+    closeDate: dateOnly(firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"])),
+  };
+}
+
+function isRecentSold(r) {
+  const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""}`;
+  const price = firstFiniteNumber(r, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"]);
+  const date = validDate(firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"]));
+  if (!/closed|sold/i.test(status) || !price || !date) return false;
+  const ageDays = (Date.now() - date.getTime()) / 86400000;
+  return ageDays >= 0 && ageDays <= 730;
+}
+
+function publicComparable(c) {
+  const r = c.record || {};
+  return {
+    listingKey: r.ListingKey || null,
+    address: r.InternetAddressDisplayYN === false ? "Address display restricted" : (r.UnparsedAddress || buildAddress(r)),
+    soldPrice: c.price,
+    soldDate: c.closeDate,
+    beds: numberOrNull(r.BedroomsTotal),
+    baths: numberOrNull(r.BathroomsTotalInteger),
+    livingAreaRange: r.LivingAreaRange || null,
+    lotWidth: numberOrNull(r.LotWidth),
+    lotDepth: numberOrNull(r.LotDepth),
+    similarity: c.similarity,
   };
 }
 
@@ -656,6 +686,7 @@ async function queryProperties(filters, env, top = 100, orderby = "ModificationT
 }
 
 async function handleLead(request, env) {
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) return json({ ok: false, error: "Lead system is not configured." }, 503);
   let payload;
   try { payload = await request.json(); }
   catch { return json({ ok: false, error: "Invalid request." }, 400); }
@@ -675,12 +706,12 @@ async function handleLead(request, env) {
   if (!propertyInput || !name || !mobile) return json({ ok: false, error: "Property, name and mobile are required." }, 400);
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: "Please enter a valid email." }, 400);
 
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/create_lead_v2`, {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/create_lead_v3`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
     },
     body: JSON.stringify({
       p_property_input: propertyInput,

@@ -2,9 +2,9 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "prototype-1-torontohousemarket",
   "compatibility_date": "2026-08-14",
-  "main": "worker-v10.js",
+  "main": "worker-v11.js",
   "secrets": {
-    "required": ["AMPRE_TOKEN"]
+    "required": ["AMPRE_TOKEN", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_API_KEY"]
   },
   "assets": {
     "directory": ".",

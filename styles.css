@@ -137,6 +137,13 @@ img{display:block;max-width:100%}
 .market-pulse-grid>div{min-height:130px;border:1px solid #e7eaf1;background:#f8f9fc;border-radius:16px;padding:15px}
 .market-pulse-grid strong{display:block;margin:9px 0 6px;font-size:17px;line-height:1.25;letter-spacing:-.02em}
 .market-pulse-grid small{display:block;color:#727b8f;font-size:11px;line-height:1.45}
+.sold-comps{display:grid;gap:8px;margin-top:12px}
+.sold-comp{display:flex;justify-content:space-between;gap:14px;border:1px solid #e7eaf1;background:#fff;border-radius:14px;padding:12px 14px}
+.sold-comp span,.sold-comp strong{display:block;font-size:13px;font-weight:850;color:var(--ink)}
+.sold-comp small,.sold-comp em{display:block;margin-top:4px;color:#727b8f;font-size:10px;line-height:1.4;font-style:normal}
+.sold-comp>div:last-child{text-align:right;white-space:nowrap}
+.sold-comp em{color:#087555;font-weight:800}
+.sold-comps-empty{border:1px dashed #d9deea;border-radius:14px;padding:14px;color:#727b8f;font-size:11px;line-height:1.5}
 
 .details-panel{margin-top:18px}
 .details-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:18px}
