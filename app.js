@@ -334,12 +334,19 @@ function renderAiBrief(listing) {
 function renderMarketRead(listing) {
   const opinion = listing.priceOpinion;
   const comp = listing.comparableContext;
+  const soldComps = $("soldComps");
 
   $("soldRangeValue").textContent = opinion?.available ? `${compactMoney(opinion.low)} – ${compactMoney(opinion.high)}` : "No forced range";
   $("soldRangeNote").textContent = opinion?.available ? `${opinion.confidence || comp?.confidence || "Indicative"} confidence · ${opinion.note || "weighted match set"}` : (opinion?.note || "Not enough reliable public MLS matches.");
 
   $("compCountValue").textContent = comp?.available ? `${comp.matchCount} closest matches` : comp?.matchCount ? `${comp.matchCount} weak matches` : "Match set unavailable";
   $("compCountNote").textContent = comp?.basis || "Property type, size, lot and recency weighted";
+
+  const rows = Array.isArray(comp?.comparables) ? comp.comparables.slice(0, 5) : [];
+  soldComps.innerHTML = rows.length ? rows.map((item) => {
+    const facts = [item.beds != null ? `${item.beds} bd` : null, item.baths != null ? `${item.baths} ba` : null, item.livingAreaRange, item.lotWidth && item.lotDepth ? `${formatNumber(item.lotWidth)}×${formatNumber(item.lotDepth)} lot` : null].filter(Boolean).join(" · ");
+    return `<article class="sold-comp"><div><span>${escapeHtml(item.address || "MLS comparable")}</span><small>${escapeHtml([item.soldDate ? formatDate(item.soldDate) : null, facts].filter(Boolean).join(" · "))}</small></div><div><strong>${money(item.soldPrice)}</strong><em>${Math.round(item.similarity || 0)}% match</em></div></article>`;
+  }).join("") : `<div class="sold-comps-empty">No responsible sold-comp set is available for this property yet. THM will not substitute asking prices for sold evidence.</div>`;
 
   $("offerTimingValue").textContent = listing.forSale ? (listing.offerTiming?.label || "Verify") : "Not for sale";
   $("offerTimingNote").textContent = listing.forSale ? (listing.offerTiming?.note || "Confirm before relying on timing.") : "No active showing or offer workflow.";
