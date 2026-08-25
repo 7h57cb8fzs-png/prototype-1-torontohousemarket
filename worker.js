@@ -686,6 +686,7 @@ async function queryProperties(filters, env, top = 100, orderby = "ModificationT
 }
 
 async function handleLead(request, env) {
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) return json({ ok: false, error: "Lead system is not configured." }, 503);
   let payload;
   try { payload = await request.json(); }
   catch { return json({ ok: false, error: "Invalid request." }, 400); }
@@ -709,8 +710,8 @@ async function handleLead(request, env) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
     },
     body: JSON.stringify({
       p_property_input: propertyInput,
