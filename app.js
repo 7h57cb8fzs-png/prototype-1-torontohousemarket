@@ -422,9 +422,9 @@ function openLeadModal(mode) {
   if (mode === "showing") {
     modalEyebrow.textContent = "⚡ FAST SHOWING · 1–24H TARGET";
     modalTitle.textContent = "Request the fastest available showing.";
-    modalCopy.textContent = "We save and assign the request immediately. A Realtor then confirms the actual appointment with the listing side.";
+    modalCopy.textContent = "We save the request immediately. Our administrator assigns the right Realtor, who then confirms the appointment with the listing side.";
     nextStepLabel.textContent = "WHEN DO YOU WANT TO SEE IT?";
-    showingTiming.innerHTML = `<option value="asap">ASAP</option><option value="today">Today, if available</option><option value="within_24h">Within 24 hours</option>`;
+    showingTiming.innerHTML = `<option value="asap">As soon as possible</option><option value="today">Today, if available</option><option value="within_24h">Within 24 hours</option>`;
     leadSubmit.textContent = "Send Showing Request →";
     serviceNote.textContent = "Target showing window: 1–24 hours, subject to listing/seller availability. Realtor response target: within 5 minutes during service hours.";
   } else if (mode === "seller") {
@@ -475,7 +475,8 @@ leadForm.addEventListener("submit", async (event) => {
 
   if (name.length < 2) return showLeadError("Please enter your name.");
   if (mobile.replace(/\D/g, "").length < 7) return showLeadError("Please enter a valid mobile number.");
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showLeadError("Please enter a valid email or leave it blank.");
+  if (!email) return showLeadError("Please enter your email address.");
+  if (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email)) return showLeadError("Please enter a valid email address.");
 
   let timing = String(form.get("showing_timing") || "asap");
   if (currentLeadMode === "seller") timing = sellerTimeline.value || "seller_curious";
@@ -536,10 +537,10 @@ function renderLeadSuccess(result) {
   if (currentLeadMode === "showing") {
     successTitle.textContent = "Showing request received instantly.";
     successCopy.textContent = afterHours
-      ? "Your request is saved and assigned. It is queued for the next service window; the actual showing still needs confirmation from the listing side."
-      : "Your request is saved and assigned now. A Realtor still needs to confirm the actual appointment time with the listing side.";
-    successStepOne.textContent = afterHours ? "Showing request queued" : "Showing request assigned";
-    successStepOneNote.textContent = afterHours ? "It will move at the next service window." : "The response timer has started.";
+      ? "Your request is saved for administrator assignment in the next service window. The actual showing still needs confirmation from the listing side."
+      : "Your request is saved for administrator assignment. A Realtor will then confirm the actual appointment time with the listing side.";
+    successStepOne.textContent = "Showing request received";
+    successStepOneNote.textContent = "The response timer starts when an administrator assigns a Realtor.";
   } else if (currentLeadMode === "seller") {
     successTitle.textContent = "Seller report request received.";
     successCopy.textContent = "The property and your request are saved for the seller-side review.";

@@ -698,15 +698,15 @@ async function handleLead(request, env) {
   const resolvedAddress = clean(payload.resolved_address, 500) || propertyInput;
   const name = clean(payload.name, 160);
   const mobile = clean(payload.mobile, 50);
-  const email = clean(payload.email, 254).toLowerCase() || null;
+  const email = clean(payload.email, 254).toLowerCase();
   const leadMode = ["showing", "buyer_offmarket", "seller"].includes(payload.lead_mode) ? payload.lead_mode : "showing";
   const showingTiming = clean(payload.showing_timing, 40) || (leadMode === "showing" ? "asap" : "report");
   const propertySnapshot = sanitizeSnapshot(payload.property_snapshot);
 
-  if (!propertyInput || !name || !mobile) return json({ ok: false, error: "Property, name and mobile are required." }, 400);
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json({ ok: false, error: "Please enter a valid email." }, 400);
+  if (!propertyInput || !name || !mobile || !email) return json({ ok: false, error: "Property, name, mobile and email are required." }, 400);
+  if (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email)) return json({ ok: false, error: "Please enter a valid email address." }, 400);
 
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/create_lead_v3`, {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/create_lead_manual`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

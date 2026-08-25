@@ -1,7 +1,10 @@
 worker.js
+worker-v*.js
 wrangler.jsonc
 README.md
 .gitignore
 .assetsignore
+.git/**
+.wrangler/**
 functions/**
 supabase/**

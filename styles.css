@@ -179,6 +179,7 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
 .lead-form label{display:flex;flex-direction:column;gap:6px;color:#5f687a;font-size:10px;font-weight:900;letter-spacing:.08em}
 .lead-form label small{font-weight:600;letter-spacing:0;color:#9299a8}
 .lead-form input,.lead-form select{width:100%;height:48px;border:1px solid #d9deea;border-radius:12px;background:#fff;padding:0 13px;color:var(--ink);outline:0}
+.lead-form select{-webkit-appearance:none;appearance:none;padding-right:42px;background-image:linear-gradient(45deg,transparent 50%,#64708a 50%),linear-gradient(135deg,#64708a 50%,transparent 50%);background-position:calc(100% - 19px) 21px,calc(100% - 14px) 21px;background-size:5px 5px,5px 5px;background-repeat:no-repeat;font-weight:600}
 .lead-form input:focus,.lead-form select:focus{border-color:#8fa2ff;box-shadow:0 0 0 3px rgba(49,85,245,.08)}
 .lead-form input[readonly]{background:#f5f7fa;color:#667085}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
