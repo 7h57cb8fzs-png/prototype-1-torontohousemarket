@@ -1,6 +1,6 @@
 import app from "./worker-v10.js";
 
-const VERSION = "phase2-ops-v11-20260825";
+const VERSION = "phase2-manual-assignment-v12-20260825";
 
 export default {
   async fetch(request, env, ctx) {
@@ -11,6 +11,8 @@ export default {
     if (url.pathname === "/api/admin/agents" && request.method === "GET") return adminAgents(request,env);
     if (url.pathname === "/api/admin/agents" && request.method === "POST") return createAgent(request,env);
     if (url.pathname.startsWith("/api/admin/agents/") && request.method === "PATCH") return updateAgent(request,env,url.pathname.split("/").pop());
+    if (url.pathname === "/api/admin/settings" && request.method === "GET") return adminSettings(request,env);
+    if (url.pathname === "/api/admin/settings" && request.method === "PATCH") return updateSettings(request,env);
     return app.fetch(request,env,ctx);
   }
 };
@@ -24,7 +26,7 @@ function authorized(request,env) {
 async function adminLeads(request,env) {
   if (!authorized(request,env)) return json({ok:false,error:"Unauthorized"},401);
   if (!env.SUPABASE_SERVICE_ROLE_KEY) return json({ok:false,error:"Admin database connection is not configured."},503);
-  const select = "id,name,mobile,email,lead_mode,status,stage,next_action,next_action_at,first_response_due_at,resolved_address,showing_timing,created_at,updated_at,metadata,agents(code,display_name,email,mobile),property_reports(id,status,generated_at,updated_at),automation_jobs(id,job_type,status,recipient,attempts,available_at,completed_at,last_error)";
+  const select = "id,name,mobile,email,lead_mode,status,stage,next_action,next_action_at,first_response_due_at,resolved_address,showing_timing,created_at,updated_at,metadata,agents(id,code,display_name,email,mobile),property_reports(id,status,generated_at,updated_at),automation_jobs(id,job_type,status,recipient,attempts,available_at,completed_at,last_error)";
   const response = await supabase(env,`/rest/v1/leads?select=${encodeURIComponent(select)}&order=created_at.desc&limit=100`);
   const data = await response.json().catch(()=>null);
   return response.ok ? json({ok:true,leads:data}) : json({ok:false,error:"Unable to load leads."},502);
@@ -34,6 +36,12 @@ async function updateLead(request,env,id) {
   if (!authorized(request,env)) return json({ok:false,error:"Unauthorized"},401);
   if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ok:false,error:"Invalid lead."},400);
   const input = await request.json().catch(()=>({}));
+  if ("owner_agent_id" in input) {
+    if (!/^[0-9a-f-]{36}$/i.test(String(input.owner_agent_id||""))) return json({ok:false,error:"Choose a valid agent."},400);
+    const assigned=await supabase(env,"/rest/v1/rpc/assign_lead_to_agent",{method:"POST",body:JSON.stringify({p_lead_id:id,p_agent_id:input.owner_agent_id})});
+    const result=await assigned.json().catch(()=>null);
+    if(!assigned.ok)return json({ok:false,error:databaseMessage(result,"Unable to assign this lead.")},409);
+  }
   const allowedStatus = ["new","contacted","appointment_pending","appointment_confirmed","closed","lost"];
   const body = {updated_at:new Date().toISOString()};
   if (allowedStatus.includes(input.status)) body.status=input.status;
@@ -42,6 +50,21 @@ async function updateLead(request,env,id) {
   const response = await supabase(env,`/rest/v1/leads?id=eq.${id}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(body)});
   const data = await response.json().catch(()=>null);
   return response.ok ? json({ok:true,lead:Array.isArray(data)?data[0]:data}) : json({ok:false,error:"Unable to update lead."},502);
+}
+
+async function adminSettings(request,env){
+  if(!authorized(request,env))return json({ok:false,error:"Unauthorized"},401);
+  const response=await supabase(env,"/rest/v1/app_settings?select=key,value&key=in.(owner_notification_email,assignment_method,first_response_sla_minutes,service_hours)"),rows=await response.json().catch(()=>null);
+  if(!response.ok)return json({ok:false,error:"Unable to load settings."},502);
+  return json({ok:true,settings:Object.fromEntries((rows||[]).map(x=>[x.key,x.value]))});
+}
+
+async function updateSettings(request,env){
+  if(!authorized(request,env))return json({ok:false,error:"Unauthorized"},401);
+  const input=await request.json().catch(()=>({})),email=clean(input.owner_notification_email,254).toLowerCase();
+  if(!email||!validEmail(email))return json({ok:false,error:"Enter a valid notification email."},400);
+  const response=await supabase(env,"/rest/v1/app_settings?key=eq.owner_notification_email",{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify({value:email,updated_at:new Date().toISOString()})}),data=await response.json().catch(()=>null);
+  return response.ok?json({ok:true,setting:Array.isArray(data)?data[0]:data}):json({ok:false,error:"Unable to save notification email."},502);
 }
 
 async function adminAgents(request,env) {
@@ -56,7 +79,7 @@ async function createAgent(request,env) {
   const input=await request.json().catch(()=>({}));
   const displayName=clean(input.display_name,120),email=clean(input.email,254).toLowerCase()||null,mobile=clean(input.mobile,50)||null;
   if(displayName.length<2)return json({ok:false,error:"Agent name is required."},400);
-  if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return json({ok:false,error:"Enter a valid email."},400);
+  if(email&&!validEmail(email))return json({ok:false,error:"Enter a valid email."},400);
   const list=await supabase(env,"/rest/v1/agents?select=code,assignment_order&order=assignment_order.asc"),agents=await list.json().catch(()=>[]);
   if(!list.ok)return json({ok:false,error:"Unable to prepare the agent record."},502);
   const codes=new Set(agents.map(a=>a.code));let base=slug(displayName)||"agent",code=base,n=2;while(codes.has(code))code=`${base}_${n++}`;
@@ -71,7 +94,7 @@ async function updateAgent(request,env,id) {
   if(!/^[0-9a-f-]{36}$/i.test(id))return json({ok:false,error:"Invalid agent."},400);
   const input=await request.json().catch(()=>({})),body={updated_at:new Date().toISOString()};
   if("display_name" in input){const v=clean(input.display_name,120);if(v.length<2)return json({ok:false,error:"Agent name is required."},400);body.display_name=v;}
-  if("email" in input){const v=clean(input.email,254).toLowerCase();if(v&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))return json({ok:false,error:"Enter a valid email."},400);body.email=v||null;}
+  if("email" in input){const v=clean(input.email,254).toLowerCase();if(v&&!validEmail(v))return json({ok:false,error:"Enter a valid email."},400);body.email=v||null;}
   if("mobile" in input)body.mobile=clean(input.mobile,50)||null;
   if(Number.isInteger(Number(input.assignment_order))&&Number(input.assignment_order)>0)body.assignment_order=Number(input.assignment_order);
   if(typeof input.active==="boolean"){
@@ -87,5 +110,6 @@ function supabase(env,path,init={}) {
 }
 function timingSafeEqual(a,b){let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;}
 function clean(v,max){return typeof v==="string"?v.trim().slice(0,max):""}function slug(v){return String(v||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"").slice(0,50)}
-function databaseMessage(data,fallback){return data?.code==="23505"?"That assignment order is already in use.":fallback}
+function validEmail(v){return /^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(v)}
+function databaseMessage(data,fallback){if(data?.code==="23505")return "That assignment order is already in use.";return data?.message&&String(data.message).length<160?data.message:fallback}
 function json(body,status=200){return new Response(JSON.stringify(body),{status,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","X-THM-Version":VERSION,"X-Content-Type-Options":"nosniff"}});}
