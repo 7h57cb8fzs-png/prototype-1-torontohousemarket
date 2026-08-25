@@ -128,13 +128,14 @@
         </section>
 
         <section class="intel-panel market-panel">
-          <div class="panel-head compact"><div><span class="panel-kicker">THM MARKET READ</span><h3>Closest-match logic, not a random radius.</h3></div></div>
+          <div class="panel-head compact"><div><span class="panel-kicker">RECENT SOLD MLS COMPARABLES</span><h3>Actual sales, weighted to this home.</h3></div></div>
           <div class="market-pulse-grid">
             <div><span>THM RANGE</span><strong id="soldRangeValue">—</strong><small id="soldRangeNote">Checking match quality</small></div>
             <div><span>MATCH STRENGTH</span><strong id="compCountValue">—</strong><small id="compCountNote">Property type, size, lot and recency weighted</small></div>
             <div><span>OFFER / STATUS</span><strong id="offerTimingValue">—</strong><small id="offerTimingNote">Checking public listing context</small></div>
             <div><span>MLS HISTORY</span><strong id="listingTempoValue">—</strong><small id="listingTempoNote">Checking property history</small></div>
           </div>
+          <div id="soldComps" class="sold-comps" aria-live="polite"></div>
         </section>
       </div>
 
