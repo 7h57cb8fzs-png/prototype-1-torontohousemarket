@@ -1,6 +1,6 @@
 import app from "./worker-v10.js";
 
-const VERSION = "phase2-report-evidence-gate-v19-20260826";
+const VERSION = "phase2-vow-featured-idx-v20-20260826";
 
 export default {
   async fetch(request, env, ctx) {
