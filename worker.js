@@ -475,7 +475,7 @@ async function buildComparableContext(subject, env, activeForSale) {
     candidates = candidates.filter((c) => c.price >= median * 0.55 && c.price <= median * 1.8);
   }
 
-  if (candidates.length < 3) return unavailableComp("The current recent-sold MLS match set is too thin to force a range.", candidates.length);
+  if (candidates.length < 3) return unavailableComp("The current recent-sold MLS match set is too thin to force a range.", candidates.length, comparableDiagnostics(raw));
 
   const selected = candidates.slice(0, 5);
   const band = weightedBand(selected);
@@ -499,8 +499,21 @@ async function buildComparableContext(subject, env, activeForSale) {
   };
 }
 
-function unavailableComp(basis, matchCount = 0) {
-  return { available: false, matchCount, confidence: "Unavailable", basis };
+function unavailableComp(basis, matchCount = 0, diagnostics = null) {
+  return { available: false, matchCount, confidence: "Unavailable", basis, ...(diagnostics ? { diagnostics } : {}) };
+}
+
+function comparableDiagnostics(records) {
+  const rows = dedupe(records || []);
+  const priceKeys = ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"];
+  const dateKeys = ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"];
+  const present = (keys) => Object.fromEntries(keys.map((key) => [key, rows.filter((r) => r?.[key] != null && r[key] !== "" && r[key] !== 0).length]));
+  const statuses = {};
+  for (const r of rows) {
+    const key = cleanText(r.StandardStatus || r.MlsStatus || r.ContractStatus || "(missing)");
+    statuses[key] = (statuses[key] || 0) + 1;
+  }
+  return { returned: rows.length, priceFields: present(priceKeys), dateFields: present(dateKeys), statuses };
 }
 
 function normalizeComparable(subject, r) {
