@@ -452,12 +452,16 @@ function historicalSoldSummary(r) {
 
 async function buildComparableContext(subject, env, activeForSale) {
   if (!subject) return unavailableComp("No subject property was available.");
-  const base = [];
-  if (subject.CityRegion) base.push(`CityRegion eq '${odataString(subject.CityRegion)}'`);
-  else if (subject.City) base.push(`City eq '${odataString(subject.City)}'`);
-  if (subject.PropertyType) base.push(`PropertyType eq '${odataString(subject.PropertyType)}'`);
-
-  const raw = await queryProperties(base, env, 400, "ModificationTimestamp desc,ListingKey desc");
+  const type = subject.PropertyType ? `PropertyType eq '${odataString(subject.PropertyType)}'` : null;
+  const region = subject.CityRegion ? `CityRegion eq '${odataString(subject.CityRegion)}'` : null;
+  const city = subject.City ? `City eq '${odataString(subject.City)}'` : null;
+  const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
+  const searches = [
+    [region, type], [city, type], [region], [city],
+    postalPrefix ? [`startswith(PostalCode,'${odataString(postalPrefix)}')`, type] : null,
+  ].filter(Boolean).map((items) => items.filter(Boolean));
+  const batches = await Promise.all(searches.map((filters) => queryProperties(filters, env, 500, "ModificationTimestamp desc,ListingKey desc")));
+  const raw = batches.flat();
   let candidates = dedupe(raw)
     .filter((r) => r.ListingKey !== subject.ListingKey)
     .filter(isRecentSold)
@@ -511,7 +515,7 @@ function normalizeComparable(subject, r) {
   else if (activeLike && listPrice) { source = "active"; price = listPrice; }
   else if (listPrice) { source = "historical"; price = listPrice; }
 
-  const recordDate = validDate(firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "OriginalEntryTimestamp", "ModificationTimestamp"]));
+  const recordDate = soldRecordDate(r);
   return {
     record: r,
     source,
@@ -519,17 +523,26 @@ function normalizeComparable(subject, r) {
     similarity: similarityScore(subject, r),
     recency: recencyWeight(recordDate),
     reliability: source === "sold" ? 1 : source === "active" ? 0.82 : 0.58,
-    closeDate: dateOnly(firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"])),
+    closeDate: dateOnly(recordDate),
   };
 }
 
 function isRecentSold(r) {
   const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""}`;
   const price = firstFiniteNumber(r, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"]);
-  const date = validDate(firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"]));
-  if (!/closed|sold/i.test(status) || !price || !date) return false;
+  const date = soldRecordDate(r);
+  const soldEvidence = /closed|sold|deal firm/i.test(status) || !!validDate(firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"]));
+  if (!soldEvidence || !price || !date) return false;
   const ageDays = (Date.now() - date.getTime()) / 86400000;
   return ageDays >= 0 && ageDays <= 730;
+}
+
+function soldRecordDate(r) {
+  const explicit = validDate(firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"]));
+  if (explicit) return explicit;
+  const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""}`;
+  const price = firstFiniteNumber(r, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"]);
+  return price && /closed|sold|deal firm/i.test(status) ? validDate(r.ModificationTimestamp || r.SystemModificationTimestamp) : null;
 }
 
 function publicComparable(c) {
