@@ -191,7 +191,7 @@ const STREET_TYPE_ALIASES = new Map(Object.entries({
   limits:"limits", line:"line", link:"link", lookout:"lookout", loop:"loop", mall:"mall",
   manor:"manor", maze:"maze", meadows:"meadows", mews:"mews", moor:"moor",
   mount:"mount", mountain:"mountain", orchard:"orchard", parade:"parade", park:"park",
-  parkway:"parkway", pkwy:"parkway", pkwy:"parkway", passage:"passage", path:"path",
+  parkway:"parkway", pkwy:"parkway", passage:"passage", path:"path",
   pathway:"pathway", pines:"pines", place:"place", pl:"place", plateau:"plateau",
   plaza:"plaza", point:"point", pt:"point", port:"port", promenade:"promenade",
   quay:"quay", ramp:"ramp", range:"range", ridge:"ridge", rise:"rise",
