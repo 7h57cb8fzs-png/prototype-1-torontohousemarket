@@ -35,7 +35,11 @@ img{display:block;max-width:100%}
 .nav{height:72px;display:flex;align-items:center;justify-content:space-between;gap:18px}
 .brand{display:inline-flex;align-items:center;gap:12px;color:var(--ink);text-decoration:none;font-weight:800;letter-spacing:-.02em}
 .brand-mark{width:40px;height:40px;border-radius:13px;background:var(--ink);color:#fff;display:grid;place-items:center;font-size:12px;letter-spacing:.04em;box-shadow:0 8px 20px rgba(11,16,32,.18)}
-.brand-name{font-size:18px}
+.brand-identity{display:flex;flex-direction:column;line-height:1.2}
+.brand-identity strong{font-size:16px;letter-spacing:-.01em}
+.brand-identity small{margin-top:4px;color:var(--muted);font-size:10px;font-weight:700;letter-spacing:0}
+.nav-actions{display:flex;align-items:center;gap:10px}
+.idx-chip{display:inline-flex;align-items:center;border:1px solid #d9e1f8;background:#f4f7ff;color:#3155c7;border-radius:999px;padding:7px 10px;font-size:9px;font-weight:900;letter-spacing:.09em}
 .nav-cta{border:0;border-radius:999px;background:var(--ink);color:#fff;padding:11px 18px;font-weight:800;font-size:14px}
 .nav-cta:hover{transform:translateY(-1px)}
 
@@ -62,6 +66,7 @@ img{display:block;max-width:100%}
 .input-status.loading{color:#4d63c7}
 .input-status.ok{color:var(--green)}
 .input-status.error{color:var(--danger)}
+.idx-source{margin:0 auto;color:#798297;font-size:10px;font-weight:650}
 .hero-proof{max-width:720px;margin:30px auto 0;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .hero-proof>div{display:flex;align-items:center;justify-content:center;gap:9px;color:#657086;font-size:13px}
 .hero-proof strong{color:var(--ink);font-size:11px;letter-spacing:.08em;background:#fff;border:1px solid var(--line);border-radius:9px;padding:6px 8px}
@@ -166,9 +171,13 @@ img{display:block;max-width:100%}
 .steps p{margin:0;color:#687086;font-size:13px;line-height:1.6}
 
 footer{background:#0b1020;color:#d7dceb;padding:28px 0}
-.footer-grid{display:flex;justify-content:space-between;gap:24px;align-items:flex-start}
+.footer-grid{display:flex;justify-content:space-between;gap:34px;align-items:flex-start}
 .footer-grid p{margin:0;font-size:12px;line-height:1.6}
-.legal-disclosure{max-width:610px;color:#aeb6ca;text-align:right}
+.footer-brand{display:flex;gap:13px;align-items:flex-start;min-width:310px}
+.footer-mark{width:42px;height:42px;flex:0 0 42px;border:1px solid #46516b;border-radius:12px;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:900;letter-spacing:.06em}
+.footer-brand p{color:#d7dceb}
+.footer-brand b{color:#aeb6ca;font-weight:650}
+.footer-legal{max-width:650px;color:#aeb6ca;text-align:right;display:grid;gap:8px}
 
 .modal-backdrop{position:fixed;inset:0;z-index:100;background:rgba(6,10,22,.58);backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px}
 .modal-card{position:relative;width:min(640px,100%);max-height:calc(100vh - 40px);overflow:auto;background:#fff;border-radius:26px;padding:28px;box-shadow:0 30px 100px rgba(0,0,0,.28)}
@@ -219,7 +228,6 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
 @media (max-width:720px){
   .wrap{width:min(100% - 24px,1180px)}
   .nav{height:64px}
-  .brand-name{font-size:15px}
   .brand-mark{width:36px;height:36px;border-radius:11px}
   .nav-cta{padding:9px 13px;font-size:12px}
   .hero-inner{padding:62px 0 52px}
@@ -243,7 +251,7 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
   .details-grid{grid-template-columns:1fr 1fr}
   .steps{grid-template-columns:1fr}
   .footer-grid{flex-direction:column}
-  .legal-disclosure{text-align:left}
+  .footer-legal{text-align:left}
   .two-col{grid-template-columns:1fr}
   .modal-card{padding:24px 18px;border-radius:22px}
   .modal-card h2{font-size:28px}
@@ -252,7 +260,8 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
 }
 
 @media (max-width:460px){
-  .brand-name{display:none}
+  .brand-identity small,.idx-chip{display:none}
+  .brand-identity strong{font-size:13px}
   .details-grid{grid-template-columns:1fr}
   .photo-panel,.photo-placeholder{min-height:300px}
   .photo-thumbs{display:none!important}
