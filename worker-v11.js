@@ -1,6 +1,6 @@
 import app from "./worker-v10.js";
 
-const VERSION = "phase2-complete-ai-reports-v15-20260826";
+const VERSION = "phase2-comparable-diagnostics-v16-20260826";
 
 export default {
   async fetch(request, env, ctx) {
