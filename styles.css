@@ -160,6 +160,25 @@ img{display:block;max-width:100%}
 .listing-remarks{margin:12px 0 0;color:#596277;font-size:13px;line-height:1.7;background:#f8f9fc;border:1px solid #e7eaf1;border-radius:14px;padding:16px}
 .disclaimer{margin:16px 2px 0;color:#8a91a1;font-size:10px;line-height:1.55}
 
+.featured-listings{padding:82px 0;background:#f4f1e9;border-top:1px solid #ddd6c5;border-bottom:1px solid #ddd6c5}
+.featured-head{display:flex;align-items:flex-end;justify-content:space-between;gap:28px}
+.featured-head .section-head{max-width:770px}
+.profile-link{flex:0 0 auto;color:#252526;font-size:13px;font-weight:900;text-underline-offset:4px}
+.featured-status{margin-top:28px;border:1px dashed #c8bea6;border-radius:16px;padding:20px;color:#675f51;background:rgba(255,255,255,.55);font-size:13px}
+.featured-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:32px}
+.featured-card{overflow:hidden;border:1px solid #d8d0bf;border-radius:20px;background:#fff;box-shadow:0 12px 30px rgba(37,37,38,.07)}
+.featured-card-button{display:block;width:100%;padding:0;border:0;background:#fff;text-align:left;color:inherit}
+.featured-card-button:hover .featured-photo img{transform:scale(1.025)}
+.featured-photo{height:220px;overflow:hidden;display:grid;place-items:center;background:#252526;color:#c6b78f;text-align:center;font-size:15px;font-weight:900;letter-spacing:.06em;line-height:1.35}
+.featured-photo img{width:100%;height:100%;object-fit:cover;transition:transform .25s ease}
+.featured-card-body{padding:18px}
+.featured-mls{display:block;color:#8a7443;font-size:9px;font-weight:900;letter-spacing:.11em}
+.featured-card-body>strong{display:block;margin-top:9px;font-size:25px;letter-spacing:-.035em}
+.featured-card h3{margin:7px 0 5px;font-size:17px;line-height:1.3;letter-spacing:-.02em}
+.featured-card p{min-height:20px;margin:0;color:#6e685e;font-size:12px}
+.featured-card small{display:block;margin-top:15px;padding-top:12px;border-top:1px solid #eee9de;color:#8b8374;font-size:9px;line-height:1.4}
+.footer-brand a{color:inherit}
+
 .how{padding:82px 0 90px;background:#fff;border-top:1px solid var(--line)}
 .section-head{max-width:720px}
 .section-head h2{font-size:clamp(36px,5vw,58px);line-height:1.02;letter-spacing:-.055em;margin:8px 0 15px}
@@ -215,6 +234,7 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
 .gallery-counter{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.12);color:#fff;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:800}
 
 @media (max-width:980px){
+  .featured-grid{grid-template-columns:repeat(2,1fr)}
   .listing-cockpit{grid-template-columns:1fr}
   .action-rail{min-height:auto}
   .photo-panel,.photo-placeholder{min-height:460px}
@@ -226,6 +246,8 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
 }
 
 @media (max-width:720px){
+  .featured-head{align-items:flex-start;flex-direction:column}
+  .featured-grid{grid-template-columns:1fr}
   .wrap{width:min(100% - 24px,1180px)}
   .nav{height:64px}
   .brokerage-logo{width:34px;height:40px}
