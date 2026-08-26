@@ -1,6 +1,6 @@
 import app from "./worker-v10.js";
 
-const VERSION = "phase2-local-sold-comparable-search-v18-20260826";
+const VERSION = "phase2-report-evidence-gate-v19-20260826";
 
 export default {
   async fetch(request, env, ctx) {
@@ -35,7 +35,7 @@ function authorized(request,env) {
 async function adminLeads(request,env) {
   if (!authorized(request,env)) return json({ok:false,error:"Unauthorized"},401);
   if (!env.SUPABASE_SERVICE_ROLE_KEY) return json({ok:false,error:"Admin database connection is not configured."},503);
-  const select = "id,name,mobile,email,lead_mode,status,stage,next_action,next_action_at,first_response_due_at,resolved_address,showing_timing,created_at,updated_at,metadata,agents(id,code,display_name,email,mobile),property_reports(id,status,report_payload,generated_at,updated_at),automation_jobs(id,job_type,status,recipient,attempts,available_at,completed_at,last_error)";
+  const select = "id,name,mobile,email,lead_mode,status,stage,next_action,next_action_at,first_response_due_at,resolved_address,showing_timing,created_at,updated_at,metadata,agents(id,code,display_name,email,mobile),property_reports(id,status,report_payload,generated_at,updated_at,error_message),automation_jobs(id,job_type,status,recipient,attempts,available_at,completed_at,last_error)";
   const response = await supabase(env,`/rest/v1/leads?select=${encodeURIComponent(select)}&order=created_at.desc&limit=100`);
   const data = await response.json().catch(()=>null);
   return response.ok ? json({ok:true,leads:data}) : json({ok:false,error:"Unable to load leads."},502);
@@ -146,6 +146,9 @@ async function processReportJobs(env,limit=3){
       if(!lead)throw new Error("Lead data is unavailable.");
       const property=await loadPropertyForReport(env,lead);
       const report=await buildPropertyReport(env,lead,property);
+      if(!report.valuation?.available||!Array.isArray(report.comparables)||report.comparables.length<3){
+        throw new Error("Sold MLS access is required: the current AMPRE credential returned no usable recent sold comparables, so no buyer report or valuation email was generated.");
+      }
       await rpc(env,"complete_report_job",{p_job_id:job.id,p_report_id:job.report_id,p_report_payload:report});
       completed++;
       console.log(JSON.stringify({event:"report_ready",job_id:job.id,lead_id:job.lead_id,report_id:job.report_id,confidence:report.valuation?.confidence||"Unavailable"}));
@@ -260,6 +263,13 @@ async function processEmailJobs(env,limit=10){
     try{
       const lead=await loadLeadForEmail(env,job.lead_id);
       if(!lead)throw new Error("Lead data is unavailable.");
+      if(job.job_type==="email_buyer"){
+        const report=firstRelation(lead.property_reports);
+        const comparables=report?.report_payload?.comparables;
+        if(report?.status!=="ready"||!Array.isArray(comparables)||comparables.length<3){
+          throw new Error("Buyer report held: at least three verified recent sold MLS comparables are required before delivery.");
+        }
+      }
       const message=buildEmail(job,lead);
       const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${env.RESEND_API_KEY}`,"Content-Type":"application/json","Idempotency-Key":`thm-job-${job.id}-v1`},body:JSON.stringify({from:env.RESEND_FROM_EMAIL||"Toronto House Market <notifications@updates.torontohousemarket.com>",to:[job.recipient],reply_to:"leads@torontohousemarket.com",subject:message.subject,html:message.html,text:message.text})});
       const result=await response.json().catch(()=>({}));
