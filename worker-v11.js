@@ -1,14 +1,14 @@
 import app from "./worker-v10.js";
 
-const VERSION = "phase2-resend-notifications-v13-20260825";
+const VERSION = "phase2-ai-property-reports-v14-20260826";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (url.pathname === "/api/version") return json({ok:true,version:VERSION,comparables:"recent-sold-only",operations:"admin-and-job-queue"});
+    if (url.pathname === "/api/version") return json({ok:true,version:VERSION,comparables:"recent-sold-only",reports:"workers-ai-with-deterministic-fallback",operations:"admin-and-job-queue"});
     if (url.pathname === "/api/lead" && request.method === "POST") {
       const response=await app.fetch(request,env,ctx);
-      if(response.ok&&env.RESEND_API_KEY)ctx.waitUntil(processEmailJobs(env,10));
+      if(response.ok)ctx.waitUntil(processAutomationJobs(env));
       return response;
     }
     if (url.pathname === "/api/admin/leads" && request.method === "GET") return adminLeads(request,env);
@@ -35,7 +35,7 @@ function authorized(request,env) {
 async function adminLeads(request,env) {
   if (!authorized(request,env)) return json({ok:false,error:"Unauthorized"},401);
   if (!env.SUPABASE_SERVICE_ROLE_KEY) return json({ok:false,error:"Admin database connection is not configured."},503);
-  const select = "id,name,mobile,email,lead_mode,status,stage,next_action,next_action_at,first_response_due_at,resolved_address,showing_timing,created_at,updated_at,metadata,agents(id,code,display_name,email,mobile),property_reports(id,status,generated_at,updated_at),automation_jobs(id,job_type,status,recipient,attempts,available_at,completed_at,last_error)";
+  const select = "id,name,mobile,email,lead_mode,status,stage,next_action,next_action_at,first_response_due_at,resolved_address,showing_timing,created_at,updated_at,metadata,agents(id,code,display_name,email,mobile),property_reports(id,status,report_payload,generated_at,updated_at),automation_jobs(id,job_type,status,recipient,attempts,available_at,completed_at,last_error)";
   const response = await supabase(env,`/rest/v1/leads?select=${encodeURIComponent(select)}&order=created_at.desc&limit=100`);
   const data = await response.json().catch(()=>null);
   return response.ok ? json({ok:true,leads:data}) : json({ok:false,error:"Unable to load leads."},502);
@@ -58,7 +58,7 @@ async function updateLead(request,env,id,ctx) {
   if (typeof input.next_action === "string" && input.next_action.length<=120) body.next_action=input.next_action;
   const response = await supabase(env,`/rest/v1/leads?id=eq.${id}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(body)});
   const data = await response.json().catch(()=>null);
-  if(response.ok&&env.RESEND_API_KEY)ctx.waitUntil(processEmailJobs(env,10));
+  if(response.ok)ctx.waitUntil(processAutomationJobs(env));
   return response.ok ? json({ok:true,lead:Array.isArray(data)?data[0]:data}) : json({ok:false,error:"Unable to update lead."},502);
 }
 
@@ -128,8 +128,129 @@ function supabase(env,path,init={}) {
 
 async function runScheduledNotifications(env){
   await rpc(env,"queue_overdue_sla_notifications",{}).catch(error=>console.error(JSON.stringify({event:"sla_queue_failed",error:String(error)})));
-  return processEmailJobs(env,20);
+  return processAutomationJobs(env);
 }
+
+async function processAutomationJobs(env){
+  const reports=await processReportJobs(env,3);
+  const emails=await processEmailJobs(env,20);
+  return {reports,emails};
+}
+
+async function processReportJobs(env,limit=3){
+  const jobs=await rpc(env,"claim_report_jobs",{p_limit:limit});
+  let completed=0,failed=0;
+  for(const job of Array.isArray(jobs)?jobs:[]){
+    try{
+      const lead=await loadLeadForReport(env,job.lead_id);
+      if(!lead)throw new Error("Lead data is unavailable.");
+      const property=await loadPropertyForReport(env,lead);
+      const report=await buildPropertyReport(env,lead,property);
+      await rpc(env,"complete_report_job",{p_job_id:job.id,p_report_id:job.report_id,p_report_payload:report});
+      completed++;
+      console.log(JSON.stringify({event:"report_ready",job_id:job.id,lead_id:job.lead_id,report_id:job.report_id,confidence:report.valuation?.confidence||"Unavailable"}));
+    }catch(error){
+      failed++;const message=error instanceof Error?error.message:String(error);
+      await rpc(env,"fail_report_job",{p_job_id:job.id,p_report_id:job.report_id,p_error:message}).catch(()=>{});
+      console.error(JSON.stringify({event:"report_failed",job_id:job.id,lead_id:job.lead_id,error:message.slice(0,300)}));
+    }
+  }
+  return {claimed:Array.isArray(jobs)?jobs.length:0,completed,failed};
+}
+
+async function loadLeadForReport(env,id){
+  const select="id,name,email,lead_mode,resolved_address,showing_timing,property_snapshot,metadata,created_at";
+  const response=await supabase(env,`/rest/v1/leads?id=eq.${id}&select=${encodeURIComponent(select)}&limit=1`),rows=await response.json().catch(()=>[]);
+  if(!response.ok)throw new Error("Unable to load report request.");
+  return Array.isArray(rows)?rows[0]:null;
+}
+
+async function loadPropertyForReport(env,lead){
+  const url=new URL("https://torontohousemarket.com/api/property");
+  const listingKey=lead.property_snapshot?.listingKey||lead.metadata?.listing_key||lead.metadata?.listingKey||null;
+  if(listingKey)url.searchParams.set("listingKey",listingKey);
+  else url.searchParams.set("q",lead.resolved_address||lead.metadata?.property_input||"");
+  const response=await app.fetch(new Request(url.toString(),{method:"GET"}),env,{waitUntil(){}});
+  const body=await response.json().catch(()=>null);
+  if(!response.ok||!body?.ok||!body.property)throw new Error(body?.error||"Property data could not be resolved.");
+  return body.property;
+}
+
+async function buildPropertyReport(env,lead,property){
+  const comp=property.comparableContext||{};
+  const comparables=Array.isArray(comp.comparables)?comp.comparables.slice(0,5):[];
+  const facts={
+    address:property.address||lead.resolved_address||lead.property_input,
+    status:property.marketStatus||property.status||"Unknown",
+    list_price:property.listPrice||null,
+    property_type:property.propertySubType||property.propertyType||null,
+    beds:property.beds??null,baths:property.baths??null,
+    living_area:property.livingAreaRange||property.buildingAreaTotal||null,
+    lot:property.lotWidth&&property.lotDepth?`${property.lotWidth} × ${property.lotDepth} ft`:null,
+    parking:property.parkingTotal??null,
+    annual_tax:property.details?.annualTax||null,
+    days_on_market:property.daysLive??null,
+    offer_timing:property.offerTiming||null,
+  };
+  const valuation={
+    available:!!comp.available,
+    low:comp.rangeLow||null,midpoint:comp.midpoint||null,high:comp.rangeHigh||null,
+    confidence:comp.confidence||"Unavailable",
+    basis:comp.basis||"Not enough reliable recent sold matches were available to calculate a range.",
+    methodology:"Recent sold AMPRE/PropTx MLS records are filtered for valid sold price/date, scored for property type, location, bedrooms, bathrooms, living area, lot, parking and recency, then outliers are removed and weighted quantiles form the range.",
+  };
+  const fallback=buildDeterministicNarrative(facts,valuation,comparables,property);
+  const ai=await generateAiNarrative(env,facts,valuation,comparables,property).catch(error=>{
+    console.warn(JSON.stringify({event:"report_ai_fallback",lead_id:lead.id,error:String(error).slice(0,240)}));
+    return null;
+  });
+  return {
+    schema_version:1,generated_at:new Date().toISOString(),report_type:"AI-assisted buyer property report",
+    facts,valuation,comparables,narrative:ai||fallback,
+    history:property.historySummary||null,
+    showing_focus:property.showingFocus||null,
+    sources:[
+      {name:"AMPRE / PropTx MLS",role:"Authoritative listing facts, listing history and recent sold comparables",url:"https://www.ampre.ca/"},
+      {name:"City of Toronto Open Data",role:"Municipal context and datasets; property-specific verification may be required",url:"https://open.toronto.ca/"},
+      {name:"Statistics Canada",role:"Census and demographic context",url:"https://www.statcan.gc.ca/"},
+      {name:"CMHC",role:"Broader housing-market and mortgage context",url:"https://www.cmhc-schl.gc.ca/"},
+      {name:"Toronto District School Board",role:"Official school information and attendance-boundary verification",url:"https://www.tdsb.on.ca/"}
+    ],
+    limitations:[
+      "This is an AI-assisted preliminary market analysis, not an appraisal or guarantee of market value.",
+      "MLS facts and sold records should be verified by a registered real estate professional before relying on them.",
+      "School boundaries, permits, zoning, taxes, environmental conditions and measurements require verification with the responsible authority.",
+      "Realtor.ca, HouseSigma and other consumer portals are not scraped; they may be incorporated only through an authorized licensed feed."
+    ]
+  };
+}
+
+async function generateAiNarrative(env,facts,valuation,comparables,property){
+  if(!env.AI)return null;
+  const prompt=`You are a careful Toronto real-estate research analyst. Return ONLY valid JSON with string fields executive_summary, market_read, buyer_strategy and string arrays strengths, risks, inspection_priorities, questions_for_realtor. Never invent facts, schools, permits, distances or neighbourhood statistics. Explain uncertainty. Do not call this an appraisal. Use concise, warm Canadian English.\n\nStructured evidence:\n${JSON.stringify({facts,valuation,comparables,public_remarks:property.remarks,showing_focus:property.showingFocus,history:property.historySummary}).slice(0,12000)}`;
+  const result=await env.AI.run("@cf/meta/llama-3.1-8b-instruct",{messages:[{role:"system",content:"Ground every statement in supplied evidence. Output JSON only."},{role:"user",content:prompt}],max_tokens:1400,temperature:0.2});
+  const raw=typeof result?.response==="string"?result.response:typeof result==="string"?result:"";
+  const parsed=parseJsonObject(raw);
+  if(!parsed?.executive_summary)return null;
+  return sanitizeNarrative(parsed);
+}
+
+function buildDeterministicNarrative(facts,valuation,comparables,property){
+  const range=valuation.available?`${cad(valuation.low)}–${cad(valuation.high)} (${valuation.confidence.toLowerCase()} confidence)`:"not available from the current reliable match set";
+  const strengths=[];if(facts.parking)strengths.push(`${facts.parking} parking space${facts.parking===1?"":"s"} reported`);if(facts.lot)strengths.push(`Reported lot of ${facts.lot}`);if(property.details?.cooling)strengths.push("Cooling information is present in the MLS record");
+  return {
+    executive_summary:`${facts.address} is reported as ${facts.status.toLowerCase()}. The evidence-based market range is ${range}. This preliminary read should be reviewed with a Realtor against condition, renovations and micro-location.`,
+    market_read:valuation.available?`${comparables.length} recent sold MLS comparables support the range. The estimate emphasizes similarity and recency and reduces the effect of outliers.`:valuation.basis,
+    buyer_strategy:facts.list_price&&valuation.available?`Compare the ${cad(facts.list_price)} asking price with the weighted midpoint of ${cad(valuation.midpoint)}, then adjust only after inspecting condition and confirming offer timing.`:"Inspect the property and verify material facts before deciding on price or conditions.",
+    strengths:strengths.length?strengths:["MLS record and recent market evidence were reviewed"],
+    risks:["Interior condition and renovation quality are not proven by MLS data","Measurements, taxes, permits and zoning require independent verification"],
+    inspection_priorities:[property.showingFocus?.note||"Verify layout, condition, mechanical systems, water signs and exterior drainage.","Ask about age and service history of roof, HVAC, plumbing and electrical systems."],
+    questions_for_realtor:["Which sold comparable is most similar after condition adjustments?","Are there registered offers or a scheduled offer presentation?","Which listing facts or improvements still require documentation?"]
+  };
+}
+
+function parseJsonObject(value){try{const text=String(value||"").replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"");const start=text.indexOf("{"),end=text.lastIndexOf("}");return start>=0&&end>start?JSON.parse(text.slice(start,end+1)):null;}catch{return null;}}
+function sanitizeNarrative(v){const strings=k=>clean(v?.[k],2400),list=k=>Array.isArray(v?.[k])?v[k].map(x=>clean(String(x),500)).filter(Boolean).slice(0,6):[];return{executive_summary:strings("executive_summary"),market_read:strings("market_read"),buyer_strategy:strings("buyer_strategy"),strengths:list("strengths"),risks:list("risks"),inspection_priorities:list("inspection_priorities"),questions_for_realtor:list("questions_for_realtor")};}
 
 async function processEmailJobs(env,limit=10){
   if(!env.RESEND_API_KEY)return {claimed:0,sent:0,failed:0,skipped:"missing_resend_key"};
@@ -173,9 +294,21 @@ function buildEmail(job,lead){
   else if(reason==="agent_sla_reminder"){subject=`Action required: response overdue for ${address}`;heading="Lead response is overdue";intro="Please contact the buyer immediately and update the lead status.";rows=[["Buyer",lead.name],["Mobile",lead.mobile],["Email",lead.email]];}
   else if(reason==="buyer_appointment_confirmed"){subject=`Showing update for ${address}`;heading="Your appointment is confirmed";intro="Your Realtor has updated the showing request as confirmed. They will provide the final appointment details directly.";rows=[["Property",address],["Agent",agent]];}
   else if(reason==="owner_status_update"){subject=`Lead status: ${String(job.payload?.status||lead.status).replaceAll("_"," ")} — ${address}`;heading="Lead status updated";intro="An important lead milestone was recorded.";rows=[["Status",String(job.payload?.status||lead.status).replaceAll("_"," ")],["Agent",agent],["Buyer",lead.name]];}
-  else if(job.job_type==="email_buyer"){subject=`Your property report is ready: ${address}`;heading="Your property report is ready";intro="The preliminary AI-assisted property report has been completed. A Realtor will review the findings with you.";rows=[["Property",address],["Agent",agent]];}
+  else if(job.job_type==="email_buyer")return propertyReportEmail(address,agent,lead.property_reports?.[0]?.report_payload||{});
   else{rows=[["Property",address],["Buyer",lead.name],["Status",lead.status]];}
   return emailDocument(subject,heading,intro,rows,reason.startsWith("buyer_")||job.job_type==="email_buyer"?null:"https://torontohousemarket.com/admin.html");
+}
+
+function propertyReportEmail(address,agent,report){
+  const v=report.valuation||{},n=report.narrative||{},facts=report.facts||{},comps=Array.isArray(report.comparables)?report.comparables.slice(0,5):[];
+  const range=v.available?`${cad(v.low)} – ${cad(v.high)}`:"Range unavailable";
+  const factRows=[["Status",facts.status],["Asking price",cad(facts.list_price)],["Property type",facts.property_type],["Beds / baths",[facts.beds,facts.baths].filter(x=>x!=null).join(" / ")],["Estimated range",range],["Confidence",v.confidence]];
+  const factsHtml=factRows.filter(([,x])=>x).map(([a,b])=>`<tr><td style="padding:8px 12px;color:#687286;font:600 12px Arial,sans-serif;border-bottom:1px solid #edf0f5">${html(a)}</td><td style="padding:8px 12px;color:#11182b;font:600 14px Arial,sans-serif;border-bottom:1px solid #edf0f5">${html(b)}</td></tr>`).join("");
+  const compsHtml=comps.length?comps.map((c,i)=>`<tr><td style="padding:10px 12px;color:#11182b;font:600 13px Arial,sans-serif;border-bottom:1px solid #edf0f5">${i+1}. ${html(c.address||"MLS comparable")}<br><span style="color:#7a8497;font:400 11px Arial,sans-serif">${html([c.soldDate,c.beds!=null?`${c.beds} bd`:null,c.baths!=null?`${c.baths} ba`:null].filter(Boolean).join(" · "))}</span></td><td align="right" style="padding:10px 12px;color:#11182b;font:700 13px Arial,sans-serif;border-bottom:1px solid #edf0f5">${html(cad(c.soldPrice))}<br><span style="color:#3155f5;font:600 11px Arial,sans-serif">${html(Math.round(Number(c.similarity)||0))}% match</span></td></tr>`).join(""):`<tr><td style="padding:12px;color:#687286;font:400 13px Arial,sans-serif">No sufficiently reliable recent sold set was available.</td></tr>`;
+  const bullets=(items)=>Array.isArray(items)&&items.length?`<ul style="margin:8px 0 0;padding-left:20px">${items.map(x=>`<li style="margin:0 0 7px;color:#566178;font:400 14px Arial,sans-serif;line-height:1.45">${html(x)}</li>`).join("")}</ul>`:"";
+  const htmlBody=`<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="X-UA-Compatible" content="IE=edge"></head><body style="margin:0;background:#f1f4f9"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:24px 10px"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#ffffff"><tr><td bgcolor="#10182d" style="padding:28px;background-color:#10182d"><p style="margin:0 0 8px;color:#8ba2ff;font:700 12px Arial,sans-serif">TORONTO HOUSE MARKET · AI-ASSISTED BUYER REPORT</p><h1 style="margin:0;color:#ffffff;font:700 25px Arial,sans-serif;line-height:1.25">${html(address)}</h1><p style="margin:12px 0 0;color:#c9d1e3;font:400 14px Arial,sans-serif;line-height:1.5">Prepared from recent sold MLS evidence and official market sources.</p></td></tr><tr><td style="padding:26px"><h2 style="margin:0 0 8px;color:#11182b;font:700 19px Arial,sans-serif">Executive summary</h2><p style="margin:0 0 22px;color:#566178;font:400 14px Arial,sans-serif;line-height:1.6">${html(n.executive_summary||"Your preliminary property analysis is ready.")}</p><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px">${factsHtml}</table><h2 style="margin:0 0 8px;color:#11182b;font:700 19px Arial,sans-serif">Recent sold comparables</h2><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:22px">${compsHtml}</table><h2 style="margin:0 0 8px;color:#11182b;font:700 19px Arial,sans-serif">Market read</h2><p style="margin:0 0 20px;color:#566178;font:400 14px Arial,sans-serif;line-height:1.6">${html(n.market_read||v.basis||"")}</p><h2 style="margin:0 0 8px;color:#11182b;font:700 19px Arial,sans-serif">Buyer strategy</h2><p style="margin:0 0 20px;color:#566178;font:400 14px Arial,sans-serif;line-height:1.6">${html(n.buyer_strategy||"")}</p><h2 style="margin:0;color:#11182b;font:700 19px Arial,sans-serif">What to verify at the showing</h2>${bullets(n.inspection_priorities)}<h2 style="margin:20px 0 0;color:#11182b;font:700 19px Arial,sans-serif">Questions for your Realtor</h2>${bullets(n.questions_for_realtor)}<p style="margin:24px 0 0;color:#8a93a5;font:400 11px Arial,sans-serif;line-height:1.55">Agent: ${html(agent)}. This AI-assisted preliminary market analysis is not an appraisal, legal advice or a guarantee of value. MLS facts, measurements, taxes, zoning, permits, school boundaries and property condition require professional verification.</p></td></tr></table></td></tr></table></body></html>`;
+  const text=[`Toronto House Market — AI-assisted buyer report`,address,`Estimated range: ${range}`,`Confidence: ${v.confidence||"Unavailable"}`,n.executive_summary,"Recent sold comparables:",...comps.map((c,i)=>`${i+1}. ${c.address} — ${cad(c.soldPrice)} — ${Math.round(Number(c.similarity)||0)}% match`),"Market read:",n.market_read,"Buyer strategy:",n.buyer_strategy,"Showing priorities:",...(n.inspection_priorities||[]).map(x=>`- ${x}`),"Questions for your Realtor:",...(n.questions_for_realtor||[]).map(x=>`- ${x}`),"This is an AI-assisted preliminary analysis, not an appraisal or guarantee of value."].filter(Boolean).join("\n\n");
+  return {subject:`Your AI property report: ${address}`,html:htmlBody,text};
 }
 
 function emailDocument(subject,heading,intro,rows,link){
@@ -188,6 +321,7 @@ function emailDocument(subject,heading,intro,rows,link){
 async function rpc(env,name,body){const response=await supabase(env,`/rest/v1/rpc/${name}`,{method:"POST",body:JSON.stringify(body)}),data=await response.json().catch(()=>null);if(!response.ok)throw new Error(data?.message||`Database operation ${name} failed.`);return data;}
 function timingLabel(value){return({asap:"As soon as possible",today:"Today, if available",within_24h:"Within 24 hours"})[value]||String(value||"—").replaceAll("_"," ")}
 function formatToronto(value){return value?new Date(value).toLocaleString("en-CA",{timeZone:"America/Toronto",dateStyle:"medium",timeStyle:"short"}):"Starts after assignment"}
+function cad(value){const n=Number(value);return Number.isFinite(n)&&n>0?new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD",maximumFractionDigits:0}).format(n):null}
 function html(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function timingSafeEqual(a,b){let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;}
 function clean(v,max){return typeof v==="string"?v.trim().slice(0,max):""}function slug(v){return String(v||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"").slice(0,50)}
