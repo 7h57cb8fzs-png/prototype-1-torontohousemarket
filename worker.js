@@ -456,11 +456,22 @@ async function buildComparableContext(subject, env, activeForSale) {
   const region = subject.CityRegion ? `CityRegion eq '${odataString(subject.CityRegion)}'` : null;
   const city = subject.City ? `City eq '${odataString(subject.City)}'` : null;
   const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
+  const latitude = numberOrNull(subject.Latitude);
+  const longitude = numberOrNull(subject.Longitude);
+  const addressCity = cleanText(String(subject.UnparsedAddress || "").split(",")[1])
+    || cleanText(String(subject.City || "").replace(/\s+[A-Z]\d{2}$/i, ""));
   const searches = [
+    latitude != null && longitude != null
+      ? [`geo.distance(GeoLocation, geography'SRID=4326;POINT(${longitude} ${latitude})') lt 7000`]
+      : null,
+    addressCity ? [`contains(UnparsedAddress,'${odataString(addressCity)}')`] : null,
     [region, type], [city, type], [region], [city],
     postalPrefix ? [`startswith(PostalCode,'${odataString(postalPrefix)}')`, type] : null,
   ].filter(Boolean).map((items) => items.filter(Boolean));
-  const batches = await Promise.all(searches.map((filters) => queryProperties(filters, env, 500, "ModificationTimestamp desc,ListingKey desc")));
+  let batches = await Promise.all(searches.map((filters) => queryProperties(filters, env, 500, "ModificationTimestamp desc,ListingKey desc")));
+  if (!batches.some((batch) => batch.length)) {
+    batches = [await queryProperties([], env, 500, "ModificationTimestamp desc,ListingKey desc")];
+  }
   const raw = batches.flat();
   let candidates = dedupe(raw)
     .filter((r) => r.ListingKey !== subject.ListingKey)

@@ -1,6 +1,6 @@
 import app from "./worker-v10.js";
 
-const VERSION = "phase2-ampre-query-fallback-v17-20260826";
+const VERSION = "phase2-local-sold-comparable-search-v18-20260826";
 
 export default {
   async fetch(request, env, ctx) {
