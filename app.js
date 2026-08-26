@@ -71,6 +71,47 @@ let galleryIndex = 0;
 let currentLeadMode = "showing";
 let loading = false;
 
+loadFeaturedListings();
+
+async function loadFeaturedListings() {
+  const grid = $("featuredListingGrid");
+  const status = $("featuredListingStatus");
+  if (!grid || !status) return;
+  try {
+    const response = await fetch("/api/featured-listings", { headers: { Accept: "application/json" } });
+    const result = await response.json().catch(() => null);
+    const listings = Array.isArray(result?.listings) ? result.listings : [];
+    if (!response.ok || !result?.ok) throw new Error(result?.error || "Listings unavailable");
+    if (!listings.length) {
+      status.textContent = "No brokerage listings are available for internet display from the current IDX response. Use the live MLS search above to find any active property.";
+      return;
+    }
+    grid.innerHTML = listings.map((listing) => `
+      <article class="featured-card">
+        <button type="button" class="featured-card-button" data-featured-mls="${escapeAttr(listing.listingKey)}" aria-label="Open ${escapeAttr(listing.address)}">
+          <div class="featured-photo">${listing.photo?.url ? `<img src="${escapeAttr(listing.photo.url)}" alt="${escapeAttr(listing.photo.description || listing.address)}" loading="lazy" />` : `<span>CENTURY 21<br>Leading Edge</span>`}</div>
+          <div class="featured-card-body">
+            <span class="featured-mls">MLS® ${escapeHtml(listing.listingKey)}</span>
+            <strong>${escapeHtml(listing.listPrice != null ? money(listing.listPrice) : "Price available on request")}</strong>
+            <h3>${escapeHtml(listing.address || "Address available through IDX")}</h3>
+            <p>${escapeHtml([listing.propertySubType, listing.beds != null ? `${listing.beds} bed` : "", listing.baths != null ? `${listing.baths} bath` : ""].filter(Boolean).join(" · "))}</p>
+            <small>${escapeHtml(listing.listingOffice || "CENTURY 21 Leading Edge Realty Inc.")}</small>
+          </div>
+        </button>
+      </article>`).join("");
+    status.classList.add("hidden");
+    for (const button of grid.querySelectorAll("[data-featured-mls]")) {
+      button.addEventListener("click", () => {
+        propertyInput.value = button.dataset.featuredMls;
+        analysisForm.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        document.querySelector("#lookup")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  } catch {
+    status.textContent = "Current IDX listings could not be loaded. The live MLS search above remains available.";
+  }
+}
+
 for (const button of document.querySelectorAll("[data-scroll]")) {
   button.addEventListener("click", () => {
     const target = document.querySelector(button.dataset.scroll);
