@@ -702,7 +702,12 @@ async function queryProperties(filters, env, top = 100, orderby = "ModificationT
   if (filters?.length) params.set("$filter", filters.join(" and "));
   params.set("$orderby", orderby);
   try {
-    const response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
+    let response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
+    if (!response.ok) {
+      params.set("$top", String(Math.min(top, 200)));
+      params.delete("$orderby");
+      response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
+    }
     if (!response.ok) return [];
     const body = await response.json();
     return Array.isArray(body.value) ? body.value : [];
