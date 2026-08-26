@@ -19,6 +19,9 @@ Property → Instant Buyer Decision Snapshot (no registration) → Interested? �
 - SUPABASE_URL
 - SUPABASE_SERVICE_ROLE_KEY
 - ADMIN_API_KEY (random 24+ character secret used to open `/admin.html`)
+- RESEND_API_KEY (sending-only key restricted to the verified sending domain)
+
+The Worker also uses the `AI` Workers AI binding declared in `wrangler.jsonc`. AI narrative generation is grounded in the structured property evidence. If the model is unavailable, a deterministic evidence-based narrative is stored so the report and buyer email do not remain stuck.
 
 Never expose AMPRE_TOKEN or the Supabase service-role key in browser JavaScript.
 
@@ -28,12 +31,12 @@ Apply `supabase/migrations/001_phase1.sql` to a new Supabase project.
 
 Phase 2 adds the two timestamped operations migrations in `supabase/migrations/`.
 
-## Operations setup still required
+## Operations setup
 
 1. Set real `mobile` and/or `email` values for active rows in `public.agents`. Jobs are deliberately marked `blocked` when no destination exists.
 2. Configure `ADMIN_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` as Cloudflare secrets, then open `/admin.html` with the admin key.
-3. Connect a server-side job processor to `public.automation_jobs`. It must generate `property_reports.report_payload`, then dispatch `email_buyer` and `notify_agent` jobs through the chosen email/SMS provider. No delivery is claimed until the provider returns success.
-4. Merge and deploy the Phase 2 branch. The existing AMPRE token, address resolver and media delivery remain unchanged.
+3. Apply all timestamped migrations. The Worker atomically claims `generate_report` jobs, stores a structured AI-assisted report, marks it ready, and sends the buyer report through Resend.
+4. The report uses AMPRE/PropTx recent sold evidence as the authoritative property-data source. Public-source links provide verification paths. Consumer portals such as Realtor.ca and HouseSigma must only be added through an authorized licensed feed; the Worker does not scrape them.
 
 ## Locked operational defaults
 
