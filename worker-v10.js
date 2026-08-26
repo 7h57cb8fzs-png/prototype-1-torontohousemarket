@@ -16,6 +16,10 @@ export default {
       });
     }
 
+    if (url.pathname === "/api/featured-listings" && request.method === "GET") {
+      return featuredListings(env);
+    }
+
     if (url.pathname === "/api/property" && request.method === "GET") {
       const listingKey = clean(url.searchParams.get("listingKey"), 50);
       const q = clean(url.searchParams.get("q"), 1000);
@@ -56,6 +60,57 @@ export default {
     return app.fetch(request, env, ctx);
   },
 };
+
+async function featuredListings(env) {
+  if (!env.AMPRE_TOKEN) return json({ ok:false, error:"IDX connection is not configured." }, 503);
+  const fields = ["ListingKey","UnparsedAddress","City","ListPrice","BedroomsTotal","BathroomsTotalInteger","PropertySubType","PropertyType","ListOfficeName","StandardStatus","MlsStatus","ContractStatus","TransactionType","InternetEntireListingDisplayYN","InternetAddressDisplayYN","OriginalEntryTimestamp"].join(",");
+  let rows = await featuredQuery("contains(ListOfficeName,'Leading Edge')", fields, 100, env);
+  if (!rows.length) rows = await featuredQuery("", fields, 500, env);
+  const selected = rows.filter(isLeadingEdge).filter(isActive)
+    .filter((r) => r.InternetEntireListingDisplayYN !== false && r.InternetAddressDisplayYN !== false).slice(0, 6);
+  const listings = await Promise.all(selected.map(async (r) => ({
+    listingKey:r.ListingKey || null,
+    address:r.UnparsedAddress || "Address available through IDX",
+    city:r.City || null,
+    listPrice:numberValue(r.ListPrice),
+    beds:numberValue(r.BedroomsTotal),
+    baths:numberValue(r.BathroomsTotalInteger),
+    propertySubType:r.PropertySubType || r.PropertyType || null,
+    listingOffice:r.ListOfficeName || null,
+    photo:await firstPhoto(r.ListingKey, env),
+  })));
+  return json({ ok:true, listings });
+}
+
+async function featuredQuery(filter, fields, top, env) {
+  const params = new URLSearchParams({ "$top":String(top), "$select":fields, "$orderby":"OriginalEntryTimestamp desc,ListingKey desc" });
+  if (filter) params.set("$filter", filter);
+  try {
+    let response = await fetch(`${AMPRE}/Property?${params.toString()}`, { headers:{ Authorization:`Bearer ${env.AMPRE_TOKEN}`, Accept:"application/json" } });
+    if (!response.ok) {
+      params.delete("$orderby");
+      response = await fetch(`${AMPRE}/Property?${params.toString()}`, { headers:{ Authorization:`Bearer ${env.AMPRE_TOKEN}`, Accept:"application/json" } });
+    }
+    if (!response.ok) return [];
+    const body = await response.json();
+    return Array.isArray(body.value) ? body.value : [];
+  } catch { return []; }
+}
+
+async function firstPhoto(listingKey, env) {
+  if (!listingKey) return null;
+  const params = new URLSearchParams({ "$top":"20", "$filter":`ResourceRecordKey eq '${escapeOData(listingKey)}' and ResourceName eq 'Property'`, "$orderby":"MediaModificationTimestamp,MediaKey" });
+  try {
+    const response = await fetch(`${AMPRE}/Media?${params.toString()}`, { headers:{ Authorization:`Bearer ${env.AMPRE_TOKEN}`, Accept:"application/json" } });
+    if (!response.ok) return null;
+    const body = await response.json();
+    const record = (Array.isArray(body.value) ? body.value : []).find((m) => m?.MediaKey && m?.MediaURL && (/^image\//i.test(m.MediaType || "") || /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(m.MediaURL)));
+    return record ? { url:`/api/media?key=${encodeURIComponent(record.MediaKey)}`, description:record.ShortDescription || null } : null;
+  } catch { return null; }
+}
+
+function isLeadingEdge(r) { return /century\s*21.*leading\s*edge|leading\s*edge.*century\s*21/i.test(String(r?.ListOfficeName || "")); }
+function numberValue(v) { const n=Number(v); return Number.isFinite(n) ? n : null; }
 
 async function resolveAddress(a, env) {
   const tokens = a.name.split(" ").filter(Boolean).sort((x, y) => y.length - x.length);
