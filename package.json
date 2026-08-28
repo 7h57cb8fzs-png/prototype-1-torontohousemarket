@@ -1,0 +1,8 @@
+{
+  "name": "toronto-house-market-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node worker-v12.test.mjs"
+  }
+}
