@@ -31,8 +31,10 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
-    if (typeof smartSnapshot.scheduled === "function") {
-      return smartSnapshot.scheduled(controller, env, ctx);
+    // The Aug 27 agent worker delegates scheduled jobs to worker-v11,
+    // which owns the existing report/notification automation pipeline.
+    if (typeof agentMcp.scheduled === "function") {
+      return agentMcp.scheduled(controller, env, ctx);
     }
   }
 };
