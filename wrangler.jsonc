@@ -1,17 +1,17 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "prototype-1-torontohousemarket",
-  "compatibility_date": "2026-08-25",
-  "main": "worker-v12.js",
+  "compatibility_date": "2026-08-27",
+  "main": "worker-v13.js",
   "ai": { "binding": "AI" },
   "secrets": {
-    "required": ["AMPRE_TOKEN", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_API_KEY", "RESEND_API_KEY"]
+    "required": ["AMPRE_TOKEN", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_API_KEY", "RESEND_API_KEY", "AGENT_API_KEY"]
   },
   "triggers": { "crons": ["* * * * *"] },
   "observability": { "enabled": true, "head_sampling_rate": 1 },
   "assets": {
     "directory": ".",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*", "/app.js"]
+    "run_worker_first": ["/api/*", "/app.js", "/mcp"]
   }
 }
