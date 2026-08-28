@@ -36,10 +36,11 @@ export default {
       const response = await app.fetch(request, env, ctx);
       if (!response.ok) return response;
       const original = await response.text();
+      const patch = `\n\n;(${snapshotPatch.toString()})();\n`;
       const headers = new Headers(response.headers);
       headers.set("Content-Type", "application/javascript; charset=utf-8");
       headers.set("Cache-Control", "no-store");
-      return new Response(`${original}\n\n${SNAPSHOT_PATCH}`, { status: response.status, headers });
+      return new Response(original + patch, { status: response.status, headers });
     }
 
     return app.fetch(request, env, ctx);
@@ -62,10 +63,9 @@ function enrichProperty(property, raw) {
     "GarageSpaces", "GarageSpaces1", "GarageParkingSpaces", "GarageParkingTotal", "CoveredSpaces"
   ]);
   if (garageSpaces != null) property.garageSpaces = garageSpaces;
-  if (!property.garageType) property.garageType = firstText(raw, ["GarageType", "GarageYN"]);
+  if (!property.garageType) property.garageType = firstText(raw, ["GarageType"]);
 
-  const offer = detectOfferDate(raw);
-  property.offerDate = offer;
+  property.offerDate = detectOfferDate(raw);
 
   const school = detectSchool(raw);
   if (school) property.bestSchool = school;
@@ -91,14 +91,14 @@ function normalizeSnapshotFields(property) {
 }
 
 function detectOfferDate(raw) {
-  // Brokerage/private remarks are never exposed. If the authenticated feed returns
-  // an offer instruction there, only the detected date is surfaced. Public remarks
-  // remain the fallback. This avoids publishing confidential remark text.
+  // Never expose brokerage/private remark text. If the authenticated feed makes
+  // an offer instruction available, only the detected date is surfaced.
   const brokerText = [
     raw.BrokerRemarks, raw.BrokerageRemarks, raw.PrivateRemarks,
     raw.PrivateOfficeRemarks, raw.RemarksForBrokerage, raw.OfferRemarks
   ].filter(v => typeof v === "string" && v.trim()).join(" ");
-  const publicText = [raw.PublicRemarks, raw.PublicRemarksExtras].filter(v => typeof v === "string" && v.trim()).join(" ");
+  const publicText = [raw.PublicRemarks, raw.PublicRemarksExtras]
+    .filter(v => typeof v === "string" && v.trim()).join(" ");
   const sourceText = brokerText || publicText;
   const offerSentences = sourceText.split(/(?<=[.!?])\s+|\n+/)
     .filter(s => /\boffer(?:s|ing)?\b|offer presentation|presentation of offers|reviewing offers/i.test(s))
@@ -108,13 +108,17 @@ function detectOfferDate(raw) {
     return {
       available: true,
       label: date,
-      note: brokerText ? "Offer date detected from brokerage listing instructions. Verify before drafting." : "Offer date detected from public listing remarks. Verify before drafting."
+      note: brokerText
+        ? "Offer date detected from brokerage listing instructions. Verify before drafting."
+        : "Offer date detected from public listing remarks. Verify before drafting."
     };
   }
   return {
     available: false,
     label: "No offer date",
-    note: brokerText ? "There is no offer date mentioned in the brokerage listing instructions." : "There is no offer date mentioned in the listing remarks."
+    note: brokerText
+      ? "There is no offer date mentioned in the brokerage listing instructions."
+      : "There is no offer date mentioned in the listing remarks."
   };
 }
 
@@ -124,8 +128,7 @@ function extractDate(text) {
   if (named) return named.replace(/\s+/g, " ").trim();
   const iso = value.match(/\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b/)?.[0];
   if (iso) return iso;
-  const numeric = value.match(/\b\d{1,2}[-/]\d{1,2}[-/]20\d{2}\b/)?.[0];
-  return numeric || null;
+  return value.match(/\b\d{1,2}[-/]\d{1,2}[-/]20\d{2}\b/)?.[0] || null;
 }
 
 function detectSchool(raw) {
@@ -135,21 +138,27 @@ function detectSchool(raw) {
   ];
   let name = firstText(raw, preferredNameKeys);
   if (!name) {
-    const entry = Object.entries(raw || {}).find(([key, value]) => /school/i.test(key) && typeof value === "string" && value.trim() && !/district|board|bus|type/i.test(key));
+    const entry = Object.entries(raw || {}).find(([key, value]) =>
+      /school/i.test(key) && typeof value === "string" && value.trim() && !/district|board|bus|type/i.test(key)
+    );
     if (entry) name = entry[1].trim();
   }
   if (!name) return null;
 
   let rating = firstNumber(raw, ["SchoolRating", "ElementarySchoolRating", "HighSchoolRating", "SchoolScore"]);
   if (rating == null) {
-    const entry = Object.entries(raw || {}).find(([key, value]) => /school.*(?:rating|score)|(?:rating|score).*school/i.test(key) && Number.isFinite(Number(value)));
+    const entry = Object.entries(raw || {}).find(([key, value]) =>
+      /school.*(?:rating|score)|(?:rating|score).*school/i.test(key) && Number.isFinite(Number(value))
+    );
     if (entry) rating = Number(entry[1]);
   }
   return {
     available: true,
     name,
     rating: rating != null ? rating : null,
-    note: rating != null ? "School name and rating supplied by the connected property data; verify school boundaries and eligibility." : "Closest/best school name supplied by the connected property data. A verified numeric rating is not available, so THM does not fabricate one."
+    note: rating != null
+      ? "School name and rating supplied by the connected property data; verify school boundaries and eligibility."
+      : "School name supplied by the connected property data. A verified numeric rating is not available, so THM does not fabricate one."
   };
 }
 
@@ -182,8 +191,7 @@ function json(body, status = 200) {
   });
 }
 
-const SNAPSHOT_PATCH = String.raw`
-(() => {
+function snapshotPatch() {
   const byId = (id) => document.getElementById(id);
   const titleCase = (value) => String(value || "").toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
   const plural = (n, one, many) => Number(n) === 1 ? one : many;
@@ -209,7 +217,8 @@ const SNAPSHOT_PATCH = String.raw`
   const originalQuickFacts = renderQuickFacts;
   renderQuickFacts = function(listing) {
     originalQuickFacts(listing);
-    const spaces = Number.isFinite(Number(listing.garageSpaces)) ? Number(listing.garageSpaces) : null;
+    const rawSpaces = Number(listing.garageSpaces);
+    const spaces = Number.isFinite(rawSpaces) ? rawSpaces : null;
     const type = listing.garageType ? titleCase(listing.garageType) : null;
     let value = "—";
     if (spaces != null && spaces > 0) value = [spaces, type].filter(Boolean).join(" ");
@@ -225,7 +234,11 @@ const SNAPSHOT_PATCH = String.raw`
     if (basement.length) {
       const primary = basement.slice(0, 2).map(titleCase).join(" + ");
       const extra = basement.slice(2).map(titleCase).join(" · ");
-      setSignal("flagSignal", primary, extra || "Basement configuration reported in the MLS. Verify finish quality, ceiling height, permits and legal use where relevant.");
+      setSignal(
+        "flagSignal",
+        primary,
+        extra || "Basement configuration reported in the MLS. Verify finish quality, ceiling height, permits and legal use where relevant."
+      );
     } else {
       setSignal("flagSignal", "Not reported", "The MLS does not provide a basement configuration for this property.");
     }
@@ -253,10 +266,16 @@ const SNAPSHOT_PATCH = String.raw`
 
     if (listing.forSale) {
       const days = listing.daysLive;
-      byId("listingTempoValue").textContent = typeof days === "number" ? (days === 0 ? "Listed today" : `${days} ${plural(days, "day", "days")} live`) : (listing.status || "Active");
-      byId("listingTempoNote").textContent = listing.details?.listedAt ? `Listed ${formatDate(listing.details.listedAt)}` : "Current active MLS listing";
+      byId("listingTempoValue").textContent = typeof days === "number"
+        ? (days === 0 ? "Listed today" : `${days} ${plural(days, "day", "days")} live`)
+        : (listing.status || "Active");
+      byId("listingTempoNote").textContent = listing.details?.listedAt
+        ? `Listed ${formatDate(listing.details.listedAt)}`
+        : "Current active MLS listing";
     } else if (count) {
-      byId("listingTempoValue").textContent = history.lastSeenDate ? `Last seen ${formatDate(history.lastSeenDate)}` : `${count} MLS records`;
+      byId("listingTempoValue").textContent = history.lastSeenDate
+        ? `Last seen ${formatDate(history.lastSeenDate)}`
+        : `${count} MLS records`;
       byId("listingTempoNote").textContent = "Property is not currently listed for sale.";
     } else {
       byId("listingTempoValue").textContent = "Off market";
@@ -266,10 +285,15 @@ const SNAPSHOT_PATCH = String.raw`
     const comp = listing.comparableContext;
     const soldComps = byId("soldComps");
     const rows = Array.isArray(comp?.comparables) ? comp.comparables.slice(0, 3) : [];
-    soldComps.innerHTML = rows.length ? `<div class="snapshot-comp-label">CLOSEST RECENT SOLD EVIDENCE</div>` + rows.map((item) => {
-      const facts = [item.beds != null ? `${item.beds} bd` : null, item.baths != null ? `${item.baths} ba` : null, item.livingAreaRange].filter(Boolean).join(" · ");
-      return `<article class="sold-comp"><div><span>${escapeHtml(item.address || "MLS comparable")}</span><small>${escapeHtml([item.soldDate ? formatDate(item.soldDate) : null, facts].filter(Boolean).join(" · "))}</small></div><div><strong>${money(item.soldPrice)}</strong><em>${Math.round(item.similarity || 0)}% match</em></div></article>`;
-    }).join("") : `<div class="sold-comps-empty">No strong recent sold match is shown here. THM will not use asking prices as fake sold evidence.</div>`;
+    soldComps.innerHTML = rows.length
+      ? `<div class="snapshot-comp-label">CLOSEST RECENT SOLD EVIDENCE</div>` + rows.map((item) => {
+          const facts = [
+            item.beds != null ? `${item.beds} bd` : null,
+            item.baths != null ? `${item.baths} ba` : null,
+            item.livingAreaRange
+          ].filter(Boolean).join(" · ");
+          return `<article class="sold-comp"><div><span>${escapeHtml(item.address || "MLS comparable")}</span><small>${escapeHtml([item.soldDate ? formatDate(item.soldDate) : null, facts].filter(Boolean).join(" · "))}</small></div><div><strong>${money(item.soldPrice)}</strong><em>${Math.round(item.similarity || 0)}% match</em></div></article>`;
+        }).join("")
+      : `<div class="sold-comps-empty">No strong recent sold match is shown here. THM will not use asking prices as fake sold evidence.</div>`;
   };
-})();
-`;
+}
