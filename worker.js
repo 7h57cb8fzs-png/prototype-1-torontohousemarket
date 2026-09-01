@@ -504,34 +504,34 @@ async function buildComparableContext(subject, env, activeForSale) {
   let raw = (await Promise.all(localSearches.map((filters) => queryProperties(filters, env, 300, null)))).flat();
   let candidates = qualifiedSoldCandidates(subject, raw, 300);
 
-  if (candidates.length < 3 && city) {
+  if (candidates.length < 1 && city) {
     raw = raw.concat(await queryProperties([city, subtypeFilter], env, 400, null));
     candidates = qualifiedSoldCandidates(subject, raw, 300);
   }
 
   let windowDays = 100;
   let window = candidates.filter((c) => c.ageDays <= 100);
-  if (window.length < 3) {
+  if (window.length < 1) {
     windowDays = 300;
     window = candidates;
   }
 
-  if (window.length < 3) {
-    return unavailableComp("Fewer than three exact-subtype sold comparables were found within 300 days.", window.length, windowDays);
+  if (window.length < 1) {
+    return unavailableComp("No exact-subtype sold comparables were found within 300 days.", window.length, windowDays);
   }
 
   const prices = window.map((c) => c.price).sort((a, b) => a - b);
   const middle = Math.floor(prices.length / 2);
   const median = prices.length % 2 ? prices[middle] : (prices[middle - 1] + prices[middle]) / 2;
   const clustered = window.filter((c) => c.price >= median * 0.9 && c.price <= median * 1.1);
-  if (clustered.length < 3) {
-    return unavailableComp("The exact-subtype sold set became too thin after the required ±10% median price filter.", clustered.length, windowDays);
+  if (clustered.length < 1) {
+    return unavailableComp("No exact-subtype sale remained after the required ±10% median price filter.", clustered.length, windowDays);
   }
 
   const selected = clustered.sort(compareComparable).slice(0, 5);
   const band = weightedBand(selected);
   const avgScore = selected.reduce((sum, x) => sum + x.similarity, 0) / selected.length;
-  const confidence = avgScore >= 78 && selected.length >= 5 ? "High" : avgScore >= 64 ? "Medium" : "Low";
+  const confidence = selected.length < 3 ? "Low" : avgScore >= 78 && selected.length >= 5 ? "High" : avgScore >= 64 ? "Medium" : "Low";
 
   return {
     available: true,
