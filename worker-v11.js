@@ -144,7 +144,7 @@ async function processReportJobs(env,limit=3){
     try{
       const lead=await loadLeadForReport(env,job.lead_id);
       if(!lead)throw new Error("Lead data is unavailable.");
-      const property=await loadPropertyForReport(env,lead);
+      const property=await loadPropertyForReport(env,lead,job);
       const report=await buildPropertyReport(env,lead,property);
       await rpc(env,"complete_report_job",{p_job_id:job.id,p_report_id:job.report_id,p_report_payload:report});
       completed++;
@@ -165,9 +165,12 @@ async function loadLeadForReport(env,id){
   return Array.isArray(rows)?rows[0]:null;
 }
 
-async function loadPropertyForReport(env,lead){
+async function loadPropertyForReport(env,lead,job){
   const url=new URL("https://torontohousemarket.com/api/property");
-  const listingKey=lead.property_snapshot?.listingKey||lead.metadata?.listing_key||lead.metadata?.listingKey||null;
+  const queuedListingKey=clean(job?.payload?.listing_key,40).toUpperCase();
+  const listingKey=/^[A-Z]\\d{7,9}$/.test(queuedListingKey)
+    ? queuedListingKey
+    : lead.property_snapshot?.listingKey||lead.metadata?.listing_key||lead.metadata?.listingKey||null;
   if(listingKey)url.searchParams.set("listingKey",listingKey);
   else url.searchParams.set("q",lead.resolved_address||lead.metadata?.property_input||"");
   const response=await app.fetch(new Request(url.toString(),{method:"GET"}),env,{waitUntil(){}});
