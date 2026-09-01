@@ -504,17 +504,20 @@ async function buildComparableContext(subject, env, activeForSale) {
     region ? [region, subtypeFilter] : null,
   ].filter(Boolean);
   const vowOptions = { token: env.AMPRE_VOW_TOKEN, strict: true };
-  let raw = (await Promise.all(localSearches.map((filters) => queryProperties(filters, env, 100, null, vowOptions)))).flat();
+  // Ask AMPRE for sold/closed rows at the server. Fetching a generic local set and
+  // filtering it afterward can fill the response cap with active listings and
+  // incorrectly look like the area has no comparable sales.
+  let raw = (await Promise.all(localSearches.map((filters) => querySoldProperties(filters, env, vowOptions)))).flat();
   let candidates = qualifiedSoldCandidates(subject, raw, 300);
 
-  if (candidates.length < 1 && city) {
-    raw = raw.concat(await queryProperties([city, subtypeFilter], env, 100, null, vowOptions));
+  if (candidates.length < 5 && city) {
+    raw = raw.concat(await querySoldProperties([city, subtypeFilter], env, vowOptions));
     candidates = qualifiedSoldCandidates(subject, raw, 300);
   }
 
   let windowDays = 100;
   let window = candidates.filter((c) => c.ageDays <= 100);
-  if (window.length < 1) {
+  if (window.length < 3) {
     windowDays = 300;
     window = candidates;
   }
@@ -526,9 +529,21 @@ async function buildComparableContext(subject, env, activeForSale) {
   const prices = window.map((c) => c.price).sort((a, b) => a - b);
   const middle = Math.floor(prices.length / 2);
   const median = prices.length % 2 ? prices[middle] : (prices[middle - 1] + prices[middle]) / 2;
-  const clustered = window.filter((c) => c.price >= median * 0.9 && c.price <= median * 1.1);
+  let priceTolerancePct = 10;
+  let clustered = priceCluster(window, median, priceTolerancePct);
+  // Preserve a tight band when it produces enough evidence, but widen in small,
+  // disclosed steps when an otherwise useful local set would contain fewer than
+  // three matches. This never changes the exact property-subtype requirement.
+  if (clustered.length < 3 && window.length >= 3) {
+    priceTolerancePct = 15;
+    clustered = priceCluster(window, median, priceTolerancePct);
+  }
+  if (clustered.length < 3 && window.length >= 3) {
+    priceTolerancePct = 20;
+    clustered = priceCluster(window, median, priceTolerancePct);
+  }
   if (clustered.length < 1) {
-    return unavailableComp("No exact-subtype sale remained after the required ±10% median price filter.", clustered.length, windowDays);
+    return unavailableComp("No exact-subtype sale remained after the adaptive median price filter.", clustered.length, windowDays);
   }
 
   const selected = clustered.sort(compareComparable).slice(0, 5);
@@ -554,11 +569,44 @@ async function buildComparableContext(subject, env, activeForSale) {
       exactSubtype: true,
       windowDays,
       expandedWindow: windowDays === 300,
-      priceTolerancePct: 10,
+      priceTolerancePct,
       beforePriceCluster: window.length,
       afterPriceCluster: clustered.length,
     },
   };
+}
+
+function priceCluster(candidates, median, tolerancePct) {
+  const tolerance = tolerancePct / 100;
+  return candidates.filter((c) => c.price >= median * (1 - tolerance) && c.price <= median * (1 + tolerance));
+}
+
+async function querySoldProperties(baseFilters, env, options) {
+  const statusFilters = [
+    "StandardStatus eq 'Closed'",
+    "MlsStatus eq 'Sold'",
+    "ContractStatus eq 'Sold'",
+    "ContractStatus eq 'Closed'",
+  ];
+  const rows = [];
+  const errors = [];
+  let acceptedQuery = false;
+
+  for (const statusFilter of statusFilters) {
+    try {
+      const batch = await queryProperties([...baseFilters, statusFilter], env, 100, null, options);
+      acceptedQuery = true;
+      rows.push(...batch);
+      if (batch.length >= 20) break;
+    } catch (error) {
+      errors.push(String(error));
+    }
+  }
+
+  if (!acceptedQuery) {
+    throw new Error(`VOW sold-property query was rejected. ${errors[0] || "No status filter was accepted."}`);
+  }
+  return dedupe(rows);
 }
 
 function qualifiedSoldCandidates(subject, records, maxAgeDays) {
@@ -567,7 +615,7 @@ function qualifiedSoldCandidates(subject, records, maxAgeDays) {
     .filter((r) => sameText(subject.PropertySubType, r.PropertySubType))
     .filter((r) => isRecentSold(r, maxAgeDays))
     .map((r) => normalizeComparable(subject, r))
-    .filter((c) => c.price && c.closeDate && c.similarity >= 45)
+    .filter((c) => c.price && c.closeDate && c.similarity >= 35)
     .sort(compareComparable);
 }
 

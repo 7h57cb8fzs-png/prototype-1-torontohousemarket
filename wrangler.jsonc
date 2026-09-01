@@ -5,7 +5,7 @@
   "main": "worker-v11.js",
   "ai": { "binding": "AI" },
   "secrets": {
-    "required": ["AMPRE_TOKEN", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_API_KEY", "RESEND_API_KEY"]
+    "required": ["AMPRE_TOKEN", "AMPRE_VOW_TOKEN", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_API_KEY", "RESEND_API_KEY"]
   },
   "triggers": { "crons": ["* * * * *"] },
   "observability": { "enabled": true, "head_sampling_rate": 1 },
