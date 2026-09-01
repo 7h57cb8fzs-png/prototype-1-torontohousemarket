@@ -258,7 +258,7 @@ function renderPhotos(items, listing) {
 
   mainPhoto.src = photos[0].url;
   mainPhoto.alt = photos[0].description || `Photo of ${listing.address || "property"}`;
-  mainPhoto.onerror = () => removeBrokenPhoto(0);
+  mainPhoto.onerror = () => usePhotoFallback(mainPhoto,0);
   photoCountBadge.textContent = `${photos.length} photo${photos.length === 1 ? "" : "s"}`;
 
   const secondary = photos.slice(1, 5);
@@ -268,9 +268,16 @@ function renderPhotos(items, listing) {
     </button>`).join("");
 
   for (const button of photoThumbs.querySelectorAll("button")) {
-    button.addEventListener("click", () => openGallery(Number(button.dataset.photoIndex || 0)));
+    const index=Number(button.dataset.photoIndex||0);
+    button.addEventListener("click", () => openGallery(index));
     const img = button.querySelector("img");
-    if (img) img.addEventListener("error", () => button.remove(), { once: true });
+    if (img) img.addEventListener("error", () => {
+      const photo=photos[index];
+      if(photo?.fallbackUrl&&!img.dataset.fallbackUsed){
+        img.dataset.fallbackUsed="true";
+        img.src=photo.fallbackUrl;
+      }else button.remove();
+    });
   }
 }
 
@@ -278,6 +285,16 @@ function removeBrokenPhoto(index) {
   if (!photos[index]) return;
   photos.splice(index, 1);
   renderPhotos(photos, liveListing || {});
+}
+
+function usePhotoFallback(image,index) {
+  const photo=photos[index];
+  if(photo?.fallbackUrl&&!image.dataset.fallbackUsed){
+    image.dataset.fallbackUsed="true";
+    image.src=photo.fallbackUrl;
+    return;
+  }
+  removeBrokenPhoto(index);
 }
 
 photoMainButton.addEventListener("click", () => openGallery(0));

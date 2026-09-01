@@ -38,7 +38,7 @@ async function handleProperty(request, env) {
   }
 
   let subject = null;
-  let history = [];
+  let history = null;
   let resolution = null;
   let validationLabel = null;
 
@@ -46,7 +46,6 @@ async function handleProperty(request, env) {
   if (directKey) {
     subject = await fetchPropertyByKey(directKey, env);
     if (!subject) return json({ ok: false, error: "That MLS listing could not be found." }, 404);
-    history = await findSameAddressHistory(subject, env);
     resolution = input.type === "link" ? "link_mls" : "mls";
     validationLabel = input.type === "link" ? `Listing URL matched to MLS ${subject.ListingKey}` : `MLS ${subject.ListingKey} verified`;
   } else {
@@ -72,12 +71,18 @@ async function handleProperty(request, env) {
   const fullDisplayAllowed = subject.InternetEntireListingDisplayYN !== false;
   const displayRestricted = activeForSale && !fullDisplayAllowed;
 
-  const [comparableContext, mediaRecords] = await Promise.all([
-    buildComparableContext(subject, env, activeForSale),
+  const [resolvedHistory, mediaRecords] = await Promise.all([
+    history?.length ? Promise.resolve(history) : findSameAddressHistory(subject, env),
     activeForSale && fullDisplayAllowed ? fetchPropertyMedia(subject.ListingKey, env) : Promise.resolve([]),
   ]);
 
-  const historySummary = summarizeHistory(history, subject);
+  const comparableContext = {
+    available: false,
+    matchCount: 0,
+    confidence: "Available after request",
+    basis: "Private sold evidence is prepared server-side after a showing or property-report request.",
+  };
+  const historySummary = summarizeHistory(resolvedHistory, subject);
   const priceOpinion = buildPriceOpinion(comparableContext, activeForSale);
   const property = normalizeSubject(subject, {
     activeForSale,
@@ -93,6 +98,38 @@ async function handleProperty(request, env) {
   });
 
   return json({ ok: true, property });
+}
+
+export async function buildPrivateReportProperty(listingKey, env) {
+  const key = clean(listingKey, 40).toUpperCase();
+  if (!/^[A-Z]\d{7,9}$/.test(key)) throw new Error("A verified MLS key is required for private report evidence.");
+  if (!env.AMPRE_TOKEN) throw new Error("IDX connection is not configured.");
+
+  const subject = await fetchPropertyByKey(key, env);
+  if (!subject) throw new Error("The MLS listing could not be resolved for the private report.");
+
+  const activeForSale = isActiveForSale(subject);
+  const addressDisplayAllowed = subject.InternetAddressDisplayYN !== false;
+  const fullDisplayAllowed = subject.InternetEntireListingDisplayYN !== false;
+  const displayRestricted = activeForSale && !fullDisplayAllowed;
+  const [history, comparableContext] = await Promise.all([
+    findSameAddressHistory(subject, env),
+    buildComparableContext(subject, env, activeForSale),
+  ]);
+  const historySummary = summarizeHistory(history, subject);
+
+  return normalizeSubject(subject, {
+    activeForSale,
+    addressDisplayAllowed,
+    fullDisplayAllowed,
+    displayRestricted,
+    resolution: "private_exact_mls",
+    validationLabel: `MLS ${key} verified for private report`,
+    comparableContext,
+    historySummary,
+    priceOpinion: buildPriceOpinion(comparableContext, activeForSale),
+    photos: [],
+  });
 }
 
 function buildNoMlsProperty(address, validationLabel) {
@@ -199,12 +236,12 @@ async function resolveAddress(input, env) {
 
   let records = [];
   for (const filters of querySets) {
-    records = await queryProperties(filters, env, 100, "ModificationTimestamp desc,ListingKey desc");
+    records = await queryProperties(filters, env, 100, null);
     if (records.length) break;
   }
 
   if (!records.length) {
-    records = await queryProperties([`contains(StreetName,'${name}')`], env, 150, "ModificationTimestamp desc,ListingKey desc");
+    records = await queryProperties([`contains(StreetName,'${name}')`], env, 150, null);
   }
 
   const scored = records
@@ -276,7 +313,7 @@ async function findSameAddressHistory(subject, env) {
   const records = await queryProperties([
     `StreetNumber eq '${odataString(subject.StreetNumber)}'`,
     `contains(StreetName,'${odataString(titleCase(subject.StreetName))}')`,
-  ], env, 120, "ModificationTimestamp desc,ListingKey desc");
+  ], env, 120, null);
   const exact = records.filter((r) => samePhysicalAddress(subject, r)).filter(withinTenYears);
   return exact.length ? exact : [subject];
 }
@@ -314,7 +351,8 @@ function normalizeMedia(records) {
     seen.add(mediaKey);
     output.push({
       key: mediaKey,
-      url: `/api/media?key=${encodeURIComponent(mediaKey)}`,
+      url: mediaUrl,
+      fallbackUrl: `/api/media?key=${encodeURIComponent(mediaKey)}`,
       description: cleanText(m.ShortDescription || m.LongDescription),
     });
   }
@@ -452,32 +490,45 @@ function historicalSoldSummary(r) {
 
 async function buildComparableContext(subject, env, activeForSale) {
   if (!subject) return unavailableComp("No subject property was available.");
-  const type = subject.PropertyType ? `PropertyType eq '${odataString(subject.PropertyType)}'` : null;
+  const subtype = cleanText(subject.PropertySubType);
+  if (!subtype) return unavailableComp("The subject property subtype is unavailable, so an exact-subtype range cannot be produced.");
+  const subtypeFilter = `PropertySubType eq '${odataString(subtype)}'`;
   const region = subject.CityRegion ? `CityRegion eq '${odataString(subject.CityRegion)}'` : null;
   const city = subject.City ? `City eq '${odataString(subject.City)}'` : null;
   const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
-  const searches = [
-    [region, type], [city, type], [region], [city],
-    postalPrefix ? [`startswith(PostalCode,'${odataString(postalPrefix)}')`, type] : null,
-  ].filter(Boolean).map((items) => items.filter(Boolean));
-  const batches = await Promise.all(searches.map((filters) => queryProperties(filters, env, 500, "ModificationTimestamp desc,ListingKey desc")));
-  const raw = batches.flat();
-  let candidates = dedupe(raw)
-    .filter((r) => r.ListingKey !== subject.ListingKey)
-    .filter(isRecentSold)
-    .map((r) => normalizeComparable(subject, r))
-    .filter((c) => c.price && c.closeDate && c.similarity >= 45)
-    .sort(compareComparable);
 
-  if (candidates.length >= 5) {
-    const prices = candidates.map((c) => c.price).sort((a, b) => a - b);
-    const median = prices[Math.floor(prices.length / 2)];
-    candidates = candidates.filter((c) => c.price >= median * 0.55 && c.price <= median * 1.8);
+  const localSearches = [
+    postalPrefix ? [`startswith(PostalCode,'${odataString(postalPrefix)}')`, subtypeFilter] : null,
+    region ? [region, subtypeFilter] : null,
+  ].filter(Boolean);
+  let raw = (await Promise.all(localSearches.map((filters) => queryProperties(filters, env, 300, null)))).flat();
+  let candidates = qualifiedSoldCandidates(subject, raw, 300);
+
+  if (candidates.length < 3 && city) {
+    raw = raw.concat(await queryProperties([city, subtypeFilter], env, 400, null));
+    candidates = qualifiedSoldCandidates(subject, raw, 300);
   }
 
-  if (candidates.length < 3) return unavailableComp("The current recent-sold MLS match set is too thin to force a range.", candidates.length);
+  let windowDays = 100;
+  let window = candidates.filter((c) => c.ageDays <= 100);
+  if (window.length < 3) {
+    windowDays = 300;
+    window = candidates;
+  }
 
-  const selected = candidates.slice(0, 5);
+  if (window.length < 3) {
+    return unavailableComp("Fewer than three exact-subtype sold comparables were found within 300 days.", window.length, windowDays);
+  }
+
+  const prices = window.map((c) => c.price).sort((a, b) => a - b);
+  const middle = Math.floor(prices.length / 2);
+  const median = prices.length % 2 ? prices[middle] : (prices[middle - 1] + prices[middle]) / 2;
+  const clustered = window.filter((c) => c.price >= median * 0.9 && c.price <= median * 1.1);
+  if (clustered.length < 3) {
+    return unavailableComp("The exact-subtype sold set became too thin after the required ±10% median price filter.", clustered.length, windowDays);
+  }
+
+  const selected = clustered.sort(compareComparable).slice(0, 5);
   const band = weightedBand(selected);
   const avgScore = selected.reduce((sum, x) => sum + x.similarity, 0) / selected.length;
   const confidence = avgScore >= 78 && selected.length >= 5 ? "High" : avgScore >= 64 ? "Medium" : "Low";
@@ -492,15 +543,39 @@ async function buildComparableContext(subject, env, activeForSale) {
     soldCount: selected.length,
     activeCount: 0,
     historicalCount: 0,
-    sourceLabel: "recent sold MLS comparables",
+    sourceLabel: "private recent sold MLS comparables",
     basis: buildBasisText(subject, selected),
     comparables: selected.map(publicComparable),
     activeForSale,
+    policy: {
+      exactSubtype: true,
+      windowDays,
+      expandedWindow: windowDays === 300,
+      priceTolerancePct: 10,
+      beforePriceCluster: window.length,
+      afterPriceCluster: clustered.length,
+    },
   };
 }
 
-function unavailableComp(basis, matchCount = 0) {
-  return { available: false, matchCount, confidence: "Unavailable", basis };
+function qualifiedSoldCandidates(subject, records, maxAgeDays) {
+  return dedupe(records)
+    .filter((r) => r.ListingKey !== subject.ListingKey)
+    .filter((r) => sameText(subject.PropertySubType, r.PropertySubType))
+    .filter((r) => isRecentSold(r, maxAgeDays))
+    .map((r) => normalizeComparable(subject, r))
+    .filter((c) => c.price && c.closeDate && c.similarity >= 45)
+    .sort(compareComparable);
+}
+
+function unavailableComp(basis, matchCount = 0, windowDays = 300) {
+  return {
+    available: false,
+    matchCount,
+    confidence: "Unavailable",
+    basis,
+    policy: { exactSubtype: true, windowDays, expandedWindow: windowDays === 300, priceTolerancePct: 10 },
+  };
 }
 
 function normalizeComparable(subject, r) {
@@ -520,6 +595,8 @@ function normalizeComparable(subject, r) {
     record: r,
     source,
     price,
+    ageDays: soldAgeDays(r),
+    distanceKm: distanceKm(subject, r),
     similarity: similarityScore(subject, r),
     recency: recencyWeight(recordDate),
     reliability: source === "sold" ? 1 : source === "active" ? 0.82 : 0.58,
@@ -527,14 +604,19 @@ function normalizeComparable(subject, r) {
   };
 }
 
-function isRecentSold(r) {
+function isRecentSold(r, maxAgeDays = 300) {
   const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""}`;
   const price = firstFiniteNumber(r, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"]);
   const date = soldRecordDate(r);
   const soldEvidence = /closed|sold|deal firm/i.test(status) || !!validDate(firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"]));
   if (!soldEvidence || !price || !date) return false;
   const ageDays = (Date.now() - date.getTime()) / 86400000;
-  return ageDays >= 0 && ageDays <= 730;
+  return ageDays >= 0 && ageDays <= maxAgeDays;
+}
+
+function soldAgeDays(r) {
+  const date = soldRecordDate(r);
+  return date ? Math.max(0, (Date.now() - date.getTime()) / 86400000) : Number.POSITIVE_INFINITY;
 }
 
 function soldRecordDate(r) {
@@ -558,6 +640,7 @@ function publicComparable(c) {
     lotWidth: numberOrNull(r.LotWidth),
     lotDepth: numberOrNull(r.LotDepth),
     similarity: c.similarity,
+    distanceKm: Number.isFinite(c.distanceKm) ? Math.round(c.distanceKm * 10) / 10 : null,
   };
 }
 
@@ -594,6 +677,9 @@ function similarityScore(subject, c) {
 }
 
 function compareComparable(a, b) {
+  const aDistance = Number.isFinite(a.distanceKm) ? a.distanceKm : Number.POSITIVE_INFINITY;
+  const bDistance = Number.isFinite(b.distanceKm) ? b.distanceKm : Number.POSITIVE_INFINITY;
+  if (aDistance !== bDistance) return aDistance - bDistance;
   const aw = a.similarity * 0.76 + a.recency * 16 + a.reliability * 8;
   const bw = b.similarity * 0.76 + b.recency * 16 + b.reliability * 8;
   return bw - aw;
@@ -622,9 +708,7 @@ function weightedQuantile(items, q) {
 }
 
 function buildBasisText(subject, matches) {
-  const parts = [];
-  const subtypeHits = matches.filter((m) => sameText(subject.PropertySubType, m.record.PropertySubType)).length;
-  if (subject.PropertySubType && subtypeHits) parts.push(`${subtypeHits}/${matches.length} same property subtype`);
+  const parts = [`${matches.length}/${matches.length} exact property subtype`];
   const bed = numberOrNull(subject.BedroomsTotal);
   if (bed != null) {
     const hits = matches.filter((m) => {
@@ -687,7 +771,7 @@ async function queryProperties(filters, env, top = 100, orderby = "ModificationT
   const params = new URLSearchParams();
   params.set("$top", String(top));
   if (filters?.length) params.set("$filter", filters.join(" and "));
-  params.set("$orderby", orderby);
+  if (orderby) params.set("$orderby", orderby);
   try {
     const response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
     if (!response.ok) return [];
@@ -798,6 +882,26 @@ function validDate(value) { if (!value) return null; const d = value instanceof 
 function dateOnly(value) { const d = validDate(value); return d ? d.toISOString().slice(0, 10) : null; }
 function diffScore(a, b, maxDiff) { return Math.max(0, 1 - Math.abs(a - b) / maxDiff); }
 function ratioCloseness(a, b, tolerance) { return Math.max(0, 1 - Math.abs(a - b) / Math.max(a, b) / tolerance); }
+function distanceKm(a, b) {
+  const lat1 = firstFiniteCoordinate(a, ["Latitude", "MapLatitude"]);
+  const lon1 = firstFiniteCoordinate(a, ["Longitude", "MapLongitude"]);
+  const lat2 = firstFiniteCoordinate(b, ["Latitude", "MapLatitude"]);
+  const lon2 = firstFiniteCoordinate(b, ["Longitude", "MapLongitude"]);
+  if ([lat1, lon1, lat2, lon2].some((v) => v == null)) return null;
+  const rad = (value) => value * Math.PI / 180;
+  const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+function firstFiniteCoordinate(record, keys) {
+  for (const key of keys) {
+    const value = record?.[key];
+    if (value == null || value === "") continue;
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
 function sameText(a, b) { return normalizeText(a) === normalizeText(b); }
 function normalizeText(value) { return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
 function arrayText(value) { return Array.isArray(value) ? value.join(" ") : String(value || ""); }

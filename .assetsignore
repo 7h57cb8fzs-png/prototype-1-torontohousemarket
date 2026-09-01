@@ -1,5 +1,4 @@
-worker.js
-worker-v*.js
+worker*.js
 wrangler.jsonc
 README.md
 .gitignore
