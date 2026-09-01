@@ -1,0 +1,56 @@
+name: Export deployed Cloudflare Worker
+
+on:
+  push:
+    branches:
+      - codex/fix-complete-ai-report
+    paths:
+      - .github/workflows/export-cloudflare-worker.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Export deployed worker bundle
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN repository secret is not configured."
+            exit 1
+          fi
+          mkdir -p exported-worker
+          curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -H "Accept: application/json" \
+            https://api.cloudflare.com/client/v4/accounts \
+            -o exported-worker/accounts.json
+          found=0
+          while IFS= read -r account_id; do
+            status="$(curl -sS -w '%{http_code}' \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -D exported-worker/response-headers.txt \
+              -o exported-worker/worker-bundle.bin \
+              "https://api.cloudflare.com/client/v4/accounts/${account_id}/workers/scripts/prototype-1-torontohousemarket")"
+            if [ "${status}" = "200" ]; then
+              printf '%s' "${account_id}" > exported-worker/account-id.txt
+              found=1
+              break
+            fi
+          done < <(jq -r '.result[].id' exported-worker/accounts.json)
+          if [ "${found}" != "1" ]; then
+            echo "::error::Worker was not found in any account available to this token."
+            exit 1
+          fi
+      - name: Upload deployed worker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prototype-1-torontohousemarket-deployed
+          path: exported-worker/
+          if-no-files-found: error
+          retention-days: 1
