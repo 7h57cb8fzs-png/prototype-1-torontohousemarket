@@ -104,6 +104,7 @@ export async function buildPrivateReportProperty(listingKey, env) {
   const key = clean(listingKey, 40).toUpperCase();
   if (!/^[A-Z]\d{7,9}$/.test(key)) throw new Error("A verified MLS key is required for private report evidence.");
   if (!env.AMPRE_TOKEN) throw new Error("IDX connection is not configured.");
+  if (!env.AMPRE_VOW_TOKEN) throw new Error("VOW sold-data access is not configured.");
 
   const subject = await fetchPropertyByKey(key, env);
   if (!subject) throw new Error("The MLS listing could not be resolved for the private report.");
@@ -113,7 +114,7 @@ export async function buildPrivateReportProperty(listingKey, env) {
   const fullDisplayAllowed = subject.InternetEntireListingDisplayYN !== false;
   const displayRestricted = activeForSale && !fullDisplayAllowed;
   const [history, comparableContext] = await Promise.all([
-    findSameAddressHistory(subject, env),
+    findSameAddressHistory(subject, env, { token: env.AMPRE_VOW_TOKEN, strict: true }),
     buildComparableContext(subject, env, activeForSale),
   ]);
   const historySummary = summarizeHistory(history, subject);
@@ -308,12 +309,12 @@ function sameAddressAs(parsed, r) {
   return numberMatch && streetMatch;
 }
 
-async function findSameAddressHistory(subject, env) {
+async function findSameAddressHistory(subject, env, options = {}) {
   if (!subject?.StreetNumber || !subject?.StreetName) return [subject].filter(Boolean);
   const records = await queryProperties([
     `StreetNumber eq '${odataString(subject.StreetNumber)}'`,
     `contains(StreetName,'${odataString(titleCase(subject.StreetName))}')`,
-  ], env, 120, null);
+  ], env, 120, null, options);
   const exact = records.filter((r) => samePhysicalAddress(subject, r)).filter(withinTenYears);
   return exact.length ? exact : [subject];
 }
@@ -490,6 +491,7 @@ function historicalSoldSummary(r) {
 
 async function buildComparableContext(subject, env, activeForSale) {
   if (!subject) return unavailableComp("No subject property was available.");
+  if (!env.AMPRE_VOW_TOKEN) throw new Error("VOW sold-data access is not configured.");
   const subtype = cleanText(subject.PropertySubType);
   if (!subtype) return unavailableComp("The subject property subtype is unavailable, so an exact-subtype range cannot be produced.");
   const subtypeFilter = `PropertySubType eq '${odataString(subtype)}'`;
@@ -501,11 +503,12 @@ async function buildComparableContext(subject, env, activeForSale) {
     postalPrefix ? [`startswith(PostalCode,'${odataString(postalPrefix)}')`, subtypeFilter] : null,
     region ? [region, subtypeFilter] : null,
   ].filter(Boolean);
-  let raw = (await Promise.all(localSearches.map((filters) => queryProperties(filters, env, 300, null)))).flat();
+  const vowOptions = { token: env.AMPRE_VOW_TOKEN, strict: true };
+  let raw = (await Promise.all(localSearches.map((filters) => queryProperties(filters, env, 100, null, vowOptions)))).flat();
   let candidates = qualifiedSoldCandidates(subject, raw, 300);
 
   if (candidates.length < 1 && city) {
-    raw = raw.concat(await queryProperties([city, subtypeFilter], env, 400, null));
+    raw = raw.concat(await queryProperties([city, subtypeFilter], env, 100, null, vowOptions));
     candidates = qualifiedSoldCandidates(subject, raw, 300);
   }
 
@@ -767,17 +770,21 @@ function buildOffMarketFocus(history) {
   };
 }
 
-async function queryProperties(filters, env, top = 100, orderby = "ModificationTimestamp desc,ListingKey desc") {
+async function queryProperties(filters, env, top = 100, orderby = "ModificationTimestamp desc,ListingKey desc", options = {}) {
   const params = new URLSearchParams();
   params.set("$top", String(top));
   if (filters?.length) params.set("$filter", filters.join(" and "));
   if (orderby) params.set("$orderby", orderby);
   try {
-    const response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
-    if (!response.ok) return [];
+    const response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env, options.token);
+    if (!response.ok) {
+      if (options.strict) throw new Error(`VOW property query was rejected with HTTP ${response.status}.`);
+      return [];
+    }
     const body = await response.json();
     return Array.isArray(body.value) ? body.value : [];
-  } catch {
+  } catch (error) {
+    if (options.strict) throw error;
     return [];
   }
 }
@@ -852,9 +859,9 @@ function sanitizeSnapshot(value) {
   return out;
 }
 
-async function amplifyFetch(endpoint, env) {
+async function amplifyFetch(endpoint, env, token = env.AMPRE_TOKEN) {
   return fetch(endpoint, {
-    headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" },
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
   });
 }
 

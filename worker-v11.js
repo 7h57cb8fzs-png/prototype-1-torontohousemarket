@@ -203,13 +203,18 @@ async function buildPropertyReport(env,lead,property){
     methodology:"Exact-subtype AMPRE/PropTx sales are checked within 100 days, expanded to 300 only when needed, prioritized by proximity and filtered to ±10% of the candidate-set median. A range may be shown from limited evidence, with confidence reduced when fewer than three qualified sales remain.",
   };
   const fallback=buildDeterministicNarrative(facts,valuation,comparables,property);
-  const ai=await generateAiNarrative(env,facts,valuation,comparables,property).catch(error=>{
+  const ai=await generateAiNarrative(env,facts,{available:false},[],{
+    remarks:property.remarks,
+    showingFocus:property.showingFocus,
+    historySummary:null,
+  }).catch(error=>{
     console.warn(JSON.stringify({event:"report_ai_fallback",lead_id:lead.id,error:String(error).slice(0,240)}));
     return null;
   });
+  const narrative=ai?{...ai,market_read:fallback.market_read,buyer_strategy:fallback.buyer_strategy}:fallback;
   return {
     schema_version:1,generated_at:new Date().toISOString(),report_type:"AI-assisted buyer property report",
-    facts,valuation,comparables,comparable_policy:comp.policy||null,narrative:ai||fallback,
+    facts,valuation,comparables,comparable_policy:comp.policy||null,narrative,
     history:property.historySummary||null,
     showing_focus:property.showingFocus||null,
     sources:[
