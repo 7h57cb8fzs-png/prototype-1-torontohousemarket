@@ -87,7 +87,7 @@ jobs:
               -o cloudflare-v85-deploy/rollback-response.json \
               "${api}/workers/scripts/${WORKER_NAME}/deployments" || true
           }
-          trap rollback ERR
+          trap 'status=$?; if [ "${status}" -ne 0 ]; then rollback; fi' EXIT
 
           http_status="$(curl -sS --request PUT \
             -H "${auth}" \
@@ -102,6 +102,13 @@ jobs:
             jq -r '.errors[]? | "::error::Cloudflare \(.code): \(.message)"' cloudflare-v85-deploy/content-update.json
             exit 1
           fi
+
+          curl -fsS -H "${auth}" -o cloudflare-v85-deploy/deployments-mid.json "${api}/workers/scripts/${WORKER_NAME}/deployments"
+          temporary_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' cloudflare-v85-deploy/deployments-mid.json | head -1)"
+          curl -fsS -H "${auth}" -o cloudflare-v85-deploy/version-mid.json "${api}/workers/workers/${WORKER_NAME}/versions/${temporary_id}"
+          jq -S '[.result.bindings[] | select(.type != "plain_text") | {name, type}] | sort_by(.name)' cloudflare-v85-deploy/version-before.json > cloudflare-v85-deploy/protected-bindings-before.json
+          jq -S '[.result.bindings[] | select(.type != "plain_text") | {name, type}] | sort_by(.name)' cloudflare-v85-deploy/version-mid.json > cloudflare-v85-deploy/protected-bindings-mid.json
+          cmp cloudflare-v85-deploy/protected-bindings-before.json cloudflare-v85-deploy/protected-bindings-mid.json
 
           jq --arg rollback_id "${rollback_id}" '
             .result as $s |
@@ -178,7 +185,7 @@ jobs:
           test "$(wc -c < cloudflare-v85-deploy/production-home.html)" -gt 1000
           curl -fsS "${PRODUCTION_URL}/api/health" -o cloudflare-v85-deploy/production-health.json || true
 
-          trap - ERR
+          trap - EXIT
           echo "Production v85 verified with exact bindings. Rollback version remains ${rollback_id}."
 
       - name: Upload deployment verification
