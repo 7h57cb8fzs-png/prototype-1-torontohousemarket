@@ -5,7 +5,7 @@ on:
     branches:
       - codex/fix-complete-ai-report
     paths:
-      - .github/workflows/deploy-cloudflare-v86-code-only.yml
+      - .github/workflows/deploy-cloudflare-v85-code-only.yml
   workflow_dispatch:
 
 permissions:
