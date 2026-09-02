@@ -1,0 +1,108 @@
+async function buildComparableContext(subject, env, activeForSale) {
+  if (!subject) return unavailableComp("No subject property was available.");
+  const subtype = cleanText(subject.PropertySubType);
+  if (!subtype) return unavailableComp("The subject property subtype is unavailable, so an exact-subtype range cannot be produced.");
+  const subtypeFilter = `contains(PropertySubType,'${odataString(subtype)}')`;
+  const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
+  const regionFilter = subject.CityRegion ? `CityRegion eq '${odataString(subject.CityRegion)}'` : null;
+  const addressCity = cleanText(String(subject.UnparsedAddress || "").split(",")[1]) || cleanText(String(subject.City || "").replace(/\s+[A-Z]\d{2}$/i, ""));
+  const localSearches = [
+    postalPrefix ? { name: "postal_prefix", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`, subtypeFilter] } : null,
+    regionFilter ? { name: "city_region", filters: [regionFilter, subtypeFilter] } : null
+  ].filter(Boolean);
+  const queryAudit = [];
+  let raw = [];
+  for (const search of localSearches) {
+    const result = await querySoldComparableRows(search.filters, env, 150);
+    raw.push(...result.rows);
+    queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
+  }
+  let qualified = qualifiedSoldComparableRows(subject, raw, 300);
+  if (qualified.length < 5 && addressCity) {
+    const cityResult = await querySoldComparableRows([`contains(City,'${odataString(addressCity)}')`, subtypeFilter], env, 250);
+    raw = dedupe([...raw, ...cityResult.rows]);
+    queryAudit.push(...cityResult.audit.map((entry) => ({ phase: "fallback", name: "city", ...entry })));
+    qualified = qualifiedSoldComparableRows(subject, raw, 300);
+  }
+  let windowDays = 100;
+  let window = qualified.filter((candidate) => candidate.ageDays <= 100);
+  if (window.length < 3) {
+    windowDays = 300;
+    window = qualified;
+  }
+  const beforePriceCluster = window.length;
+  if (!window.length) return unavailableComp("No exact-subtype sold comparables were found within 300 days.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays === 300, exactSubtype: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
+  const clusterMedian = medianPrice(window.map((candidate) => candidate.price));
+  let priceTolerancePct = 10;
+  let candidates = filterPriceCluster(window, 0.1).matches;
+  if (candidates.length < 3 && window.length >= 3) {
+    priceTolerancePct = 15;
+    candidates = filterPriceCluster(window, 0.15).matches;
+  }
+  if (candidates.length < 3 && window.length >= 3) {
+    priceTolerancePct = 20;
+    candidates = filterPriceCluster(window, 0.2).matches;
+  }
+  if (!candidates.length) return unavailableComp("No exact-subtype sale remained after the adaptive median price filter.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays === 300, exactSubtype: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0 });
+  const selected = candidates.sort(compareComparable).slice(0, 5);
+  const band = weightedBand(selected);
+  const avgScore = selected.reduce((sum, x) => sum + x.similarity, 0) / selected.length;
+  const avgRecency = selected.reduce((sum, x) => sum + x.recency, 0) / selected.length;
+  const farthest = Math.max(...selected.map((x) => x.distanceKm).filter((x) => x != null), 0);
+  const confidence = selected.length < 3 ? "Low" : avgScore >= 78 && avgRecency >= 0.7 && selected.length >= 5 && farthest <= 2 ? "High" : avgScore >= 64 && avgRecency >= 0.35 && farthest <= 5 ? "Medium" : "Low";
+  return {
+    available: true,
+    matchCount: selected.length,
+    confidence,
+    rangeLow: band.low,
+    midpoint: band.mid,
+    rangeHigh: band.high,
+    soldCount: selected.length,
+    activeCount: 0,
+    historicalCount: 0,
+    sourceLabel: "recent sold MLS comparables",
+    basis: buildBasisText(subject, selected),
+    comparables: selected.map(publicComparable),
+    policy: { windowDays, expandedWindow: windowDays === 300, exactSubtype: true, priceTolerancePct, clusterMedian, beforePriceCluster, afterPriceCluster: candidates.length, farthestKm: farthest || null },
+    activeForSale
+  };
+}
+__name(buildComparableContext, "buildComparableContext");
+function unavailableComp(basis, matchCount = 0, diagnostics = null, policy = null) {
+  return { available: false, matchCount, confidence: "Unavailable", basis, ...diagnostics ? { diagnostics } : {}, ...policy ? { policy } : {} };
+}
+__name(unavailableComp, "unavailableComp");
+function exactComparableType(subject, record) {
+  if (subject.PropertySubType) return sameText(subject.PropertySubType, record.PropertySubType);
+  return subject.PropertyType ? sameText(subject.PropertyType, record.PropertyType) : false;
+}
+__name(exactComparableType, "exactComparableType");
+async function querySoldComparableRows(baseFilters, env, top) {
+  const statusFilters = [
+    "StandardStatus eq 'Closed'",
+    "MlsStatus eq 'Sold'",
+    "ContractStatus eq 'Sold'",
+    "ContractStatus eq 'Closed'"
+  ];
+  const rows = [];
+  const audit = [];
+  let accepted = false;
+  for (const statusFilter of statusFilters) {
+    const result = await queryPropertiesDetailed([...baseFilters, statusFilter], env, top, null, 0);
+    audit.push({ statusFilter, ...result.meta });
+    if (result.meta.status === 200) accepted = true;
+    rows.push(...result.rows);
+    if (result.rows.length >= 5) break;
+  }
+  if (!accepted) throw new Error("VOW sold-property queries were rejected by the licensed feed.");
+  return { rows: dedupe(rows), audit };
+}
+__name(querySoldComparableRows, "querySoldComparableRows");
+function qualifiedSoldComparableRows(subject, records, maxAgeDays) {
+  return dedupe(records || []).filter((record) => record.ListingKey !== subject.ListingKey).filter((record) => exactComparableType(subject, record)).filter((record) => isSoldWithinDays(record, maxAgeDays)).map((record) => {
+    const candidate = normalizeComparable(subject, record);
+    const soldDate = soldRecordDate(record);
+    return { ...candidate, ageDays: soldDate ? Math.max(0, (Date.now() - soldDate.getTime()) / 864e5) : Number.POSITIVE_INFINITY };
+  }).filter((candidate) => candidate.price && candidate.closeDate && candidate.similarity >= 35).sort(compareComparable);
+}
+__name(qualifiedSoldComparableRows, "qualifiedSoldComparableRows");
