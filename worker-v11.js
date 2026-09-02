@@ -659,17 +659,14 @@ function exactComparableType(subject, record) {
 }
 __name(exactComparableType, "exactComparableType");
 async function querySoldComparableRows(baseFilters, env, top) {
-  const statusFilters = [
-    "StandardStatus eq 'Closed'",
-    "MlsStatus eq 'Sold'",
-    "ContractStatus eq 'Sold'",
-    "ContractStatus eq 'Closed'"
-  ];
+  // AMPRE exposes sold records through ClosePrice/PurchaseContractDate, while
+  // the status fields are returned but are not filterable in this feed.
+  const statusFilters = ["ClosePrice gt 0"];
   const rows = [];
   const audit = [];
   let accepted = false;
   for (const statusFilter of statusFilters) {
-    const result = await queryPropertiesDetailed([...baseFilters, statusFilter], env, top, null, 0);
+    const result = await queryPropertiesDetailed([...baseFilters, statusFilter], env, top, "PurchaseContractDate desc", 0);
     audit.push({ statusFilter, ...result.meta });
     if (result.meta.status === 200) accepted = true;
     rows.push(...result.rows);
@@ -2635,7 +2632,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-sold-query-comparables-v85-20260902";
+var VERSION4 = "stage4-closeprice-comparables-v86-20260902";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
