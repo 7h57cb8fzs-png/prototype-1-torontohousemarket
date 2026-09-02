@@ -1,4 +1,4 @@
-name: Inventory Cloudflare Workers
+name: Inspect production Worker deployment
 
 on:
   push:
@@ -12,29 +12,28 @@ permissions:
   contents: read
 
 jobs:
-  inventory:
+  inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Inventory Worker scripts
+      - name: Inspect deployment and versions
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          WORKER_NAME: prototype-1-torontohousemarket
         run: |
           set -euo pipefail
-          if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN repository secret is not configured."
-            exit 1
-          fi
-          mkdir -p worker-inventory
-          curl -fsS \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            -H "Accept: application/json" \
-            -o worker-inventory/scripts.json \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts"
-      - name: Upload Worker inventory
+          mkdir -p worker-deployment
+          base="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}"
+          curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -o worker-deployment/deployments.json "${base}/deployments"
+          curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -o worker-deployment/versions.json "${base}/versions"
+          jq -r '.result.deployments[].versions[].version_id' worker-deployment/deployments.json | sort -u | while read -r version_id; do
+            [ -n "${version_id}" ] || continue
+            curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -o "worker-deployment/version-${version_id}.json" "${base}/versions/${version_id}"
+          done
+      - name: Upload deployment inspection
         uses: actions/upload-artifact@v4
         with:
-          name: cloudflare-worker-inventory
-          path: worker-inventory/
+          name: production-worker-deployment
+          path: worker-deployment/
           if-no-files-found: error
           retention-days: 1
