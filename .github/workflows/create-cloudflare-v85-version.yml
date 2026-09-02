@@ -47,25 +47,34 @@ jobs:
           printf '%s' "${active_id}" > cloudflare-v85/rollback-version-id.txt
 
           curl -fsS -H "${auth}" -o cloudflare-v85/active-version.json "${api}/workers/workers/${WORKER_NAME}/versions/${active_id}"
-          jq --arg active_id "${active_id}" --arg commit "${GITHUB_SHA}" '{
-            main_module: .result.main_module,
-            compatibility_date: .result.compatibility_date,
-            usage_model: (.result.usage_model // "standard"),
-            bindings: (.result.bindings | map({name: .name, type: "inherit", version_id: $active_id})),
-            annotations: {
-              "workers/message": "Stage 4 v85 sold comparable query fix",
-              "workers/commit_sha": $commit,
-              "workers/repository_url": "https://github.com/7h57cb8fzs-png/prototype-1-torontohousemarket"
-            }
-          }' cloudflare-v85/active-version.json > cloudflare-v85/metadata.json
+          module_base64="$(base64 -w 0 worker-v11.js)"
+          jq -n \
+            --slurpfile active cloudflare-v85/active-version.json \
+            --arg active_id "${active_id}" \
+            --arg commit "${GITHUB_SHA}" \
+            --arg module_base64 "${module_base64}" '{
+              main_module: $active[0].result.main_module,
+              compatibility_date: $active[0].result.compatibility_date,
+              usage_model: ($active[0].result.usage_model // "standard"),
+              bindings: ($active[0].result.bindings | map({name: .name, type: "inherit", version_id: $active_id})),
+              modules: [{
+                name: "worker-v11.js",
+                content_type: "application/javascript+module",
+                content_base64: $module_base64
+              }],
+              annotations: {
+                "workers/message": "Stage 4 v85 sold comparable query fix",
+                "workers/tag": "stage4-v85"
+              }
+            }' > cloudflare-v85/create-version-request.json
 
           http_status="$(curl -sS --request POST \
             -H "${auth}" \
-            -F 'metadata=<cloudflare-v85/metadata.json' \
-            -F 'worker-v11.js=@worker-v11.js;type=application/javascript+module' \
+            -H 'Content-Type: application/json' \
+            --data-binary @cloudflare-v85/create-version-request.json \
             -o cloudflare-v85/create-version.json \
             -w '%{http_code}' \
-            "${api}/workers/scripts/${WORKER_NAME}/versions?bindings_inherit=strict")"
+            "${api}/workers/workers/${WORKER_NAME}/versions")"
           printf '%s' "${http_status}" > cloudflare-v85/create-version-http-status.txt
           if [ "${http_status}" -lt 200 ] || [ "${http_status}" -ge 300 ]; then
             jq -r '.errors[]? | "::error::Cloudflare \(.code): \(.message)"' cloudflare-v85/create-version.json
