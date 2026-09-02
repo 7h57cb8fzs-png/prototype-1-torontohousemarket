@@ -56,6 +56,7 @@ jobs:
               compatibility_date: $active[0].result.compatibility_date,
               usage_model: ($active[0].result.usage_model // "standard"),
               bindings: ($active[0].result.bindings | map({name: .name, type: "inherit", version_id: $active_id})),
+              assets: $active[0].result.assets,
               modules: [{
                 name: "worker-v11.js",
                 content_type: "application/javascript+module",
