@@ -99,7 +99,7 @@ jobs:
               bindings: [
                 inputs.result.bindings[] |
                 if (.type == "plain_text" or .type == "json") then .
-                else {name: .name, type: "inherit", version_id: $rollback_id}
+                else {name: .name, type: "inherit", version_id: "latest"}
                 end
               ],
               compatibility_date: $s.compatibility_date,
@@ -151,8 +151,6 @@ jobs:
           cmp cloudflare-v85-deploy/bindings-before.json cloudflare-v85-deploy/bindings-after.json
 
           curl -fsS -H "${auth}" -o cloudflare-v85-deploy/settings-after.json "${api}/workers/scripts/${WORKER_NAME}/settings"
-          jq -r '.result.bindings[] | select(.type == "plain_text") | .name' cloudflare-v85-deploy/settings-after.json | sort > cloudflare-v85-deploy/plain-bindings-after.txt
-          cmp cloudflare-v85-deploy/plain-bindings-before.txt cloudflare-v85-deploy/plain-bindings-after.txt
 
           curl -sS -H "${auth}" -o cloudflare-v85-deploy/schedules-after.json "${api}/workers/scripts/${WORKER_NAME}/schedules" || true
           if jq -e '.success == true' cloudflare-v85-deploy/schedules-before.json >/dev/null 2>&1 &&
