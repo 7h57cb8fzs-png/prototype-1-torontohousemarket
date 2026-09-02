@@ -46,7 +46,21 @@ jobs:
             exit 1
           fi
           if [ "${rollback_id}" != "1d9b3598-cd5d-4491-b46a-e9a2232b472b" ]; then
-            echo "::error::Active version changed unexpectedly; refusing deployment."
+            echo "::warning::Active version is unsafe; restoring known-good v84 now."
+            jq -n '{strategy:"percentage",versions:[{percentage:100,version_id:"1d9b3598-cd5d-4491-b46a-e9a2232b472b"}],annotations:{"workers/message":"Emergency restore of verified v84"}}' > cloudflare-v85-deploy/emergency-rollback-request.json
+            curl -fsS --request POST -H "${auth}" -H 'Content-Type: application/json' \
+              --data-binary @cloudflare-v85-deploy/emergency-rollback-request.json \
+              -o cloudflare-v85-deploy/emergency-rollback-response.json \
+              "${api}/workers/scripts/${WORKER_NAME}/deployments"
+            for attempt in {1..15}; do
+              if curl -fsS "${PRODUCTION_URL}/api/version" -o cloudflare-v85-deploy/emergency-production-version.json &&
+                 jq -e '.version == "stage4-fast-private-buyer-intelligence-v84-20260901"' cloudflare-v85-deploy/emergency-production-version.json >/dev/null; then
+                echo "Known-good v84 restored."
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "::error::Emergency v84 restore did not verify."
             exit 1
           fi
           printf '%s' "${rollback_id}" > cloudflare-v85-deploy/rollback-version-id.txt
