@@ -50,7 +50,7 @@ jobs:
           jq -r '.result.bindings[] | select(.type != "plain_text") | [.name, .type] | @tsv' cloudflare-v85/active-version.json | sort > cloudflare-v85/nonplain-active.txt
 
           curl -fsS -H "${auth}" -o cloudflare-v85/versions.json "${api}/workers/workers/${WORKER_NAME}/versions"
-          latest_id="$(jq -r '(.result.items // .result)[0].id' cloudflare-v85/versions.json)"
+          latest_id="$(jq -r 'if (.result | type) == \"array\" then .result[0].id else .result.items[0].id end' cloudflare-v85/versions.json)"
           curl -fsS -H "${auth}" -o cloudflare-v85/latest-version.json "${api}/workers/workers/${WORKER_NAME}/versions/${latest_id}"
           jq -r '.result.bindings[] | select(.type != "plain_text") | [.name, .type] | @tsv' cloudflare-v85/latest-version.json | sort > cloudflare-v85/nonplain-latest.txt
           cmp cloudflare-v85/nonplain-active.txt cloudflare-v85/nonplain-latest.txt
