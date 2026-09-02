@@ -56,7 +56,7 @@ jobs:
           jq -e '.success == true' cloudflare-v85-deploy/settings-before.json >/dev/null
 
           jq -S '[.result.bindings[] | {name, type}] | sort_by(.name)' cloudflare-v85-deploy/version-before.json > cloudflare-v85-deploy/bindings-before.json
-          jq -r '.result.bindings[] | select(.type == "plain_text") | .name' cloudflare-v85-deploy/settings-before.json | sort > cloudflare-v85-deploy/plain-bindings-before.txt
+          jq -r '.result.bindings[] | select(.type == "plain_text") | .name' cloudflare-v85-deploy/version-before.json | sort > cloudflare-v85-deploy/plain-bindings-before.txt
           test "$(wc -l < cloudflare-v85-deploy/plain-bindings-before.txt)" -eq 11
 
           curl -sS -H "${auth}" -o cloudflare-v85-deploy/schedules-before.json "${api}/workers/scripts/${WORKER_NAME}/schedules" || true
@@ -97,7 +97,7 @@ jobs:
                 "workers/tag": "stage4-sold-query-comparables-v85-20260902"
               },
               bindings: [
-                $s.bindings[] |
+                inputs.result.bindings[] |
                 if (.type == "plain_text" or .type == "json") then .
                 else {name: .name, type: "inherit", version_id: $rollback_id}
                 end
@@ -113,7 +113,7 @@ jobs:
               logpush: $s.logpush
             } |
             with_entries(select(.value != null))
-          ' cloudflare-v85-deploy/settings-before.json > cloudflare-v85-deploy/settings-patch.json
+          ' cloudflare-v85-deploy/settings-before.json cloudflare-v85-deploy/version-before.json > cloudflare-v85-deploy/settings-patch.json
 
           settings_status="$(curl -sS --request PATCH \
             -H "${auth}" \
