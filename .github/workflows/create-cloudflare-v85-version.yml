@@ -1,0 +1,88 @@
+name: Create and verify Cloudflare v85 version
+
+on:
+  push:
+    branches:
+      - codex/fix-complete-ai-report
+    paths:
+      - .github/workflows/create-cloudflare-v85-version.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out v85 source
+        uses: actions/checkout@v4
+        with:
+          ref: codex/fix-complete-ai-report
+
+      - name: Validate Worker source
+        run: |
+          set -euo pipefail
+          node --check worker-v11.js
+          grep -F 'stage4-sold-query-comparables-v85-20260902' worker-v11.js >/dev/null
+          grep -F 'querySoldComparableRows' worker-v11.js >/dev/null
+
+      - name: Create inactive v85 version and verify preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          WORKER_NAME: prototype-1-torontohousemarket
+        run: |
+          set -euo pipefail
+          mkdir -p cloudflare-v85
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+
+          curl -fsS -H "${auth}" -o cloudflare-v85/deployments-before.json "${api}/workers/scripts/${WORKER_NAME}/deployments"
+          active_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' cloudflare-v85/deployments-before.json | head -1)"
+          if [ -z "${active_id}" ] || [ "${active_id}" = "null" ]; then
+            echo "::error::No active rollback version was found."
+            exit 1
+          fi
+          printf '%s' "${active_id}" > cloudflare-v85/rollback-version-id.txt
+
+          curl -fsS -H "${auth}" -o cloudflare-v85/active-version.json "${api}/workers/workers/${WORKER_NAME}/versions/${active_id}"
+          jq --arg active_id "${active_id}" --arg commit "${GITHUB_SHA}" '{
+            main_module: .result.main_module,
+            compatibility_date: .result.compatibility_date,
+            usage_model: (.result.usage_model // "standard"),
+            bindings: (.result.bindings | map({name: .name, type: "inherit", version_id: $active_id})),
+            annotations: {
+              "workers/message": "Stage 4 v85 sold comparable query fix",
+              "workers/commit_sha": $commit,
+              "workers/repository_url": "https://github.com/7h57cb8fzs-png/prototype-1-torontohousemarket"
+            }
+          }' cloudflare-v85/active-version.json > cloudflare-v85/metadata.json
+
+          curl -fsS --request POST             -H "${auth}"             -F 'metadata=@cloudflare-v85/metadata.json;type=application/json'             -F 'worker-v11.js=@worker-v11.js;type=application/javascript+module'             -o cloudflare-v85/create-version.json             "${api}/workers/scripts/${WORKER_NAME}/versions?bindings_inherit=strict"
+
+          jq -e '.success == true and (.result.id | length) > 0' cloudflare-v85/create-version.json >/dev/null
+          new_id="$(jq -r '.result.id' cloudflare-v85/create-version.json)"
+          printf '%s' "${new_id}" > cloudflare-v85/new-version-id.txt
+          preview_url="$(jq -r '.result.urls[0] // empty' cloudflare-v85/create-version.json)"
+          if [ -z "${preview_url}" ]; then
+            echo "::error::Cloudflare did not return a preview URL."
+            exit 1
+          fi
+          printf '%s' "${preview_url}" > cloudflare-v85/preview-url.txt
+
+          curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "${preview_url}/api/version" -o cloudflare-v85/preview-version.json
+          jq -e '.version == "stage4-sold-query-comparables-v85-20260902"' cloudflare-v85/preview-version.json >/dev/null
+          curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "${preview_url}/" -o cloudflare-v85/preview-home.html
+          test "$(wc -c < cloudflare-v85/preview-home.html)" -gt 1000
+
+          echo "Created and verified inactive Worker version ${new_id}."
+          echo "Rollback remains ${active_id}."
+
+      - name: Upload version verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-v85-inactive-version
+          path: cloudflare-v85/
+          if-no-files-found: error
+          retention-days: 3
