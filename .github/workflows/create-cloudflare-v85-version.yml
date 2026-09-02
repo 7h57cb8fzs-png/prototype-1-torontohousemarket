@@ -47,34 +47,39 @@ jobs:
           printf '%s' "${active_id}" > cloudflare-v85/rollback-version-id.txt
 
           curl -fsS -H "${auth}" -o cloudflare-v85/active-version.json "${api}/workers/workers/${WORKER_NAME}/versions/${active_id}"
-          jq -n \
-            --slurpfile active cloudflare-v85/active-version.json \
-            --arg active_id "${active_id}" \
-            --arg commit "${GITHUB_SHA}" \
-            --rawfile module_source worker-v11.js '{
-              main_module: $active[0].result.main_module,
-              compatibility_date: $active[0].result.compatibility_date,
-              usage_model: ($active[0].result.usage_model // "standard"),
-              bindings: ($active[0].result.bindings | map({name: .name, type: "inherit", version_id: $active_id})),
-              assets: $active[0].result.assets,
-              modules: [{
-                name: "worker-v11.js",
-                content_type: "application/javascript+module",
-                content_base64: ($module_source | @base64)
-              }],
-              annotations: {
-                "workers/message": "Stage 4 v85 sold comparable query fix",
-                "workers/tag": "stage4-v85"
-              }
-            }' > cloudflare-v85/create-version-request.json
+          jq -r '.result.bindings[] | select(.type != "plain_text") | [.name, .type] | @tsv' cloudflare-v85/active-version.json | sort > cloudflare-v85/nonplain-active.txt
+
+          curl -fsS -H "${auth}" -o cloudflare-v85/versions.json "${api}/workers/workers/${WORKER_NAME}/versions"
+          latest_id="$(jq -r '.result.items[0].id' cloudflare-v85/versions.json)"
+          curl -fsS -H "${auth}" -o cloudflare-v85/latest-version.json "${api}/workers/workers/${WORKER_NAME}/versions/${latest_id}"
+          jq -r '.result.bindings[] | select(.type != "plain_text") | [.name, .type] | @tsv' cloudflare-v85/latest-version.json | sort > cloudflare-v85/nonplain-latest.txt
+          cmp cloudflare-v85/nonplain-active.txt cloudflare-v85/nonplain-latest.txt
+
+          jq --arg commit "${GITHUB_SHA}" '{
+            main_module: .result.main_module,
+            compatibility_date: .result.compatibility_date,
+            usage_model: (.result.usage_model // "standard"),
+            bindings: (.result.bindings | map(
+              if .type == "plain_text"
+              then .
+              else {name: .name, type: "inherit", version_id: "latest"}
+              end
+            )),
+            annotations: {
+              "workers/message": "Stage 4 v85 sold comparable query fix",
+              "workers/commit_sha": $commit,
+              "workers/repository_url": "https://github.com/7h57cb8fzs-png/prototype-1-torontohousemarket",
+              "workers/tag": "stage4-v85"
+            }
+          }' cloudflare-v85/active-version.json > cloudflare-v85/metadata.json
 
           http_status="$(curl -sS --request POST \
             -H "${auth}" \
-            -H 'Content-Type: application/json' \
-            --data-binary @cloudflare-v85/create-version-request.json \
+            -F 'metadata=<cloudflare-v85/metadata.json' \
+            -F 'worker-v11.js=@worker-v11.js;type=application/javascript+module' \
             -o cloudflare-v85/create-version.json \
             -w '%{http_code}' \
-            "${api}/workers/workers/${WORKER_NAME}/versions")"
+            "${api}/workers/scripts/${WORKER_NAME}/versions?bindings_inherit=strict")"
           printf '%s' "${http_status}" > cloudflare-v85/create-version-http-status.txt
           if [ "${http_status}" -lt 200 ] || [ "${http_status}" -ge 300 ]; then
             jq -r '.errors[]? | "::error::Cloudflare \(.code): \(.message)"' cloudflare-v85/create-version.json
@@ -84,11 +89,13 @@ jobs:
           jq -e '.success == true and (.result.id | length) > 0' cloudflare-v85/create-version.json >/dev/null
           new_id="$(jq -r '.result.id' cloudflare-v85/create-version.json)"
           printf '%s' "${new_id}" > cloudflare-v85/new-version-id.txt
-          preview_url="$(jq -r '.result.urls[0] // empty' cloudflare-v85/create-version.json)"
-          if [ -z "${preview_url}" ]; then
-            echo "::error::Cloudflare did not return a preview URL."
+          curl -fsS -H "${auth}" -o cloudflare-v85/worker.json "${api}/workers/workers/${WORKER_NAME}"
+          preview_suffix="$(jq -r '.result.subdomain.preview_url_suffix // empty' cloudflare-v85/worker.json)"
+          if [ -z "${preview_suffix}" ]; then
+            echo "::error::Cloudflare preview URL suffix is unavailable."
             exit 1
           fi
+          preview_url="https://${new_id%%-*}${preview_suffix}"
           printf '%s' "${preview_url}" > cloudflare-v85/preview-url.txt
 
           curl --retry 5 --retry-all-errors --retry-delay 2 -fsS "${preview_url}/api/version" -o cloudflare-v85/preview-version.json
