@@ -46,7 +46,7 @@ jobs:
             exit 1
           fi
           curl -fsS "${PRODUCTION_URL}/api/version" -o cloudflare-v87-deploy/production-version-before.json
-          jq -e '.version == "stage4-sold-query-comparables-v85-20260902" and .vowAccess == true' cloudflare-v87-deploy/production-version-before.json >/dev/null
+          jq -e '.version == "stage4-closeprice-comparables-v86-20260902" and .vowAccess == true' cloudflare-v87-deploy/production-version-before.json >/dev/null
           printf '%s' "${rollback_id}" > cloudflare-v87-deploy/rollback-version-id.txt
 
           curl -fsS -H "${auth}" -o cloudflare-v87-deploy/version-before.json "${api}/workers/workers/${WORKER_NAME}/versions/${rollback_id}"
