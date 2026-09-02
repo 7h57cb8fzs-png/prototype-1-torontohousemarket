@@ -1,4 +1,4 @@
-name: Export active production Worker version
+name: Export active production Worker source
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
   export:
     runs-on: ubuntu-latest
     steps:
-      - name: Export active version
+      - name: Export active version with modules
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
@@ -32,11 +32,12 @@ jobs:
           fi
           printf '%s' "${version_id}" > active-worker/version-id.txt
           curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -o active-worker/worker.json "${api}/workers/workers/${WORKER_NAME}"
-          curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -o active-worker/version.json "${api}/workers/workers/${WORKER_NAME}/versions/${version_id}"
-      - name: Upload active Worker version
+          curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -o active-worker/version.json "${api}/workers/workers/${WORKER_NAME}/versions/${version_id}?include=modules"
+          jq -e '.success == true and (.result.modules | length) > 0' active-worker/version.json >/dev/null
+      - name: Upload active Worker source
         uses: actions/upload-artifact@v4
         with:
-          name: active-production-worker-version
+          name: active-production-worker-source
           path: active-worker/
           if-no-files-found: error
           retention-days: 1
