@@ -47,12 +47,11 @@ jobs:
           printf '%s' "${active_id}" > cloudflare-v85/rollback-version-id.txt
 
           curl -fsS -H "${auth}" -o cloudflare-v85/active-version.json "${api}/workers/workers/${WORKER_NAME}/versions/${active_id}"
-          module_base64="$(base64 -w 0 worker-v11.js)"
           jq -n \
             --slurpfile active cloudflare-v85/active-version.json \
             --arg active_id "${active_id}" \
             --arg commit "${GITHUB_SHA}" \
-            --arg module_base64 "${module_base64}" '{
+            --rawfile module_source worker-v11.js '{
               main_module: $active[0].result.main_module,
               compatibility_date: $active[0].result.compatibility_date,
               usage_model: ($active[0].result.usage_model // "standard"),
@@ -60,7 +59,7 @@ jobs:
               modules: [{
                 name: "worker-v11.js",
                 content_type: "application/javascript+module",
-                content_base64: $module_base64
+                content_base64: ($module_source | @base64)
               }],
               annotations: {
                 "workers/message": "Stage 4 v85 sold comparable query fix",
