@@ -59,7 +59,18 @@ jobs:
             }
           }' cloudflare-v85/active-version.json > cloudflare-v85/metadata.json
 
-          curl -fsS --request POST             -H "${auth}"             -F 'metadata=@cloudflare-v85/metadata.json;type=application/json'             -F 'worker-v11.js=@worker-v11.js;type=application/javascript+module'             -o cloudflare-v85/create-version.json             "${api}/workers/scripts/${WORKER_NAME}/versions?bindings_inherit=strict"
+          http_status="$(curl -sS --request POST \
+            -H "${auth}" \
+            -F 'metadata=<cloudflare-v85/metadata.json' \
+            -F 'worker-v11.js=@worker-v11.js;type=application/javascript+module' \
+            -o cloudflare-v85/create-version.json \
+            -w '%{http_code}' \
+            "${api}/workers/scripts/${WORKER_NAME}/versions?bindings_inherit=strict")"
+          printf '%s' "${http_status}" > cloudflare-v85/create-version-http-status.txt
+          if [ "${http_status}" -lt 200 ] || [ "${http_status}" -ge 300 ]; then
+            jq -r '.errors[]? | "::error::Cloudflare \(.code): \(.message)"' cloudflare-v85/create-version.json
+            exit 1
+          fi
 
           jq -e '.success == true and (.result.id | length) > 0' cloudflare-v85/create-version.json >/dev/null
           new_id="$(jq -r '.result.id' cloudflare-v85/create-version.json)"
@@ -80,6 +91,7 @@ jobs:
           echo "Rollback remains ${active_id}."
 
       - name: Upload version verification
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cloudflare-v85-inactive-version
