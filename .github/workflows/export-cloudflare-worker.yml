@@ -18,6 +18,8 @@ jobs:
       - name: Export deployed worker bundle
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          WORKER_NAME: toronto-house-market
         run: |
           set -euo pipefail
           if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
@@ -25,32 +27,22 @@ jobs:
             exit 1
           fi
           mkdir -p exported-worker
+          printf '%s' "${CLOUDFLARE_ACCOUNT_ID}" > exported-worker/account-id.txt
+          printf '%s' "${WORKER_NAME}" > exported-worker/worker-name.txt
+          curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -D exported-worker/response-headers.txt \
+            -o exported-worker/worker-bundle.bin \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}"
           curl -fsS \
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Accept: application/json" \
-            https://api.cloudflare.com/client/v4/accounts \
-            -o exported-worker/accounts.json
-          found=0
-          while IFS= read -r account_id; do
-            status="$(curl -sS -w '%{http_code}' \
-              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-              -D exported-worker/response-headers.txt \
-              -o exported-worker/worker-bundle.bin \
-              "https://api.cloudflare.com/client/v4/accounts/${account_id}/workers/scripts/prototype-1-torontohousemarket")"
-            if [ "${status}" = "200" ]; then
-              printf '%s' "${account_id}" > exported-worker/account-id.txt
-              found=1
-              break
-            fi
-          done < <(jq -r '.result[].id' exported-worker/accounts.json)
-          if [ "${found}" != "1" ]; then
-            echo "::error::Worker was not found in any account available to this token."
-            exit 1
-          fi
+            -o exported-worker/settings.json \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/settings"
       - name: Upload deployed worker artifact
         uses: actions/upload-artifact@v4
         with:
-          name: prototype-1-torontohousemarket-deployed
+          name: toronto-house-market-deployed
           path: exported-worker/
           if-no-files-found: error
           retention-days: 1
