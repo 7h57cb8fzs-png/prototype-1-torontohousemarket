@@ -661,13 +661,19 @@ __name(exactComparableType, "exactComparableType");
 async function querySoldComparableRows(baseFilters, env, top) {
   // AMPRE exposes sold records through ClosePrice/PurchaseContractDate, while
   // the status fields are returned but are not filterable in this feed.
-  const statusFilters = ["ClosePrice gt 0"];
+  const soldFilter = "ClosePrice gt 0";
+  const subtypeFilter = (baseFilters || []).find((filter) => filter.includes("PropertySubType"));
+  const filterSets = [
+    [...baseFilters || [], soldFilter],
+    ...subtypeFilter ? [[subtypeFilter, soldFilter]] : [],
+    [soldFilter]
+  ].filter((filters, index, all) => all.findIndex((item) => item.join(" and ") === filters.join(" and ")) === index);
   const rows = [];
   const audit = [];
   let accepted = false;
-  for (const statusFilter of statusFilters) {
-    const result = await queryPropertiesDetailed([...baseFilters, statusFilter], env, top, "PurchaseContractDate desc", 0);
-    audit.push({ statusFilter, ...result.meta });
+  for (const [index, filters] of filterSets.entries()) {
+    const result = await queryPropertiesDetailed(filters, env, index === 0 ? top : Math.max(top, 500), "PurchaseContractDate desc", 0);
+    audit.push({ statusFilter: soldFilter, queryScope: index === 0 ? "local" : index === 1 && subtypeFilter ? "subtype" : "sold_only", ...result.meta });
     if (result.meta.status === 200) accepted = true;
     rows.push(...result.rows);
     if (result.rows.length >= 5) break;
@@ -2632,7 +2638,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-closeprice-comparables-v86-20260902";
+var VERSION4 = "stage4-sold-fallback-comparables-v87-20260902";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
