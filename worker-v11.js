@@ -659,26 +659,22 @@ function exactComparableType(subject, record) {
 }
 __name(exactComparableType, "exactComparableType");
 async function querySoldComparableRows(baseFilters, env, top) {
-  // AMPRE exposes sold records through ClosePrice/PurchaseContractDate, while
-  // the status fields are returned but are not filterable in this feed.
-  const soldFilter = "ClosePrice gt 0";
-  const subtypeFilter = (baseFilters || []).find((filter) => filter.includes("PropertySubType"));
-  const filterSets = [
-    [...baseFilters || [], soldFilter],
-    ...subtypeFilter ? [[subtypeFilter, soldFilter]] : [],
-    [soldFilter]
-  ].filter((filters, index, all) => all.findIndex((item) => item.join(" and ") === filters.join(" and ")) === index);
+  // This AMPRE VOW feed returns sold fields but rejects filters on them. Page
+  // through the permitted local history query so active inventory cannot fill
+  // the first result window, then qualify genuine sold rows locally.
   const rows = [];
   const audit = [];
   let accepted = false;
-  for (const [index, filters] of filterSets.entries()) {
-    const result = await queryPropertiesDetailed(filters, env, index === 0 ? top : Math.max(top, 500), "PurchaseContractDate desc", 0);
-    audit.push({ statusFilter: soldFilter, queryScope: index === 0 ? "local" : index === 1 && subtypeFilter ? "subtype" : "sold_only", ...result.meta });
+  const pageSize = Math.max(150, Math.min(500, top || 500));
+  for (let page = 0; page < 4; page += 1) {
+    const result = await queryPropertiesDetailed(baseFilters, env, pageSize, "ModificationTimestamp desc,ListingKey desc", page * pageSize);
+    audit.push({ queryScope: "paged_local_history", page, skip: page * pageSize, ...result.meta });
     if (result.meta.status === 200) accepted = true;
     rows.push(...result.rows);
-    if (result.rows.length >= 5) break;
+    const recentSold = rows.filter((record) => isSoldWithinDays(record, 300)).length;
+    if (recentSold >= 10 || result.rows.length < pageSize || result.meta.status !== 200) break;
   }
-  if (!accepted) throw new Error("VOW sold-property queries were rejected by the licensed feed.");
+  if (!accepted) throw new Error("VOW property-history queries were rejected by the licensed feed.");
   return { rows: dedupe(rows), audit };
 }
 __name(querySoldComparableRows, "querySoldComparableRows");
@@ -2638,7 +2634,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-sold-fallback-comparables-v87-20260902";
+var VERSION4 = "stage4-paged-vow-comparables-v88-20260903";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
