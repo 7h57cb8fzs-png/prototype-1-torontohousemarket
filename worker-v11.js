@@ -599,15 +599,19 @@ async function buildComparableContext(subject, env, activeForSale) {
     raw.push(...result.rows);
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
   }
-  let qualified = qualifiedSoldComparableRows(subject, raw, 300);
+  const qualified = qualifiedSoldComparableRows(subject, raw, 600);
   let windowDays = 100;
   let window = qualified.filter((candidate) => candidate.ageDays <= 100);
   if (window.length < 3) {
     windowDays = 300;
+    window = qualified.filter((candidate) => candidate.ageDays <= 300);
+  }
+  if (window.length < 3) {
+    windowDays = 600;
     window = qualified;
   }
   const beforePriceCluster = window.length;
-  if (!window.length) return unavailableComp("No exact-subtype sold comparables were found within 300 days.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays === 300, exactSubtype: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
+  if (!window.length) return unavailableComp("No exact-subtype sold comparables were found within the available 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
   const clusterMedian = medianPrice(window.map((candidate) => candidate.price));
   let priceTolerancePct = 10;
   let candidates = filterPriceCluster(window, 0.1).matches;
@@ -639,7 +643,7 @@ async function buildComparableContext(subject, env, activeForSale) {
     sourceLabel: "recent sold MLS comparables",
     basis: buildBasisText(subject, selected),
     comparables: selected.map(publicComparable),
-    policy: { windowDays, expandedWindow: windowDays === 300, exactSubtype: true, priceTolerancePct, clusterMedian, beforePriceCluster, afterPriceCluster: candidates.length, farthestKm: farthest || null },
+    policy: { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, priceTolerancePct, clusterMedian, beforePriceCluster, afterPriceCluster: candidates.length, farthestKm: farthest || null },
     activeForSale
   };
 }
@@ -661,7 +665,7 @@ async function querySoldComparableRows(baseFilters, env, top) {
   const audit = [];
   let accepted = false;
   const pageSize = 150;
-  const offsets = [97000, 99000, 101000, 103000];
+  const offsets = [94000, 96000, 98000, 100000];
   const pageResults = await Promise.all(offsets.map((skip) => queryPropertiesDetailed(baseFilters, env, pageSize, null, skip)));
   for (const [page, result] of pageResults.entries()) {
     audit.push({ queryScope: "recent_offset_probe", page, skip: offsets[page], ...result.meta });
@@ -718,6 +722,7 @@ function comparableDiagnostics(records, subject = null) {
     exactSubtype: exact.length,
     soldWithin100: exact.filter((r) => isSoldWithinDays(r, 100)).length,
     soldWithin300: exact.filter((r) => isSoldWithinDays(r, 300)).length,
+    soldWithin600: exact.filter((r) => isSoldWithinDays(r, 600)).length,
     soldDateRange: exactDates.length ? { oldest: dateOnly(exactDates[0]), newest: dateOnly(exactDates[exactDates.length - 1]), future: exactDates.filter((d) => d.getTime() > Date.now()).length } : null,
     priceFields: present(priceKeys),
     dateFields: present(dateKeys),
@@ -2628,7 +2633,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-current-offset-vow-comparables-v97-20260903";
+var VERSION4 = "stage4-vow-600-day-fallback-v98-20260903";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
