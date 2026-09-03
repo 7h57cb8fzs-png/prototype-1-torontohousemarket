@@ -661,9 +661,16 @@ async function querySoldComparableRows(baseFilters, env, top) {
   const audit = [];
   let accepted = false;
   const pageSize = Math.max(150, Math.min(500, top || 500));
-  const pageResults = await Promise.all(Array.from({ length: 4 }, (_, page) => queryPropertiesDetailed(baseFilters, env, pageSize, "ModificationTimestamp desc,ListingKey desc", page * pageSize)));
+  const cutoff = new Date(Date.now() - 301 * 864e5).toISOString();
+  const recentFilters = [...baseFilters || [], `ModificationTimestamp ge ${cutoff}`];
+  let queryScope = "recent_modified_history";
+  let pageResults = await Promise.all(Array.from({ length: 4 }, (_, page) => queryPropertiesDetailed(recentFilters, env, pageSize, null, page * pageSize)));
+  if (!pageResults.some((result) => result.meta.status === 200)) {
+    queryScope = "paged_local_history";
+    pageResults = await Promise.all(Array.from({ length: 4 }, (_, page) => queryPropertiesDetailed(baseFilters, env, pageSize, "ModificationTimestamp desc,ListingKey desc", page * pageSize)));
+  }
   for (const [page, result] of pageResults.entries()) {
-    audit.push({ queryScope: "paged_local_history", page, skip: page * pageSize, ...result.meta });
+    audit.push({ queryScope, page, skip: page * pageSize, ...result.meta });
     if (result.meta.status === 200) accepted = true;
     rows.push(...result.rows);
   }
@@ -2627,7 +2634,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-parallel-vow-comparables-v90-20260903";
+var VERSION4 = "stage4-recent-vow-comparables-v91-20260903";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
