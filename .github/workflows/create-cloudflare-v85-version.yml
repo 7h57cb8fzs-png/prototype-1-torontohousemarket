@@ -1,11 +1,6 @@
 name: Create and verify Cloudflare v85 version
 
 on:
-  push:
-    branches:
-      - codex/fix-complete-ai-report
-    paths:
-      - .github/workflows/create-cloudflare-v85-version.yml
   workflow_dispatch:
 
 permissions:
