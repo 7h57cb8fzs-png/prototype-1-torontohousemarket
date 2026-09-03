@@ -1,11 +1,6 @@
 name: Recover and patch active production Worker
 
 on:
-  push:
-    branches:
-      - codex/fix-complete-ai-report
-    paths:
-      - .github/workflows/export-cloudflare-worker.yml
   workflow_dispatch:
 
 permissions:
