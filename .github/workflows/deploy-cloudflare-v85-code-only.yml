@@ -1,4 +1,4 @@
-name: Deploy v98 with exact binding restore and rollback
+name: Deploy v99 with exact binding restore and rollback
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out verified v98 source
+      - name: Check out verified v99 source
         uses: actions/checkout@v4
         with:
           ref: codex/fix-complete-ai-report
@@ -24,7 +24,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check worker-v11.js
-          grep -F 'stage4-vow-600-day-fallback-v98-20260903' worker-v11.js >/dev/null
+          grep -F 'stage4-vow-dynamic-window-copy-v99-20260903' worker-v11.js >/dev/null
           grep -F 'querySoldComparableRows' worker-v11.js >/dev/null
 
       - name: Deploy code, restore exact settings, and verify
@@ -35,40 +35,40 @@ jobs:
           PRODUCTION_URL: https://torontohousemarket.com
         run: |
           set -euo pipefail
-          mkdir -p cloudflare-v98-deploy
+          mkdir -p cloudflare-v99-deploy
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
           auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
 
-          curl -fsS -H "${auth}" -o cloudflare-v98-deploy/deployments-before.json "${api}/workers/scripts/${WORKER_NAME}/deployments"
-          rollback_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' cloudflare-v98-deploy/deployments-before.json | head -1)"
+          curl -fsS -H "${auth}" -o cloudflare-v99-deploy/deployments-before.json "${api}/workers/scripts/${WORKER_NAME}/deployments"
+          rollback_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' cloudflare-v99-deploy/deployments-before.json | head -1)"
           if [ -z "${rollback_id}" ] || [ "${rollback_id}" = "null" ]; then
             echo "::error::No active rollback version was found."
             exit 1
           fi
-          curl -fsS "${PRODUCTION_URL}/api/version" -o cloudflare-v98-deploy/production-version-before.json
-          jq -e '.version == "stage4-current-offset-vow-comparables-v97-20260903" and .vowAccess == true' cloudflare-v98-deploy/production-version-before.json >/dev/null
-          printf '%s' "${rollback_id}" > cloudflare-v98-deploy/rollback-version-id.txt
+          curl -fsS "${PRODUCTION_URL}/api/version" -o cloudflare-v99-deploy/production-version-before.json
+          jq -e '.version == "stage4-vow-600-day-fallback-v98-20260903" and .vowAccess == true' cloudflare-v99-deploy/production-version-before.json >/dev/null
+          printf '%s' "${rollback_id}" > cloudflare-v99-deploy/rollback-version-id.txt
 
-          curl -fsS -H "${auth}" -o cloudflare-v98-deploy/version-before.json "${api}/workers/workers/${WORKER_NAME}/versions/${rollback_id}"
-          curl -fsS -H "${auth}" -o cloudflare-v98-deploy/settings-before.json "${api}/workers/scripts/${WORKER_NAME}/settings"
-          jq -e '.success == true' cloudflare-v98-deploy/settings-before.json >/dev/null
+          curl -fsS -H "${auth}" -o cloudflare-v99-deploy/version-before.json "${api}/workers/workers/${WORKER_NAME}/versions/${rollback_id}"
+          curl -fsS -H "${auth}" -o cloudflare-v99-deploy/settings-before.json "${api}/workers/scripts/${WORKER_NAME}/settings"
+          jq -e '.success == true' cloudflare-v99-deploy/settings-before.json >/dev/null
 
-          jq -S '[.result.bindings[] | {name, type}] | sort_by(.name)' cloudflare-v98-deploy/version-before.json > cloudflare-v98-deploy/bindings-before.json
-          jq -r '.result.bindings[] | select(.type == "plain_text") | .name' cloudflare-v98-deploy/version-before.json | sort > cloudflare-v98-deploy/plain-bindings-before.txt
-          test "$(wc -l < cloudflare-v98-deploy/plain-bindings-before.txt)" -eq 11
+          jq -S '[.result.bindings[] | {name, type}] | sort_by(.name)' cloudflare-v99-deploy/version-before.json > cloudflare-v99-deploy/bindings-before.json
+          jq -r '.result.bindings[] | select(.type == "plain_text") | .name' cloudflare-v99-deploy/version-before.json | sort > cloudflare-v99-deploy/plain-bindings-before.txt
+          test "$(wc -l < cloudflare-v99-deploy/plain-bindings-before.txt)" -eq 11
 
-          curl -sS -H "${auth}" -o cloudflare-v98-deploy/schedules-before.json "${api}/workers/scripts/${WORKER_NAME}/schedules" || true
+          curl -sS -H "${auth}" -o cloudflare-v99-deploy/schedules-before.json "${api}/workers/scripts/${WORKER_NAME}/schedules" || true
 
           rollback() {
             echo "::warning::Production verification failed; restoring ${rollback_id}."
             jq -n --arg version_id "${rollback_id}" '{
               strategy: "percentage",
               versions: [{percentage: 100, version_id: $version_id}],
-              annotations: {"workers/message": "Automatic rollback after v98 verification failure"}
-            }' > cloudflare-v98-deploy/rollback-request.json
+              annotations: {"workers/message": "Automatic rollback after v99 verification failure"}
+            }' > cloudflare-v99-deploy/rollback-request.json
             curl -sS --request POST -H "${auth}" -H 'Content-Type: application/json' \
-              --data-binary @cloudflare-v98-deploy/rollback-request.json \
-              -o cloudflare-v98-deploy/rollback-response.json \
+              --data-binary @cloudflare-v99-deploy/rollback-request.json \
+              -o cloudflare-v99-deploy/rollback-response.json \
               "${api}/workers/scripts/${WORKER_NAME}/deployments" || true
           }
           trap 'status=$?; if [ "${status}" -ne 0 ]; then rollback; fi' EXIT
@@ -78,28 +78,28 @@ jobs:
             -H 'CF-WORKER-MAIN-MODULE-PART: worker-v11.js' \
             -F 'metadata={"main_module":"worker-v11.js"};type=application/json' \
             -F 'worker-v11.js=@worker-v11.js;type=application/javascript+module' \
-            -o cloudflare-v98-deploy/content-update.json \
+            -o cloudflare-v99-deploy/content-update.json \
             -w '%{http_code}' \
             "${api}/workers/scripts/${WORKER_NAME}/content")"
-          printf '%s' "${http_status}" > cloudflare-v98-deploy/content-update-http-status.txt
+          printf '%s' "${http_status}" > cloudflare-v99-deploy/content-update-http-status.txt
           if [ "${http_status}" -lt 200 ] || [ "${http_status}" -ge 300 ]; then
-            jq -r '.errors[]? | "::error::Cloudflare \(.code): \(.message)"' cloudflare-v98-deploy/content-update.json
+            jq -r '.errors[]? | "::error::Cloudflare \(.code): \(.message)"' cloudflare-v99-deploy/content-update.json
             exit 1
           fi
 
-          curl -fsS -H "${auth}" -o cloudflare-v98-deploy/deployments-mid.json "${api}/workers/scripts/${WORKER_NAME}/deployments"
-          temporary_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' cloudflare-v98-deploy/deployments-mid.json | head -1)"
-          curl -fsS -H "${auth}" -o cloudflare-v98-deploy/version-mid.json "${api}/workers/workers/${WORKER_NAME}/versions/${temporary_id}"
-          jq -S '[.result.bindings[] | select(.type != "plain_text") | {name, type}] | sort_by(.name)' cloudflare-v98-deploy/version-before.json > cloudflare-v98-deploy/protected-bindings-before.json
-          jq -S '[.result.bindings[] | select(.type != "plain_text") | {name, type}] | sort_by(.name)' cloudflare-v98-deploy/version-mid.json > cloudflare-v98-deploy/protected-bindings-mid.json
-          cmp cloudflare-v98-deploy/protected-bindings-before.json cloudflare-v98-deploy/protected-bindings-mid.json
+          curl -fsS -H "${auth}" -o cloudflare-v99-deploy/deployments-mid.json "${api}/workers/scripts/${WORKER_NAME}/deployments"
+          temporary_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' cloudflare-v99-deploy/deployments-mid.json | head -1)"
+          curl -fsS -H "${auth}" -o cloudflare-v99-deploy/version-mid.json "${api}/workers/workers/${WORKER_NAME}/versions/${temporary_id}"
+          jq -S '[.result.bindings[] | select(.type != "plain_text") | {name, type}] | sort_by(.name)' cloudflare-v99-deploy/version-before.json > cloudflare-v99-deploy/protected-bindings-before.json
+          jq -S '[.result.bindings[] | select(.type != "plain_text") | {name, type}] | sort_by(.name)' cloudflare-v99-deploy/version-mid.json > cloudflare-v99-deploy/protected-bindings-mid.json
+          cmp cloudflare-v99-deploy/protected-bindings-before.json cloudflare-v99-deploy/protected-bindings-mid.json
 
           jq --arg rollback_id "${rollback_id}" '
             .result as $s |
             {
               annotations: {
-                "workers/message": "Stage 4 sold-query comparables v98",
-                "workers/tag": "stage4-vow-600-day-fallback-v98-20260903"
+                "workers/message": "Stage 4 sold-query comparables v99",
+                "workers/tag": "stage4-vow-dynamic-window-copy-v99-20260903"
               },
               bindings: [
                 inputs.result.bindings[] |
@@ -118,65 +118,65 @@ jobs:
               logpush: $s.logpush
             } |
             with_entries(select(.value != null))
-          ' cloudflare-v98-deploy/settings-before.json cloudflare-v98-deploy/version-before.json > cloudflare-v98-deploy/settings-patch.json
+          ' cloudflare-v99-deploy/settings-before.json cloudflare-v99-deploy/version-before.json > cloudflare-v99-deploy/settings-patch.json
 
           settings_status="$(curl -sS --request PATCH \
             -H "${auth}" \
-            -F 'settings=@cloudflare-v98-deploy/settings-patch.json;type=application/json' \
-            -o cloudflare-v98-deploy/settings-patch-response.json \
+            -F 'settings=@cloudflare-v99-deploy/settings-patch.json;type=application/json' \
+            -o cloudflare-v99-deploy/settings-patch-response.json \
             -w '%{http_code}' \
             "${api}/workers/scripts/${WORKER_NAME}/settings")"
-          printf '%s' "${settings_status}" > cloudflare-v98-deploy/settings-patch-http-status.txt
+          printf '%s' "${settings_status}" > cloudflare-v99-deploy/settings-patch-http-status.txt
           if [ "${settings_status}" -lt 200 ] || [ "${settings_status}" -ge 300 ]; then
-            jq -r '.errors[]? | "::error::Cloudflare \(.code): \(.message)"' cloudflare-v98-deploy/settings-patch-response.json
+            jq -r '.errors[]? | "::error::Cloudflare \(.code): \(.message)"' cloudflare-v99-deploy/settings-patch-response.json
             exit 1
           fi
-          jq -e '.success == true' cloudflare-v98-deploy/settings-patch-response.json >/dev/null
+          jq -e '.success == true' cloudflare-v99-deploy/settings-patch-response.json >/dev/null
 
           for attempt in {1..15}; do
-            if curl -fsS "${PRODUCTION_URL}/api/version" -o cloudflare-v98-deploy/production-version.json &&
-               jq -e '.version == "stage4-vow-600-day-fallback-v98-20260903"' cloudflare-v98-deploy/production-version.json >/dev/null; then
+            if curl -fsS "${PRODUCTION_URL}/api/version" -o cloudflare-v99-deploy/production-version.json &&
+               jq -e '.version == "stage4-vow-dynamic-window-copy-v99-20260903"' cloudflare-v99-deploy/production-version.json >/dev/null; then
               break
             fi
             if [ "${attempt}" -eq 15 ]; then
-              echo "::error::Production did not report v98."
+              echo "::error::Production did not report v99."
               exit 1
             fi
             sleep 2
           done
 
-          curl -fsS -H "${auth}" -o cloudflare-v98-deploy/deployments-after.json "${api}/workers/scripts/${WORKER_NAME}/deployments"
-          active_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' cloudflare-v98-deploy/deployments-after.json | head -1)"
-          printf '%s' "${active_id}" > cloudflare-v98-deploy/active-version-id.txt
+          curl -fsS -H "${auth}" -o cloudflare-v99-deploy/deployments-after.json "${api}/workers/scripts/${WORKER_NAME}/deployments"
+          active_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' cloudflare-v99-deploy/deployments-after.json | head -1)"
+          printf '%s' "${active_id}" > cloudflare-v99-deploy/active-version-id.txt
           test -n "${active_id}"
           test "${active_id}" != "${rollback_id}"
 
-          curl -fsS -H "${auth}" -o cloudflare-v98-deploy/version-after.json "${api}/workers/workers/${WORKER_NAME}/versions/${active_id}"
-          jq -S '[.result.bindings[] | {name, type}] | sort_by(.name)' cloudflare-v98-deploy/version-after.json > cloudflare-v98-deploy/bindings-after.json
-          cmp cloudflare-v98-deploy/bindings-before.json cloudflare-v98-deploy/bindings-after.json
+          curl -fsS -H "${auth}" -o cloudflare-v99-deploy/version-after.json "${api}/workers/workers/${WORKER_NAME}/versions/${active_id}"
+          jq -S '[.result.bindings[] | {name, type}] | sort_by(.name)' cloudflare-v99-deploy/version-after.json > cloudflare-v99-deploy/bindings-after.json
+          cmp cloudflare-v99-deploy/bindings-before.json cloudflare-v99-deploy/bindings-after.json
 
-          curl -fsS -H "${auth}" -o cloudflare-v98-deploy/settings-after.json "${api}/workers/scripts/${WORKER_NAME}/settings"
+          curl -fsS -H "${auth}" -o cloudflare-v99-deploy/settings-after.json "${api}/workers/scripts/${WORKER_NAME}/settings"
 
-          curl -sS -H "${auth}" -o cloudflare-v98-deploy/schedules-after.json "${api}/workers/scripts/${WORKER_NAME}/schedules" || true
-          if jq -e '.success == true' cloudflare-v98-deploy/schedules-before.json >/dev/null 2>&1 &&
-             jq -e '.success == true' cloudflare-v98-deploy/schedules-after.json >/dev/null 2>&1; then
-            jq -S '.result' cloudflare-v98-deploy/schedules-before.json > cloudflare-v98-deploy/schedules-before-normalized.json
-            jq -S '.result' cloudflare-v98-deploy/schedules-after.json > cloudflare-v98-deploy/schedules-after-normalized.json
-            cmp cloudflare-v98-deploy/schedules-before-normalized.json cloudflare-v98-deploy/schedules-after-normalized.json
+          curl -sS -H "${auth}" -o cloudflare-v99-deploy/schedules-after.json "${api}/workers/scripts/${WORKER_NAME}/schedules" || true
+          if jq -e '.success == true' cloudflare-v99-deploy/schedules-before.json >/dev/null 2>&1 &&
+             jq -e '.success == true' cloudflare-v99-deploy/schedules-after.json >/dev/null 2>&1; then
+            jq -S '.result' cloudflare-v99-deploy/schedules-before.json > cloudflare-v99-deploy/schedules-before-normalized.json
+            jq -S '.result' cloudflare-v99-deploy/schedules-after.json > cloudflare-v99-deploy/schedules-after-normalized.json
+            cmp cloudflare-v99-deploy/schedules-before-normalized.json cloudflare-v99-deploy/schedules-after-normalized.json
           fi
 
-          curl -fsS "${PRODUCTION_URL}/" -o cloudflare-v98-deploy/production-home.html
-          test "$(wc -c < cloudflare-v98-deploy/production-home.html)" -gt 1000
-          curl -fsS "${PRODUCTION_URL}/api/health" -o cloudflare-v98-deploy/production-health.json || true
+          curl -fsS "${PRODUCTION_URL}/" -o cloudflare-v99-deploy/production-home.html
+          test "$(wc -c < cloudflare-v99-deploy/production-home.html)" -gt 1000
+          curl -fsS "${PRODUCTION_URL}/api/health" -o cloudflare-v99-deploy/production-health.json || true
 
           trap - EXIT
-          echo "Production v98 verified with exact bindings. Rollback version remains ${rollback_id}."
+          echo "Production v99 verified with exact bindings. Rollback version remains ${rollback_id}."
 
       - name: Upload deployment verification
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cloudflare-v98-exact-binding-deployment
-          path: cloudflare-v98-deploy/
+          name: cloudflare-v99-exact-binding-deployment
+          path: cloudflare-v99-deploy/
           if-no-files-found: error
           retention-days: 7
