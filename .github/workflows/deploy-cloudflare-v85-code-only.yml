@@ -1,11 +1,6 @@
 name: Deploy v99 with exact binding restore and rollback
 
 on:
-  push:
-    branches:
-      - codex/fix-complete-ai-report
-    paths:
-      - .github/workflows/deploy-cloudflare-v85-code-only.yml
   workflow_dispatch:
 
 permissions:
