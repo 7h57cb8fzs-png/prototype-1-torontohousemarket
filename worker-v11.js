@@ -600,7 +600,7 @@ async function buildComparableContext(subject, env, activeForSale) {
   }
   let qualified = qualifiedSoldComparableRows(subject, raw, 300);
   if (qualified.length < 5 && addressCity) {
-    const cityResult = await querySoldComparableRows([`contains(City,'${odataString(addressCity)}')`, subtypeFilter], env, 250);
+    const cityResult = await querySoldComparableRows([`contains(UnparsedAddress,'${odataString(addressCity)}')`], env, 250);
     raw = dedupe([...raw, ...cityResult.rows]);
     queryAudit.push(...cityResult.audit.map((entry) => ({ phase: "fallback", name: "city", ...entry })));
     qualified = qualifiedSoldComparableRows(subject, raw, 300);
@@ -674,7 +674,7 @@ async function querySoldComparableRows(baseFilters, env, top) {
     const recentSold = rows.filter((record) => isSoldWithinDays(record, 300)).length;
     if (recentSold >= 10 || result.rows.length < pageSize || result.meta.status !== 200) break;
   }
-  if (!accepted) throw new Error("VOW property-history queries were rejected by the licensed feed.");
+  if (!accepted) return { rows: [], audit };
   return { rows: dedupe(rows), audit };
 }
 __name(querySoldComparableRows, "querySoldComparableRows");
@@ -2634,7 +2634,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-paged-vow-comparables-v88-20260903";
+var VERSION4 = "stage4-vow-address-fallback-v89-20260903";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
