@@ -661,7 +661,7 @@ async function querySoldComparableRows(baseFilters, env, top) {
   const audit = [];
   let accepted = false;
   const pageSize = 150;
-  const offsets = [30000, 45000, 60000, 75000];
+  const offsets = [125000, 175000, 225000, 275000];
   const pageResults = await Promise.all(offsets.map((skip) => queryPropertiesDetailed(baseFilters, env, pageSize, null, skip)));
   for (const [page, result] of pageResults.entries()) {
     audit.push({ queryScope: "recent_offset_probe", page, skip: offsets[page], ...result.meta });
@@ -2628,7 +2628,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-offset-vow-comparables-v94-20260903";
+var VERSION4 = "stage4-current-offset-vow-comparables-v95-20260903";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
