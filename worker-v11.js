@@ -588,23 +588,18 @@ async function buildComparableContext(subject, env, activeForSale) {
   const regionFilter = subject.CityRegion ? `CityRegion eq '${odataString(subject.CityRegion)}'` : null;
   const addressCity = cleanText(String(subject.UnparsedAddress || "").split(",")[1]) || cleanText(String(subject.City || "").replace(/\s+[A-Z]\d{2}$/i, ""));
   const localSearches = [
-    postalPrefix ? { name: "postal_prefix", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`, subtypeFilter] } : null,
-    regionFilter ? { name: "city_region", filters: [regionFilter, subtypeFilter] } : null
+    addressCity ? { name: "city_address", filters: [`contains(UnparsedAddress,'${odataString(addressCity)}')`] } : null,
+    !addressCity && postalPrefix ? { name: "postal_prefix", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`] } : null,
+    !addressCity && regionFilter ? { name: "city_region", filters: [regionFilter] } : null
   ].filter(Boolean);
   const queryAudit = [];
   let raw = [];
   for (const search of localSearches) {
-    const result = await querySoldComparableRows(search.filters, env, 150);
+    const result = await querySoldComparableRows(search.filters, env, 500);
     raw.push(...result.rows);
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
   }
   let qualified = qualifiedSoldComparableRows(subject, raw, 300);
-  if (qualified.length < 5 && addressCity) {
-    const cityResult = await querySoldComparableRows([`contains(UnparsedAddress,'${odataString(addressCity)}')`], env, 250);
-    raw = dedupe([...raw, ...cityResult.rows]);
-    queryAudit.push(...cityResult.audit.map((entry) => ({ phase: "fallback", name: "city", ...entry })));
-    qualified = qualifiedSoldComparableRows(subject, raw, 300);
-  }
   let windowDays = 100;
   let window = qualified.filter((candidate) => candidate.ageDays <= 100);
   if (window.length < 3) {
@@ -666,13 +661,11 @@ async function querySoldComparableRows(baseFilters, env, top) {
   const audit = [];
   let accepted = false;
   const pageSize = Math.max(150, Math.min(500, top || 500));
-  for (let page = 0; page < 4; page += 1) {
-    const result = await queryPropertiesDetailed(baseFilters, env, pageSize, "ModificationTimestamp desc,ListingKey desc", page * pageSize);
+  const pageResults = await Promise.all(Array.from({ length: 4 }, (_, page) => queryPropertiesDetailed(baseFilters, env, pageSize, "ModificationTimestamp desc,ListingKey desc", page * pageSize)));
+  for (const [page, result] of pageResults.entries()) {
     audit.push({ queryScope: "paged_local_history", page, skip: page * pageSize, ...result.meta });
     if (result.meta.status === 200) accepted = true;
     rows.push(...result.rows);
-    const recentSold = rows.filter((record) => isSoldWithinDays(record, 300)).length;
-    if (recentSold >= 10 || result.rows.length < pageSize || result.meta.status !== 200) break;
   }
   if (!accepted) return { rows: [], audit };
   return { rows: dedupe(rows), audit };
@@ -2634,7 +2627,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-vow-address-fallback-v89-20260903";
+var VERSION4 = "stage4-parallel-vow-comparables-v90-20260903";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
