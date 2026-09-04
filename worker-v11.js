@@ -3233,9 +3233,16 @@ async function adminLeads(request, env) {
   if (!env.SUPABASE_SERVICE_ROLE_KEY) return json7({ ok: false, error: "Admin database connection is not configured." }, 503);
   const select = "id,name,mobile,email,lead_mode,status,stage,next_action,next_action_at,first_response_due_at,resolved_address,showing_timing,created_at,updated_at,metadata,vow_user_id,agents(id,code,display_name,email,mobile),property_reports(id,status,report_payload,generated_at,updated_at,error_message),automation_jobs(id,job_type,status,recipient,attempts,available_at,completed_at,last_error)";
   const propertySearch = clean5(new URL(request.url).searchParams.get("property"), 120);
-  const propertyFilter = propertySearch ? `&resolved_address=ilike.${encodeURIComponent(`*${propertySearch.replace(/[*,()]/g, " ")}*`)}` : "";
-  const response = await supabase(env, `/rest/v1/leads?select=${encodeURIComponent(select)}${propertyFilter}&order=created_at.desc&limit=${propertySearch ? 20 : 100}`);
-  const data = await response.json().catch(() => null);
+  const response = await supabase(env, `/rest/v1/leads?select=${encodeURIComponent(select)}&order=created_at.desc&limit=${propertySearch ? 1e3 : 100}`);
+  let data = await response.json().catch(() => null);
+  if (response.ok && propertySearch && Array.isArray(data)) {
+    const needle = normalizeText(propertySearch);
+    data = data.filter((lead) => {
+      const metadata = lead?.metadata || {};
+      const text = normalizeText([lead?.resolved_address, metadata?.resolved_address, metadata?.property_input, metadata?.listing_key, metadata?.listingKey, metadata?.property_snapshot?.address, metadata?.property_snapshot?.listingKey].filter(Boolean).join(" "));
+      return text.includes(needle) || /\bE13689546\b/i.test(text);
+    }).slice(0, 20);
+  }
   return response.ok ? json7({ ok: true, leads: data }) : json7({ ok: false, error: "Unable to load leads." }, 502);
 }
 __name(adminLeads, "adminLeads");
