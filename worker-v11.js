@@ -598,7 +598,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   ].filter(Boolean);
   const queryAudit = [];
   let raw = [];
-  const searchResults = await Promise.all(localSearches.map(async (search) => ({ search, result: await querySoldComparableRows(search.filters, env, 2500) })));
+  const searchResults = await Promise.all(localSearches.map(async (search) => ({ search, result: await querySoldComparableRows(search.filters, env, 2e3) })));
   for (const { search, result } of searchResults) {
     raw.push(...result.rows);
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
