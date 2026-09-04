@@ -1,4 +1,5 @@
 name: Deploy guarded VOW comparable fix
+# Retry only after the complete verified Worker source is present on the branch.
 
 on:
   push:
