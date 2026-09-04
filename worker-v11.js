@@ -590,60 +590,57 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   if (!subject) return unavailableComp("No subject property was available.");
   const subtype = cleanText(subject.PropertySubType);
   if (!subtype) return unavailableComp("The subject property subtype is unavailable, so an exact-subtype range cannot be produced.");
-  const subtypeFilter = `contains(PropertySubType,'${odataString(subtype)}')`;
+  const subtypeFilter = `PropertySubType eq '${odataString(subtype)}'`;
   const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
   const regionFilter = subject.CityRegion ? `CityRegion eq '${odataString(subject.CityRegion)}'` : null;
-  const addressCity = cleanText(String(subject.UnparsedAddress || "").split(",")[1]) || cleanText(String(subject.City || "").replace(/\s+[A-Z]\d{2}$/i, ""));
   const localSearches = [
-    addressCity ? { name: "city_address", filters: [`contains(UnparsedAddress,'${odataString(addressCity)}')`] } : null,
-    !addressCity && postalPrefix ? { name: "postal_prefix", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`] } : null,
-    !addressCity && regionFilter ? { name: "city_region", filters: [regionFilter] } : null
+    regionFilter ? { name: "same_community_exact_subtype", filters: [regionFilter, subtypeFilter] } : null,
+    postalPrefix ? { name: "same_postal_prefix_exact_subtype", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`, subtypeFilter] } : null
   ].filter(Boolean);
   const queryAudit = [];
   let raw = [];
-  for (const search of localSearches) {
-    const result = await querySoldComparableRows(search.filters, env, 500);
+  const searchResults = await Promise.all(localSearches.map(async (search) => ({ search, result: await querySoldComparableRows(search.filters, env, 1e3) })));
+  for (const { search, result } of searchResults) {
     raw.push(...result.rows);
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
   }
-  const qualified = qualifiedSoldComparableRows(subject, raw, 600);
+  const qualified = qualifiedSoldComparableRows(subject, raw, 300).filter((candidate) => comparableIsLocal(candidate));
   let windowDays = 100;
   let window = qualified.filter((candidate) => candidate.ageDays <= 100);
   if (window.length < 3) {
     windowDays = 300;
     window = qualified.filter((candidate) => candidate.ageDays <= 300);
   }
-  if (window.length < 3) {
-    windowDays = 600;
-    window = qualified;
-  }
   const beforePriceCluster = window.length;
   if (!window.length) {
-    logComparableDiagnostics(requestId, subject, raw, qualified, window, [], [], windowDays, 10, queryAudit, "insufficient_sold_evidence");
-    return unavailableComp("No exact-subtype sold comparables were found within the available 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
+    logComparableDiagnostics(requestId, subject, raw, qualified, window, [], [], windowDays, 10, queryAudit, "insufficient_local_sold_evidence");
+    return unavailableComp("No local exact-subtype sold comparables were found within the 300-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, localOnly: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
   }
   const clusterMedian = medianPrice(window.map((candidate) => candidate.price));
-  let priceTolerancePct = 10;
-  let candidates = filterPriceCluster(window, 0.1).matches;
-  if (candidates.length < 3 && window.length >= 3) {
-    priceTolerancePct = 15;
-    candidates = filterPriceCluster(window, 0.15).matches;
-  }
-  if (candidates.length < 3 && window.length >= 3) {
-    priceTolerancePct = 20;
-    candidates = filterPriceCluster(window, 0.2).matches;
-  }
+  const priceTolerancePct = 10;
+  const candidates = filterPriceCluster(window, 0.1).matches;
   if (!candidates.length) {
     logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, [], windowDays, priceTolerancePct, queryAudit, "price_cluster_empty");
-    return unavailableComp("No exact-subtype sale remained after the adaptive median price filter.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0 });
+    return unavailableComp("No local exact-subtype sale remained after the required 10% median price filter.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, localOnly: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0 });
   }
   const selected = candidates.sort(compareComparable).slice(0, 5);
-  logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, selected, windowDays, priceTolerancePct, queryAudit, "selected");
+  const valuationAvailable = selected.length >= 3;
+  logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, selected, windowDays, priceTolerancePct, queryAudit, valuationAvailable ? "selected" : "insufficient_qualified_comparables");
+  const policy = { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, localOnly: true, radiusKm: 5, priceTolerancePct, clusterMedian, beforePriceCluster, afterPriceCluster: candidates.length };
+  if (!valuationAvailable) {
+    return {
+      ...unavailableComp(`Only ${selected.length} local exact-subtype sold comparable${selected.length === 1 ? " was" : "s were"} available after the required 10% price screen; at least 3 are required for a price range.`, selected.length, { ...comparableDiagnostics(raw, subject), queryAudit }, policy),
+      comparables: selected.map(publicComparable),
+      activeForSale
+    };
+  }
   const band = weightedBand(selected);
   const avgScore = selected.reduce((sum, x) => sum + x.similarity, 0) / selected.length;
   const avgRecency = selected.reduce((sum, x) => sum + x.recency, 0) / selected.length;
-  const farthest = Math.max(...selected.map((x) => x.distanceKm).filter((x) => x != null), 0);
-  const confidence = selected.length < 3 ? "Low" : avgScore >= 78 && avgRecency >= 0.7 && selected.length >= 5 && farthest <= 2 ? "High" : avgScore >= 64 && avgRecency >= 0.35 && farthest <= 5 ? "Medium" : "Low";
+  const numericDistances = selected.map((x) => x.distanceKm).filter(Number.isFinite);
+  const allDistancesKnown = numericDistances.length === selected.length;
+  const farthest = numericDistances.length ? Math.max(...numericDistances) : null;
+  const confidence = allDistancesKnown && avgScore >= 78 && avgRecency >= 0.7 && selected.length >= 5 && farthest <= 2 ? "High" : allDistancesKnown && avgScore >= 64 && avgRecency >= 0.35 && farthest <= 5 ? "Medium" : "Low";
   return {
     available: true,
     matchCount: selected.length,
@@ -657,7 +654,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
     sourceLabel: "recent sold MLS comparables",
     basis: buildBasisText(subject, selected),
     comparables: selected.map(publicComparable),
-    policy: { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, priceTolerancePct, clusterMedian, beforePriceCluster, afterPriceCluster: candidates.length, farthestKm: farthest || null },
+    policy: { ...policy, farthestKm: farthest, allDistancesKnown },
     activeForSale
   };
 }
@@ -666,8 +663,9 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
   const unique = dedupe(raw || []);
   const notSubject = unique.filter((row) => row.ListingKey !== subject?.ListingKey);
   const exactSubtype = notSubject.filter((row) => exactComparableType(subject, row));
-  const soldWithin600 = exactSubtype.filter((row) => isSoldWithinDays(row, 600));
+  const soldWithin300 = exactSubtype.filter((row) => isSoldWithinDays(row, 300));
   const selectedWithDistance = (selected || []).filter((row) => Number.isFinite(row.distanceKm));
+  const subjectCoordinates = propertyCoordinates(subject);
   diagnosticLog("log", "comparable_selection_diagnostic", {
     request_id: requestId,
     subject_listing_key: subject?.ListingKey || null,
@@ -680,7 +678,7 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
       unique: unique.length,
       excluding_subject: notSubject.length,
       exact_subtype: exactSubtype.length,
-      sold_within_600_days: soldWithin600.length,
+      sold_within_300_days: soldWithin300.length,
       similarity_qualified: (qualified || []).length,
       selected_window: (window || []).length,
       after_price_cluster: (clustered || []).length,
@@ -690,8 +688,8 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
       duplicate: Math.max(0, (raw || []).length - unique.length),
       subject_listing: Math.max(0, unique.length - notSubject.length),
       subtype_mismatch: Math.max(0, notSubject.length - exactSubtype.length),
-      not_sold_within_600_days: Math.max(0, exactSubtype.length - soldWithin600.length),
-      similarity_below_threshold: Math.max(0, soldWithin600.length - (qualified || []).length),
+      not_sold_within_300_days: Math.max(0, exactSubtype.length - soldWithin300.length),
+      non_local_or_similarity_below_threshold: Math.max(0, soldWithin300.length - (qualified || []).length),
       outside_selected_window: Math.max(0, (qualified || []).length - (window || []).length),
       price_cluster: Math.max(0, (window || []).length - (clustered || []).length),
       rank_cutoff: Math.max(0, (clustered || []).length - (selected || []).length)
@@ -699,7 +697,7 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
     price_tolerance_pct: priceTolerancePct,
     selected_comp_listing_keys: (selected || []).map((row) => row.record?.ListingKey).filter(Boolean),
     distance_calculation_status: {
-      subject_coordinates: !!propertyCoordinates(subject),
+      subject_coordinates: subjectCoordinates.latitude != null && subjectCoordinates.longitude != null,
       selected_numeric: selectedWithDistance.length,
       selected_missing: Math.max(0, (selected || []).length - selectedWithDistance.length)
     },
@@ -717,6 +715,10 @@ function exactComparableType(subject, record) {
   return subject.PropertyType ? sameText(subject.PropertyType, record.PropertyType) : false;
 }
 __name(exactComparableType, "exactComparableType");
+function comparableIsLocal(candidate, radiusKm = 5) {
+  return !!candidate && (candidate.sameRegion || candidate.samePostalPrefix || Number.isFinite(candidate.distanceKm) && candidate.distanceKm <= radiusKm);
+}
+__name(comparableIsLocal, "comparableIsLocal");
 async function querySoldComparableRows(baseFilters, env, top) {
   // This AMPRE VOW feed returns sold fields but rejects filters on them. Page
   // through the permitted local history query so active inventory cannot fill
@@ -724,13 +726,15 @@ async function querySoldComparableRows(baseFilters, env, top) {
   const rows = [];
   const audit = [];
   let accepted = false;
-  const pageSize = 150;
-  const offsets = [94000, 96000, 98000, 100000];
-  const pageResults = await Promise.all(offsets.map((skip) => queryPropertiesDetailed(baseFilters, env, pageSize, null, skip)));
-  for (const [page, result] of pageResults.entries()) {
-    audit.push({ queryScope: "recent_offset_probe", page, skip: offsets[page], ...result.meta });
+  const pageSize = Math.min(250, top);
+  let nextUrl = null;
+  for (let page = 0; page < 4 && rows.length < top; page++) {
+    const result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "ModificationTimestamp desc,ListingKey desc", 0);
+    audit.push({ queryScope: "local_exact_subtype_page", page, ...result.meta });
     if (result.meta.status === 200) accepted = true;
     rows.push(...result.rows);
+    nextUrl = result.nextLink || null;
+    if (!nextUrl || !result.rows.length) break;
   }
   if (!accepted) return { rows: [], audit };
   return { rows: dedupe(rows), audit };
@@ -1030,15 +1034,40 @@ async function queryPropertiesDetailed(filters, env, top = 100, orderby = "Modif
       params.delete("$orderby");
       response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
     }
-    if (!response.ok) return { rows: [], meta: { firstStatus, status: response.status, retried, count: 0 } };
+    if (!response.ok) return { rows: [], nextLink: null, meta: { firstStatus, status: response.status, retried, count: 0 } };
     const body = await response.json();
     const rows = Array.isArray(body.value) ? body.value : [];
-    return { rows, meta: { firstStatus, status: response.status, retried, count: rows.length } };
+    return { rows, nextLink: safeAmpreNextLink(body["@odata.nextLink"]), meta: { firstStatus, status: response.status, retried, count: rows.length } };
   } catch (error) {
-    return { rows: [], meta: { firstStatus: 0, status: 0, retried: false, count: 0, error: String(error?.name || "fetch_error").slice(0, 80) } };
+    return { rows: [], nextLink: null, meta: { firstStatus: 0, status: 0, retried: false, count: 0, error: String(error?.name || "fetch_error").slice(0, 80) } };
   }
 }
 __name(queryPropertiesDetailed, "queryPropertiesDetailed");
+async function queryPropertiesPage(nextLink, env) {
+  const safe = safeAmpreNextLink(nextLink);
+  if (!safe) return { rows: [], nextLink: null, meta: { firstStatus: 0, status: 0, retried: false, count: 0, error: "invalid_next_link" } };
+  try {
+    const response = await amplifyFetch(safe, env);
+    if (!response.ok) return { rows: [], nextLink: null, meta: { firstStatus: response.status, status: response.status, retried: false, count: 0 } };
+    const body = await response.json();
+    const rows = Array.isArray(body.value) ? body.value : [];
+    return { rows, nextLink: safeAmpreNextLink(body["@odata.nextLink"]), meta: { firstStatus: response.status, status: response.status, retried: false, count: rows.length } };
+  } catch (error) {
+    return { rows: [], nextLink: null, meta: { firstStatus: 0, status: 0, retried: false, count: 0, error: String(error?.name || "fetch_error").slice(0, 80) } };
+  }
+}
+__name(queryPropertiesPage, "queryPropertiesPage");
+function safeAmpreNextLink(value) {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const url = new URL(value, AMPRE_BASE);
+    const base = new URL(AMPRE_BASE);
+    return url.origin === base.origin && url.pathname.startsWith(base.pathname) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+__name(safeAmpreNextLink, "safeAmpreNextLink");
 async function handleLead(request, env) {
   if (!env.SUPABASE_SERVICE_ROLE_KEY) return json({ ok: false, error: "Lead system is not configured." }, 503);
   let payload;
@@ -1181,6 +1210,7 @@ function odataString(value) {
 }
 __name(odataString, "odataString");
 function numberOrNull(value) {
+  if (value == null || value === "" || typeof value === "string" && !value.trim()) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -4075,10 +4105,17 @@ function json7(body, status = 200, headers = {}) {
 }
 __name(json7, "json");
 export {
+  buildComparableContext,
+  comparableIsLocal,
+  distanceBetweenProperties,
+  exactComparableType,
+  filterPriceCluster,
   worker_v11_default as default,
   generateAiNarrative,
   mergeCurrentIdxWithVow,
+  numberOrNull,
   propertyReportEmail,
-  propertyReportPdf
+  propertyReportPdf,
+  safeAmpreNextLink
 };
 //# sourceMappingURL=worker-v11.js.map
