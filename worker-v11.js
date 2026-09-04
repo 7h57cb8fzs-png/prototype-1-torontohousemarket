@@ -2731,6 +2731,7 @@ var worker_v11_default = {
     if (url.pathname.startsWith("/api/admin/agents/") && request.method === "PATCH") return updateAgent(request, env, url.pathname.split("/").pop());
     if (url.pathname === "/api/admin/settings" && request.method === "GET") return adminSettings(request, env);
     if (url.pathname === "/api/admin/settings" && request.method === "PATCH") return updateSettings(request, env);
+    if (url.pathname === "/api/admin/vow/diagnostic-console" && request.method === "GET") return vowDiagnosticConsole();
     if (url.pathname === "/api/admin/vow/diagnostics" && request.method === "GET") return vowDiagnostics(request, env);
     if (url.pathname === "/api/admin/vow/query-diagnostics" && request.method === "GET") return vowQueryDiagnostics(request, env);
     if (url.pathname === "/api/admin/media/diagnostics" && request.method === "GET") return mediaDiagnostics(request, env);
@@ -3108,23 +3109,34 @@ __name(authorized, "authorized");
 async function vowDiagnostics(request, env) {
   if (!authorized(request, env)) return json7({ ok: false, error: "Unauthorized" }, 401);
   if (!env.AMPRE_VOW_TOKEN) return json7({ ok: false, configured: false, error: "AMPRE_VOW_TOKEN is not configured." }, 503);
+  const requestId = `vow-diagnostic-${crypto.randomUUID()}`;
   const probeUrl = new URL("https://torontohousemarket.com/api/property");
   probeUrl.searchParams.set("q", clean5(new URL(request.url).searchParams.get("q") || "297 Derrydown Road, Toronto, ON", 500));
-  const response = await worker_v10_default.fetch(new Request(probeUrl.toString(), { method: "GET" }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
+  const response = await worker_v10_default.fetch(new Request(probeUrl.toString(), { method: "GET", headers: { "X-THM-Request-Id": requestId } }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
   } });
   const body = await response.json().catch(() => null), property2 = body?.property || null, comparables = property2?.comparableContext?.comparables || property2?.comparables || [];
   return json7({
+    requestId,
     ok: response.ok && !!property2,
     configured: true,
     upstreamStatus: response.status,
     propertyResolved: !!property2,
+    subject: property2 ? { listingKey: property2.listingKey || null, propertySubType: property2.propertySubType || null, community: property2.cityRegion || null } : null,
     listingStatus: clean5(property2?.status || property2?.standardStatus, 80) || null,
     soldComparableCount: Array.isArray(comparables) ? comparables.length : 0,
     comparableAvailable: property2?.comparableContext?.available === true,
+    policy: property2?.comparableContext?.policy || null,
+    candidateAudit: property2?.comparableContext?.diagnostics || null,
+    selectedComparables: Array.isArray(comparables) ? comparables.map((row) => ({ listingKey: row?.listingKey || null, community: row?.cityRegion || null, distanceKm: numberOrNull(row?.distanceKm), similarity: numberOrNull(row?.similarity) })) : [],
     error: response.ok ? null : clean5(body?.error || body?.message || "VOW feed probe failed.", 240)
   }, response.ok ? 200 : 502, { "Cache-Control": "private, no-store" });
 }
 __name(vowDiagnostics, "vowDiagnostics");
+function vowDiagnosticConsole() {
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>THM VOW Diagnostics</title><style>body{font:16px system-ui;margin:32px;max-width:900px;color:#101828}form{display:flex;gap:10px;margin:20px 0}input{min-width:320px;padding:12px}button{padding:12px 18px;font-weight:700}pre{white-space:pre-wrap;background:#f2f4f7;padding:18px;border-radius:12px;min-height:120px}.note{color:#475467}</style></head><body><h1>Read-only VOW diagnostics</h1><p class="note">Runs four protected evidence probes. It does not create leads, reports, jobs or emails.</p><form id="diagnostics"><input id="adminKey" type="password" autocomplete="off" placeholder="Admin API key" required><button type="submit">Run four read-only diagnostics</button></form><pre id="output">Ready.</pre><script>const form=document.getElementById('diagnostics'),output=document.getElementById('output');form.addEventListener('submit',async event=>{event.preventDefault();const key=document.getElementById('adminKey').value,queries=['494 Donlands Avenue, Toronto','150 Beech Avenue, Toronto','53 Pepler Avenue, Toronto','591 Cummer Avenue, Toronto'],results=[];output.textContent='Running…';for(const query of queries){try{const response=await fetch('/api/admin/vow/diagnostics?q='+encodeURIComponent(query),{headers:{Authorization:'Bearer '+key},cache:'no-store'}),body=await response.json();results.push({property:query,status:response.status,...body});}catch(error){results.push({property:query,error:String(error)});}output.textContent=JSON.stringify(results,null,2);}});</script></body></html>`;
+  return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'" } });
+}
+__name(vowDiagnosticConsole, "vowDiagnosticConsole");
 async function vowQueryDiagnostics(request, env) {
   if (!authorizedDiagnostic(request, env)) return json7({ ok: false, error: "Unauthorized" }, 401);
   if (!env.AMPRE_VOW_TOKEN) return json7({ ok: false, error: "AMPRE_VOW_TOKEN is not configured." }, 503);
