@@ -590,9 +590,11 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   if (!subject) return unavailableComp("No subject property was available.");
   const subtype = cleanText(subject.PropertySubType);
   if (!subtype) return unavailableComp("The subject property subtype is unavailable, so an exact-subtype range cannot be produced.");
-  const subtypeFilter = `PropertySubType eq '${odataString(subtype)}'`;
+  // AMPRE rejects string equality on these fields but supports contains().
+  // Fetch the narrow server-side superset, then enforce exact subtype locally.
+  const subtypeFilter = `contains(PropertySubType,'${odataString(subtype)}')`;
   const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
-  const regionFilter = subject.CityRegion ? `CityRegion eq '${odataString(subject.CityRegion)}'` : null;
+  const regionFilter = subject.CityRegion ? `contains(CityRegion,'${odataString(subject.CityRegion)}')` : null;
   const localSearches = [
     regionFilter ? { name: "same_community_exact_subtype", filters: [regionFilter, subtypeFilter] } : null,
     postalPrefix ? { name: "same_postal_prefix_exact_subtype", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`, subtypeFilter] } : null
