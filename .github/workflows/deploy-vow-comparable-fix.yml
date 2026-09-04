@@ -48,7 +48,9 @@ jobs:
 
           curl -fsS -H "${auth}" -o "${work_dir}/version-before.json" "${api}/workers/workers/${WORKER_NAME}/versions/${rollback_id}?include=modules"
           jq -r '.result.modules[] | select(.name == "worker-v11.js") | .content_base64' "${work_dir}/version-before.json" | base64 --decode > "${work_dir}/worker-before.js"
-          test "$(sha256sum "${work_dir}/worker-before.js" | cut -d' ' -f1)" = "${EXPECTED_BEFORE_SHA}"
+          actual_before_sha="$(sha256sum "${work_dir}/worker-before.js" | cut -d' ' -f1)"
+          echo "Active source SHA-256: ${actual_before_sha}"
+          test "${actual_before_sha}" = "${EXPECTED_BEFORE_SHA}"
 
           curl -fsS -H "${auth}" -o "${work_dir}/settings-before.json" "${api}/workers/scripts/${WORKER_NAME}/settings"
           jq -e '.success == true' "${work_dir}/settings-before.json" >/dev/null
