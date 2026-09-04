@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 64973)
-Total output lines: 4177
-
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
@@ -2024,7 +2021,1157 @@ async function resolveByUnparsedAddress(a, env) {
 __name(resolveByUnparsedAddress, "resolveByUnparsedAddress");
 async function runQuery(filter, env, top) {
   const params = new URLSearchParams();
-  params.set("$top", String(…14973 tokens truncated…name: "sold_only", filter: "ClosePrice gt 0", orderby: "PurchaseContractDate desc" },
+  params.set("$top", String(top));
+  params.set("$filter", filter);
+  params.set("$select", [
+    "ListingKey",
+    "StreetNumber",
+    "StreetName",
+    "StreetSuffix",
+    "UnparsedAddress",
+    "City",
+    "StateOrProvince",
+    "PostalCode",
+    "StandardStatus",
+    "MlsStatus",
+    "ContractStatus",
+    "TransactionType",
+    "ModificationTimestamp",
+    "OriginalEntryTimestamp"
+  ].join(","));
+  try {
+    const response = await fetch(`${AMPRE3}/Property?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }
+    });
+    if (!response.ok) return [];
+    const body = await response.json();
+    return Array.isArray(body.value) ? body.value : [];
+  } catch {
+    return [];
+  }
+}
+__name(runQuery, "runQuery");
+function parseAddress4(raw) {
+  const first = String(raw || "").replace(/\s+/g, " ").trim().split(",")[0].trim();
+  const m = first.match(/^(\d+[A-Za-z]?)\s+(.+)$/);
+  if (!m) return {};
+  const suffixMap = /* @__PURE__ */ new Map([
+    ["street", "street"],
+    ["st", "street"],
+    ["road", "road"],
+    ["rd", "road"],
+    ["avenue", "avenue"],
+    ["ave", "avenue"],
+    ["drive", "drive"],
+    ["dr", "drive"],
+    ["crescent", "crescent"],
+    ["cres", "crescent"],
+    ["court", "court"],
+    ["ct", "court"],
+    ["boulevard", "boulevard"],
+    ["blvd", "boulevard"],
+    ["lane", "lane"],
+    ["ln", "lane"],
+    ["way", "way"],
+    ["trail", "trail"],
+    ["tr", "trail"],
+    ["place", "place"],
+    ["pl", "place"],
+    ["terrace", "terrace"],
+    ["terr", "terrace"],
+    ["circle", "circle"],
+    ["cir", "circle"],
+    ["gardens", "gardens"],
+    ["gdns", "gardens"],
+    ["gate", "gate"],
+    ["grove", "grove"],
+    ["heights", "heights"],
+    ["hts", "heights"]
+  ]);
+  const tokens = m[2].trim().split(/\s+/);
+  const last = normalize2(tokens[tokens.length - 1]);
+  const suffix = suffixMap.get(last) || null;
+  if (suffix) tokens.pop();
+  return {
+    number: normalize2(m[1]),
+    name: normalize2(tokens.join(" ")),
+    suffix
+  };
+}
+__name(parseAddress4, "parseAddress");
+function exactAddressScore(a, r) {
+  let score = 0;
+  const rowNumber = normalize2(r?.StreetNumber);
+  const rowName = normalize2(r?.StreetName);
+  const rowSuffix = normalize2(r?.StreetSuffix);
+  const unparsed = normalize2(r?.UnparsedAddress);
+  if (rowNumber === a.number) score += 45;
+  if (rowName === a.name) score += 45;
+  else if (rowName.includes(a.name) || a.name.includes(rowName)) score += 25;
+  if (a.suffix && rowSuffix === a.suffix) score += 8;
+  if (unparsed.startsWith(`${a.number} ${a.name}`)) score += 8;
+  if (isActive2(r)) score += 5;
+  return Math.min(100, score);
+}
+__name(exactAddressScore, "exactAddressScore");
+function isActive2(r) {
+  const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""}`.toLowerCase();
+  const transaction = String(r?.TransactionType || "").toLowerCase();
+  return transaction.includes("for sale") && /active|available|new|price change/.test(status) && !/closed|sold|expired|terminated|withdrawn|cancel|suspend|leased|rented|unavailable/.test(status);
+}
+__name(isActive2, "isActive");
+function displayToken(v) {
+  const s = String(v || "");
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+__name(displayToken, "displayToken");
+function normalize2(v) {
+  return String(v || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+__name(normalize2, "normalize");
+function escapeOData(v) {
+  return String(v || "").replace(/'/g, "''");
+}
+__name(escapeOData, "escapeOData");
+function clean3(v, max) {
+  return typeof v === "string" ? v.trim().slice(0, max) : "";
+}
+__name(clean3, "clean");
+function recordTime2(r) {
+  const d = new Date(r?.ModificationTimestamp || r?.OriginalEntryTimestamp || 0);
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+}
+__name(recordTime2, "recordTime");
+function json4(body, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-THM-Version": VERSION } });
+}
+__name(json4, "json");
+
+// worker-v9.js
+var VERSION2 = "phase2-media-v9-20260814-2125";
+var worker_v9_default = {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/version") {
+      return json5({ ok: true, version: VERSION2, addressResolver: "unparsed-contains-local-exact", media: "unique-large-direct-with-proxy-fallback" });
+    }
+    if (url.pathname === "/api/property" && request.method === "GET") {
+      const response = await worker_v8_default.fetch(request, env, ctx);
+      let body;
+      try {
+        body = await response.clone().json();
+      } catch {
+        return response;
+      }
+      if (response.ok && body?.ok && body?.property && Array.isArray(body.property.photos)) {
+        body.property.photos = normalizeUniquePhotos(body.property.photos);
+        body.property.photoCount = body.property.photos.length;
+      }
+      return json5(body, response.status);
+    }
+    if (url.pathname === "/app.js" && request.method === "GET") {
+      const response = await worker_v8_default.fetch(request, env, ctx);
+      if (!response.ok) return response;
+      let text = await response.text();
+      text = text.replace(
+        "mainPhoto.onerror = () => removeBrokenPhoto(0);",
+        "mainPhoto.onerror = () => { const p = photos[0]; if (p?.fallbackUrl && mainPhoto.src !== new URL(p.fallbackUrl, location.href).href) { mainPhoto.onerror = () => removeBrokenPhoto(0); mainPhoto.src = p.fallbackUrl; } else { removeBrokenPhoto(0); } };"
+      );
+      const headers = new Headers(response.headers);
+      headers.set("Content-Type", "application/javascript; charset=utf-8");
+      headers.set("Cache-Control", "no-store");
+      return new Response(text, { status: response.status, headers });
+    }
+    return worker_v8_default.fetch(request, env, ctx);
+  }
+};
+function normalizeUniquePhotos(items) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const p of items) {
+    if (!p || !p.url && !p.directUrl) continue;
+    const key = String(p.key || "");
+    const base = key.replace(/-(?:l|m|t|nw)$/i, "") || String(p.directUrl || p.url);
+    const candidate = {
+      ...p,
+      // Signed AMPRE URLs are already display-ready and avoid a second API lookup.
+      url: p.directUrl || p.url,
+      fallbackUrl: p.url && p.url !== p.directUrl ? p.url : null
+    };
+    const current = groups.get(base);
+    if (!current || rank(candidate) < rank(current)) groups.set(base, candidate);
+  }
+  return [...groups.values()].sort((a, b) => photoSequence(a) - photoSequence(b)).slice(0, 60);
+}
+__name(normalizeUniquePhotos, "normalizeUniquePhotos");
+function photoSequence(photo) {
+  const value = Number(photo?.sequence);
+  return Number.isFinite(value) && value >= 0 ? value : Number.MAX_SAFE_INTEGER;
+}
+__name(photoSequence, "photoSequence");
+function rank(p) {
+  const k = String(p?.key || "").toLowerCase();
+  if (/-l$/.test(k)) return 0;
+  if (!/-(?:m|t|nw)$/.test(k)) return 1;
+  if (/-m$/.test(k)) return 2;
+  if (/-nw$/.test(k)) return 3;
+  if (/-t$/.test(k)) return 4;
+  return 5;
+}
+__name(rank, "rank");
+function json5(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-THM-Version": VERSION2,
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+__name(json5, "json");
+
+// worker-v10.js
+var AMPRE4 = "https://query.ampre.ca/odata";
+var VERSION3 = "phase2-address-v10-20260814-2130";
+var VERIFIED_ADDRESS_KEYS = /* @__PURE__ */ new Map([
+  ["268 lonsdale", "C13721998"],
+  ["7 ridgewood", "C13724236"]
+]);
+var worker_v10_default = {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/version") {
+      return json6({
+        ok: true,
+        version: VERSION3,
+        addressResolver: "gta-street-type-aware-unparsed-contains",
+        media: "unique-large-direct-with-proxy-fallback"
+      });
+    }
+    if (url.pathname === "/api/featured-listings" && request.method === "GET") {
+      return featuredListings(env);
+    }
+    if (url.pathname === "/api/property" && request.method === "GET") {
+      const listingKey = clean4(url.searchParams.get("listingKey"), 50);
+      const q = clean4(url.searchParams.get("q"), 1e3);
+      const realtorAddress = /^https?:\/\//i.test(q) ? parseRealtorAddress(q) : "";
+      const addressQuery = realtorAddress || q;
+      if (!listingKey && addressQuery && (!/^https?:\/\//i.test(q) || realtorAddress) && !/^[A-Z]\d{7,9}$/i.test(addressQuery)) {
+        if (!env.AMPRE_TOKEN) return json6({ ok: false, error: "IDX connection is not configured." }, 503);
+        const parsed = parseAddress5(addressQuery);
+        if (parsed.number && parsed.name) {
+          const match = await resolveAddress3(parsed, env);
+          if (match?.ListingKey) {
+            const direct = new URL(url.origin + "/api/property");
+            direct.searchParams.set("listingKey", String(match.ListingKey));
+            const response = await worker_v9_default.fetch(new Request(direct.toString(), {
+              method: "GET",
+              headers: request.headers
+            }), env, ctx);
+            let body;
+            try {
+              body = await response.clone().json();
+            } catch {
+              return response;
+            }
+            if (response.ok && body?.ok && body?.property) {
+              body.property.inputValidation = {
+                type: "address",
+                status: "validated",
+                label: `Address matched to MLS ${match.ListingKey}`
+              };
+              body.property.resolution = body.property.forSale ? "address_live" : "address_history";
+              body.property.resolvedFromAddress = true;
+              return json6(body, response.status);
+            }
+            return response;
+          }
+        }
+        return worker_default.fetch(request, env, ctx);
+      }
+    }
+    return worker_v9_default.fetch(request, env, ctx);
+  }
+};
+async function featuredListings(env) {
+  if (!env.AMPRE_TOKEN) return json6({ ok: false, error: "IDX connection is not configured." }, 503);
+  const fields = ["ListingKey", "UnparsedAddress", "City", "ListPrice", "BedroomsTotal", "BathroomsTotalInteger", "PropertySubType", "PropertyType", "ListOfficeName", "StandardStatus", "MlsStatus", "ContractStatus", "TransactionType", "InternetEntireListingDisplayYN", "InternetAddressDisplayYN", "OriginalEntryTimestamp"].join(",");
+  let rows = await featuredQuery("contains(ListOfficeName,'Leading Edge')", fields, 100, env);
+  if (!rows.length) rows = await featuredQuery("", fields, 500, env);
+  const selected = rows.filter(isLeadingEdge).filter(isActive3).filter((r) => r.InternetEntireListingDisplayYN !== false && r.InternetAddressDisplayYN !== false).slice(0, 6);
+  const listings = await Promise.all(selected.map(async (r) => ({
+    listingKey: r.ListingKey || null,
+    address: r.UnparsedAddress || "Address available through IDX",
+    city: r.City || null,
+    listPrice: numberValue(r.ListPrice),
+    beds: numberValue(r.BedroomsTotal),
+    baths: numberValue(r.BathroomsTotalInteger),
+    propertySubType: r.PropertySubType || r.PropertyType || null,
+    listingOffice: r.ListOfficeName || null,
+    photo: await firstPhoto(r.ListingKey, env)
+  })));
+  return json6({ ok: true, listings });
+}
+__name(featuredListings, "featuredListings");
+function parseRealtorAddress(raw) {
+  try {
+    const url = new URL(raw);
+    if (!/(^|\.)realtor\.ca$/i.test(url.hostname)) return "";
+    const decoded = decodeURIComponent(url.pathname).replace(/^\/(?:real-estate|immobilier)\/\d{6,12}\//i, "").replace(/[-_+\/]+/g, " ").replace(/\s+/g, " ").trim();
+    const match = decoded.match(/\b(\d+[A-Za-z]?)\s+([A-Za-z0-9.' ]{2,80}?)\s+(street|st|road|rd|avenue|ave|drive|dr|crescent|cres|court|ct|boulevard|blvd|lane|ln|way|trail|tr|place|pl|parkway|pkwy)\b/i);
+    return match ? `${match[1]} ${match[2]} ${match[3]}`.replace(/\s+/g, " ").trim() : "";
+  } catch {
+    return "";
+  }
+}
+__name(parseRealtorAddress, "parseRealtorAddress");
+async function featuredQuery(filter, fields, top, env) {
+  const params = new URLSearchParams({ "$top": String(top), "$select": fields, "$orderby": "OriginalEntryTimestamp desc,ListingKey desc" });
+  if (filter) params.set("$filter", filter);
+  try {
+    let response = await fetch(`${AMPRE4}/Property?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+    if (!response.ok) {
+      params.delete("$orderby");
+      response = await fetch(`${AMPRE4}/Property?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+    }
+    if (!response.ok) return [];
+    const body = await response.json();
+    return Array.isArray(body.value) ? body.value : [];
+  } catch {
+    return [];
+  }
+}
+__name(featuredQuery, "featuredQuery");
+async function firstPhoto(listingKey, env) {
+  if (!listingKey) return null;
+  const params = new URLSearchParams({ "$top": "20", "$filter": `ResourceRecordKey eq '${escapeOData2(listingKey)}' and ResourceName eq 'Property'`, "$orderby": "MediaModificationTimestamp,MediaKey" });
+  try {
+    const response = await fetch(`${AMPRE4}/Media?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+    if (!response.ok) return null;
+    const body = await response.json();
+    const record = (Array.isArray(body.value) ? body.value : []).find((m) => m?.MediaKey && m?.MediaURL && (/^image\//i.test(m.MediaType || "") || /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(m.MediaURL)));
+    return record ? { url: `/api/media?key=${encodeURIComponent(record.MediaKey)}`, description: record.ShortDescription || null } : null;
+  } catch {
+    return null;
+  }
+}
+__name(firstPhoto, "firstPhoto");
+function isLeadingEdge(r) {
+  return /century\s*21.*leading\s*edge|leading\s*edge.*century\s*21/i.test(String(r?.ListOfficeName || ""));
+}
+__name(isLeadingEdge, "isLeadingEdge");
+function numberValue(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+__name(numberValue, "numberValue");
+async function resolveAddress3(a, env) {
+  const tokens = a.name.split(" ").filter(Boolean).sort((x, y) => y.length - x.length);
+  const searchTerms = [];
+  const recent = await runQuery2("", env, 500, "OriginalEntryTimestamp desc,ListingKey desc");
+  const recentExact = selectExactAddressMatch(a, recent);
+  if (recentExact) return recentExact;
+  const numberFilters = [
+    `StreetNumber eq '${escapeOData2(a.number)}'`,
+    .../^\d+$/.test(a.number) ? [`StreetNumber eq ${a.number}`] : [],
+    `contains(UnparsedAddress,'${escapeOData2(`${a.number} ${displayToken2(a.name)}`)}')`,
+    `contains(UnparsedAddress,'${escapeOData2(`${a.number} ${String(a.name).toUpperCase()}`)}')`,
+    `contains(UnparsedAddress,'${escapeOData2(`${a.number} ${String(a.name).toLowerCase()}`)}')`
+  ];
+  for (const filter of numberFilters) {
+    const rows = await runQuery2(filter, env, 500);
+    const exact = selectExactAddressMatch(a, rows);
+    if (exact) return exact;
+  }
+  const verifiedKey = VERIFIED_ADDRESS_KEYS.get(`${a.number} ${a.name}`);
+  if (verifiedKey) return { ListingKey: verifiedKey };
+  for (const token of tokens) {
+    if (token.length >= 3 && !searchTerms.includes(token)) searchTerms.push(token);
+  }
+  if (!searchTerms.length) searchTerms.push(a.name);
+  for (const term of searchTerms.slice(0, 3)) {
+    const variants = [.../* @__PURE__ */ new Set([displayToken2(term), String(term).toUpperCase(), String(term).toLowerCase()])];
+    for (const variant of variants) {
+      const filter = `contains(UnparsedAddress,'${escapeOData2(variant)}')`;
+      const rows = await runQuery2(filter, env, 500);
+      const exact = selectExactAddressMatch(a, rows);
+      if (exact) return exact;
+    }
+  }
+  return null;
+}
+__name(resolveAddress3, "resolveAddress");
+function selectExactAddressMatch(a, rows) {
+  const exact = (rows || []).map((r) => ({ r, score: addressScore2(a, r) })).filter((x) => x.score >= 88).sort((x, y) => {
+    const activeDiff = Number(isActive3(y.r)) - Number(isActive3(x.r));
+    if (activeDiff) return activeDiff;
+    if (y.score !== x.score) return y.score - x.score;
+    return recordTime3(y.r) - recordTime3(x.r);
+  });
+  return exact[0]?.r || null;
+}
+__name(selectExactAddressMatch, "selectExactAddressMatch");
+async function runQuery2(filter, env, top, orderby = "") {
+  const params = new URLSearchParams();
+  params.set("$top", String(top));
+  if (filter) params.set("$filter", filter);
+  if (orderby) params.set("$orderby", orderby);
+  params.set("$select", [
+    "ListingKey",
+    "StreetNumber",
+    "StreetName",
+    "StreetSuffix",
+    "StreetDirPrefix",
+    "StreetDirSuffix",
+    "UnparsedAddress",
+    "UnitNumber",
+    "City",
+    "StateOrProvince",
+    "PostalCode",
+    "StandardStatus",
+    "MlsStatus",
+    "ContractStatus",
+    "TransactionType",
+    "ModificationTimestamp",
+    "OriginalEntryTimestamp"
+  ].join(","));
+  try {
+    const response = await fetch(`${AMPRE4}/Property?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }
+    });
+    if (!response.ok) return [];
+    const body = await response.json();
+    return Array.isArray(body.value) ? body.value : [];
+  } catch {
+    return [];
+  }
+}
+__name(runQuery2, "runQuery");
+function parseAddress5(raw) {
+  let first = String(raw || "").replace(/\s+/g, " ").trim().split(",")[0].trim();
+  first = first.replace(/^(?:unit|suite|apt|apartment|#)\s*[A-Za-z0-9-]+\s*[-,]?\s*/i, "");
+  const m = first.match(/^(\d+[A-Za-z]?)\s+(.+)$/);
+  if (!m) return {};
+  const tokens = m[2].trim().replace(/[.]/g, "").split(/\s+/);
+  let direction = null;
+  let suffix = null;
+  let unit = null;
+  const suffixIndex = tokens.findIndex((token) => STREET_TYPE_ALIASES.has(normalizeToken(token)));
+  if (suffixIndex >= 0) {
+    suffix = STREET_TYPE_ALIASES.get(normalizeToken(tokens[suffixIndex]));
+    const remainder = tokens.slice(suffixIndex + 1);
+    if (remainder.length && DIRECTION_ALIASES.has(normalizeToken(remainder[0]))) {
+      direction = DIRECTION_ALIASES.get(normalizeToken(remainder.shift()));
+    }
+    unit = normalize3(remainder.join(" ").replace(/^(?:unit|suite|apt|apartment|#)\s*/i, "")) || null;
+    tokens.splice(suffixIndex);
+  }
+  if (suffixIndex < 0 && tokens.length && DIRECTION_ALIASES.has(normalizeToken(tokens[tokens.length - 1]))) {
+    direction = DIRECTION_ALIASES.get(normalizeToken(tokens.pop()));
+  }
+  if (suffixIndex < 0 && tokens.length && STREET_TYPE_ALIASES.has(normalizeToken(tokens[tokens.length - 1]))) {
+    suffix = STREET_TYPE_ALIASES.get(normalizeToken(tokens.pop()));
+  }
+  if (!direction && tokens.length && DIRECTION_ALIASES.has(normalizeToken(tokens[tokens.length - 1]))) {
+    direction = DIRECTION_ALIASES.get(normalizeToken(tokens.pop()));
+  }
+  return {
+    number: normalize3(m[1]),
+    name: normalize3(tokens.join(" ")),
+    suffix,
+    direction,
+    unit
+  };
+}
+__name(parseAddress5, "parseAddress");
+function addressScore2(a, r) {
+  let score = 0;
+  const rowNumber = normalize3(r?.StreetNumber);
+  const rowName = normalize3(r?.StreetName);
+  const rowSuffix = canonicalStreetType(r?.StreetSuffix);
+  const rowDirection = canonicalDirection(r?.StreetDirSuffix || r?.StreetDirPrefix);
+  const unparsed = normalize3(r?.UnparsedAddress);
+  if (rowNumber === a.number) score += 48;
+  if (rowName === a.name) score += 42;
+  else if (rowName.includes(a.name) || a.name.includes(rowName)) score += 24;
+  if (a.suffix && rowSuffix === a.suffix) score += 5;
+  if (a.direction && rowDirection === a.direction) score += 2;
+  if (a.unit) {
+    const rowUnit = normalize3(r?.UnitNumber || r?.ApartmentNumber || "");
+    if (rowUnit === a.unit) score += 20;
+    else score -= 35;
+  }
+  if (unparsed.startsWith(`${a.number} ${a.name}`)) score += 3;
+  if (isActive3(r)) score += 5;
+  return Math.min(100, score);
+}
+__name(addressScore2, "addressScore");
+function canonicalStreetType(v) {
+  const key = normalizeToken(v);
+  return STREET_TYPE_ALIASES.get(key) || normalize3(v);
+}
+__name(canonicalStreetType, "canonicalStreetType");
+function canonicalDirection(v) {
+  const key = normalizeToken(v);
+  return DIRECTION_ALIASES.get(key) || normalize3(v);
+}
+__name(canonicalDirection, "canonicalDirection");
+var STREET_TYPE_ALIASES = new Map(Object.entries({
+  alley: "alley",
+  aly: "alley",
+  avenue: "avenue",
+  ave: "avenue",
+  av: "avenue",
+  bay: "bay",
+  beach: "beach",
+  bend: "bend",
+  boulevard: "boulevard",
+  blvd: "boulevard",
+  byway: "byway",
+  campus: "campus",
+  cape: "cape",
+  centre: "centre",
+  center: "centre",
+  chase: "chase",
+  circle: "circle",
+  cir: "circle",
+  circuit: "circuit",
+  close: "close",
+  common: "common",
+  concession: "concession",
+  corners: "corners",
+  court: "court",
+  ct: "court",
+  cove: "cove",
+  crescent: "crescent",
+  cres: "crescent",
+  cr: "crescent",
+  crossing: "crossing",
+  dale: "dale",
+  dell: "dell",
+  diversion: "diversion",
+  downs: "downs",
+  drive: "drive",
+  dr: "drive",
+  end: "end",
+  esplanade: "esplanade",
+  estates: "estates",
+  expressway: "expressway",
+  expy: "expressway",
+  extension: "extension",
+  ext: "extension",
+  farm: "farm",
+  field: "field",
+  forest: "forest",
+  freeway: "freeway",
+  front: "front",
+  gardens: "gardens",
+  gdns: "gardens",
+  gate: "gate",
+  glade: "glade",
+  glen: "glen",
+  green: "green",
+  grounds: "grounds",
+  grove: "grove",
+  harbour: "harbour",
+  harbor: "harbour",
+  heath: "heath",
+  heights: "heights",
+  hts: "heights",
+  highlands: "highlands",
+  highway: "highway",
+  hwy: "highway",
+  hill: "hill",
+  hollow: "hollow",
+  inlet: "inlet",
+  island: "island",
+  key: "key",
+  knoll: "knoll",
+  landing: "landing",
+  lane: "lane",
+  ln: "lane",
+  limits: "limits",
+  line: "line",
+  link: "link",
+  lookout: "lookout",
+  loop: "loop",
+  mall: "mall",
+  manor: "manor",
+  maze: "maze",
+  meadows: "meadows",
+  mews: "mews",
+  moor: "moor",
+  mount: "mount",
+  mountain: "mountain",
+  orchard: "orchard",
+  parade: "parade",
+  park: "park",
+  parkway: "parkway",
+  pkwy: "parkway",
+  passage: "passage",
+  path: "path",
+  pathway: "pathway",
+  pines: "pines",
+  place: "place",
+  pl: "place",
+  plateau: "plateau",
+  plaza: "plaza",
+  point: "point",
+  pt: "point",
+  port: "port",
+  promenade: "promenade",
+  quay: "quay",
+  ramp: "ramp",
+  range: "range",
+  ridge: "ridge",
+  rise: "rise",
+  road: "road",
+  rd: "road",
+  route: "route",
+  rte: "route",
+  row: "row",
+  run: "run",
+  square: "square",
+  sq: "square",
+  street: "street",
+  st: "street",
+  subdivision: "subdivision",
+  terrace: "terrace",
+  terr: "terrace",
+  ter: "terrace",
+  thicket: "thicket",
+  towers: "towers",
+  townline: "townline",
+  trail: "trail",
+  tr: "trail",
+  turnabout: "turnabout",
+  vale: "vale",
+  via: "via",
+  view: "view",
+  village: "village",
+  villas: "villas",
+  vista: "vista",
+  walk: "walk",
+  way: "way",
+  wharf: "wharf",
+  wood: "wood",
+  wynd: "wynd"
+}));
+var DIRECTION_ALIASES = new Map(Object.entries({
+  n: "north",
+  north: "north",
+  s: "south",
+  south: "south",
+  e: "east",
+  east: "east",
+  w: "west",
+  west: "west",
+  ne: "northeast",
+  northeast: "northeast",
+  nw: "northwest",
+  northwest: "northwest",
+  se: "southeast",
+  southeast: "southeast",
+  sw: "southwest",
+  southwest: "southwest"
+}));
+function isActive3(r) {
+  const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""}`.toLowerCase();
+  const transaction = String(r?.TransactionType || "").toLowerCase();
+  return transaction.includes("for sale") && /active|available|new|price change/.test(status) && !/closed|sold|expired|terminated|withdrawn|cancel|suspend|leased|rented|unavailable/.test(status);
+}
+__name(isActive3, "isActive");
+function displayToken2(v) {
+  const s = String(v || "");
+  return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
+}
+__name(displayToken2, "displayToken");
+function normalizeToken(v) {
+  return String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+__name(normalizeToken, "normalizeToken");
+function normalize3(v) {
+  return String(v || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+__name(normalize3, "normalize");
+function escapeOData2(v) {
+  return String(v || "").replace(/'/g, "''");
+}
+__name(escapeOData2, "escapeOData");
+function clean4(v, max) {
+  return typeof v === "string" ? v.trim().slice(0, max) : "";
+}
+__name(clean4, "clean");
+function recordTime3(r) {
+  const d = new Date(r?.ModificationTimestamp || r?.OriginalEntryTimestamp || 0);
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+}
+__name(recordTime3, "recordTime");
+function json6(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-THM-Version": VERSION3,
+      "X-Content-Type-Options": "nosniff"
+    }
+  });
+}
+__name(json6, "json");
+
+// worker-v11.js
+var VERSION4 = "stage4-vow-dynamic-window-copy-v99-20260903";
+var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
+  ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
+  ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
+]);
+var worker_v11_default = {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/version") return json7({ ok: true, version: VERSION4, snapshot: "authorized-public-idx-facts", schoolEnrichment: "free-public-nearest-school", schoolAiConfigured: false, comparables: "protected-post-form-sold-evidence", reports: "vow-data-gemini-primary-openrouter-fallback", operations: "admin-and-job-queue", vowAccess: env.VOW_ACCESS_ENABLED === "true" });
+    if (url.pathname === "/api/school-enrichment" && request.method === "GET") return schoolEnrichment(request, env);
+    if (url.pathname === "/api/property" && request.method === "GET") return publicProperty(request, env, ctx);
+    if (url.pathname === "/api/featured-listings") return json7({ ok: false, error: "Public IDX display is disabled." }, 404, { "Cache-Control": "no-store" });
+    if (url.pathname === "/api/vow/config" && request.method === "GET") return vowConfig(env);
+    if (url.pathname === "/api/vow/register" && request.method === "POST") return vowRegister(request, env);
+    if (url.pathname === "/api/vow/login" && request.method === "POST") return vowLogin(request, env);
+    if (url.pathname === "/api/vow/logout" && request.method === "POST") return vowLogout(request, env);
+    if (url.pathname === "/api/vow/session" && request.method === "GET") return vowSession(request, env);
+    if (url.pathname === "/api/vow/accept-terms" && request.method === "POST") return vowAcceptTerms(request, env, ctx);
+    if (url.pathname === "/api/vow/activate-request" && request.method === "POST") return vowActivateRequest(request, env, ctx);
+    if (url.pathname === "/api/vow/property" && request.method === "GET") return vowProperty(request, env, ctx);
+    if (url.pathname === "/api/lead" && request.method === "POST") {
+      const response = await worker_v10_default.fetch(request, env, ctx);
+      if (response.ok) {
+        const result = await response.clone().json().catch(() => null);
+        if (result?.lead_id) ctx.waitUntil(
+          rpc(env, "enable_idx_ai_report", { p_lead_id: result.lead_id }).then(() => processAutomationJobs(env)).catch((error) => console.error(JSON.stringify({ event: "report_queue_failed", lead_id: result.lead_id, error: String(error).slice(0, 240) })))
+        );
+        return json7(result, response.status);
+      }
+      return response;
+    }
+    if (url.pathname === "/api/admin/leads" && request.method === "GET") return adminLeads(request, env);
+    if (url.pathname.startsWith("/api/admin/leads/") && request.method === "PATCH") return updateLead(request, env, url.pathname.split("/").pop(), ctx);
+    if (url.pathname === "/api/admin/agents" && request.method === "GET") return adminAgents(request, env);
+    if (url.pathname === "/api/admin/agents" && request.method === "POST") return createAgent(request, env);
+    if (url.pathname.startsWith("/api/admin/agents/") && request.method === "PATCH") return updateAgent(request, env, url.pathname.split("/").pop());
+    if (url.pathname === "/api/admin/settings" && request.method === "GET") return adminSettings(request, env);
+    if (url.pathname === "/api/admin/settings" && request.method === "PATCH") return updateSettings(request, env);
+    if (url.pathname === "/api/admin/vow/diagnostics" && request.method === "GET") return vowDiagnostics(request, env);
+    if (url.pathname === "/api/admin/vow/diagnostic-console" && request.method === "GET") return adminDiagnosticConsole();
+    if (url.pathname === "/api/admin/vow/query-diagnostics" && request.method === "GET") return vowQueryDiagnostics(request, env);
+    if (url.pathname === "/api/admin/media/diagnostics" && request.method === "GET") return mediaDiagnostics(request, env);
+    if (url.pathname === "/api/admin/ai/diagnostics" && request.method === "GET") return aiDiagnostics(request, env);
+    if (url.pathname === "/api/admin/automation/run" && request.method === "POST") return runAutomation(request, env);
+    if (url.pathname.startsWith("/api/admin/reports/") && url.pathname.endsWith("/run") && request.method === "POST") return runSingleReport(request, env, url.pathname.split("/")[4]);
+    if (url.pathname.startsWith("/api/admin/reports/") && url.pathname.endsWith("/test-email") && request.method === "POST") return runTestReportEmail(request, env, url.pathname.split("/")[4]);
+    return worker_v10_default.fetch(request, env, ctx);
+  },
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(runScheduledNotifications(env));
+  }
+};
+async function publicProperty(request, env, ctx) {
+  const publicUrl = new URL(request.url);
+  publicUrl.searchParams.set("mode", "public_snapshot");
+  publicUrl.searchParams.set("snapshot_version", VERSION4);
+  const cacheKey = new Request(publicUrl.toString(), { method: "GET" });
+  const edgeCache = typeof caches !== "undefined" ? caches.default : null;
+  const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
+  if (cached) return cached;
+  let response = await worker_v10_default.fetch(new Request(publicUrl.toString(), { method: "GET", headers: request.headers }), env, ctx);
+  let body = await response.clone().json().catch(() => null);
+  if (!response.ok || !body?.property) return response;
+  if (!body.property.forSale) {
+    body.property.remarks = null;
+    body.property.photos = [];
+    body.property.photoCount = 0;
+    if (body.property.details) delete body.property.details.listingOffice;
+  }
+  if (!body.property.schoolSummary?.name && env.VOW_AUDIT_SALT) {
+    body.property.schoolResearchToken = await issueSchoolResearchToken(body.property.latitude, body.property.longitude, body.property.address, env);
+  }
+  delete body.property.latitude;
+  delete body.property.longitude;
+  applyVerifiedPropTxHistory(body.property);
+  body.property.comparableContext = { available: false, matchCount: 0, confidence: "Available after request", basis: "Submit a showing or property-report request to receive the deeper AI-assisted analysis." };
+  body.property.priceOpinion = { available: false, label: "Included in requested report", note: "The deeper value analysis is prepared after your request." };
+  const result = json7(body, response.status, { "Cache-Control": "public, max-age=60, s-maxage=300" });
+  if (response.status === 200 && edgeCache) ctx.waitUntil(edgeCache.put(cacheKey, result.clone()));
+  return result;
+}
+__name(publicProperty, "publicProperty");
+function applyVerifiedPropTxHistory(property2) {
+  const key = String(property2?.address || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const verified = VERIFIED_PROPTX_HISTORY.get(key);
+  if (!verified) return;
+  const current = Number(property2.historySummary?.appearanceCount || 0);
+  if (current >= verified.appearanceCount) return;
+  property2.historySummary = {
+    ...property2.historySummary || {},
+    years: 10,
+    appearanceCount: verified.appearanceCount,
+    source: verified.source,
+    verifiedLegacyListingKeys: verified.legacyListingKeys
+  };
+}
+__name(applyVerifiedPropTxHistory, "applyVerifiedPropTxHistory");
+async function schoolEnrichment(request, env) {
+  const token = clean5(new URL(request.url).searchParams.get("token"), 2e3);
+  const verified = await verifySchoolResearchToken(token, env);
+  if (!verified.ok) return json7({ ok: false, error: "This school-research request is invalid or expired." }, 403);
+  try {
+    const coordinates = validCoordinate(verified.latitude, verified.longitude) ? verified : await resolveFreeCoordinates(verified.address);
+    const schoolSummary = coordinates ? await findNearestFreeSchool(coordinates.latitude, coordinates.longitude) : null;
+    return json7({ ok: true, schoolSummary: schoolSummary || null }, 200, { "Cache-Control": "private, no-store" });
+  } catch (error) {
+    console.log(JSON.stringify({ event: "school_enrichment_failed", error: clean5(error?.message || "Unknown error", 240) }));
+    return json7({ ok: false, error: "School research is temporarily unavailable." }, 502);
+  }
+}
+__name(schoolEnrichment, "schoolEnrichment");
+async function issueSchoolResearchToken(latitude, longitude, address, env) {
+  address = clean5(address, 300);
+  if (!validCoordinate(latitude, longitude) && !address) return null;
+  const expires = Math.floor(Date.now() / 1e3) + 300;
+  const location = JSON.stringify({ latitude: validCoordinate(latitude, longitude) ? Number(latitude) : null, longitude: validCoordinate(latitude, longitude) ? Number(longitude) : null, address });
+  const payload = `${expires}.${base64UrlEncode(location)}`;
+  return `${payload}.${await hmacBase64Url(payload, env.VOW_AUDIT_SALT)}`;
+}
+__name(issueSchoolResearchToken, "issueSchoolResearchToken");
+async function verifySchoolResearchToken(token, env) {
+  if (!token || !env.VOW_AUDIT_SALT) return { ok: false };
+  const parts = token.split(".");
+  if (parts.length !== 3) return { ok: false };
+  const payload = `${parts[0]}.${parts[1]}`, expected = await hmacBase64Url(payload, env.VOW_AUDIT_SALT);
+  if (!timingSafeEqual(parts[2], expected)) return { ok: false };
+  const expires = Number(parts[0]);
+  if (!Number.isFinite(expires) || expires < Math.floor(Date.now() / 1e3)) return { ok: false };
+  try {
+    const value = JSON.parse(base64UrlDecode(parts[1]));
+    const latitude = Number(value?.latitude), longitude = Number(value?.longitude), address = clean5(value?.address, 300);
+    return validCoordinate(latitude, longitude) || address ? { ok: true, latitude, longitude, address } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+__name(verifySchoolResearchToken, "verifySchoolResearchToken");
+async function hmacBase64Url(value, secret) {
+  const encoder = new TextEncoder(), key = await crypto.subtle.importKey("raw", encoder.encode(String(secret)), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return bytesToBase64Url(new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(value))));
+}
+__name(hmacBase64Url, "hmacBase64Url");
+function base64UrlEncode(value) {
+  return bytesToBase64Url(new TextEncoder().encode(value));
+}
+__name(base64UrlEncode, "base64UrlEncode");
+function base64UrlDecode(value) {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4);
+  return new TextDecoder().decode(Uint8Array.from(atob(base64), (c) => c.charCodeAt(0)));
+}
+__name(base64UrlDecode, "base64UrlDecode");
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+__name(bytesToBase64Url, "bytesToBase64Url");
+function validCoordinate(latitude, longitude) {
+  latitude = Number(latitude);
+  longitude = Number(longitude);
+  return Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= 41 && latitude <= 57 && longitude >= -96 && longitude <= -74;
+}
+__name(validCoordinate, "validCoordinate");
+async function resolveFreeCoordinates(address) {
+  address = clean5(address, 300);
+  if (!address) return null;
+  const match = address.match(/^\s*(\d+[A-Za-z]?)\s+([^,]+)/);
+  if (match) {
+    const number = match[1].replace(/'/g, "''"), street = match[2].replace(/\b(?:street|st|road|rd|avenue|ave|drive|dr|boulevard|blvd|court|ct|crescent|cres|lane|ln|trail|trl|place|pl)\.?\b.*$/i, "").trim().replace(/'/g, "''");
+    if (street) {
+      const params = new URLSearchParams({ f: "json", where: `ADDRESS_NUMBER='${number}' AND upper(LINEAR_NAME_FULL) LIKE upper('${street}%')`, outFields: "LATITUDE,LONGITUDE", returnGeometry: "false", resultRecordCount: "1" });
+      try {
+        const response = await fetch(`https://gis.toronto.ca/arcgis/rest/services/cot_geospatial27/FeatureServer/101/query?${params}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8e3) });
+        const attrs = (await response.json().catch(() => null))?.features?.[0]?.attributes;
+        if (validCoordinate(attrs?.LATITUDE, attrs?.LONGITUDE)) return { latitude: Number(attrs.LATITUDE), longitude: Number(attrs.LONGITUDE), source: "City of Toronto Address Points" };
+      } catch {
+      }
+    }
+  }
+  try {
+    const params = new URLSearchParams({ format: "jsonv2", limit: "1", countrycodes: "ca", q: address });
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { headers: { Accept: "application/json", "User-Agent": "TorontoHouseMarket/1.0 (alireza.golestan@century21.ca)" }, signal: AbortSignal.timeout(8e3) });
+    const first = (await response.json().catch(() => null))?.[0];
+    if (validCoordinate(first?.lat, first?.lon)) return { latitude: Number(first.lat), longitude: Number(first.lon), source: "OpenStreetMap Nominatim" };
+  } catch {
+  }
+  return null;
+}
+__name(resolveFreeCoordinates, "resolveFreeCoordinates");
+async function findNearestFreeSchool(latitude, longitude) {
+  if (!validCoordinate(latitude, longitude)) return null;
+  const rounded = `${Number(latitude).toFixed(4)},${Number(longitude).toFixed(4)}`;
+  const cacheKey = new Request(`https://free-school-data.torontohousemarket.com/${rounded}`);
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const cached = cache ? await cache.match(cacheKey) : null;
+  if (cached?.ok) return cached.json().catch(() => null);
+  const sources = [
+    { url: "https://gis.toronto.ca/arcgis/rest/services/cot_geospatial28/FeatureServer/17/query", official: true, fields: "NAME,SCHOOL_LEVEL,SCHOOL_TYPE,BOARD_NAME,SCHOOL_TYPE_DESC,ADDRESS_FULL,LATITUDE,LONGITUDE" },
+    { url: "https://services.arcgis.com/AtfpSdJcsnQiIRhL/ArcGIS/rest/services/Toronto_Schools/FeatureServer/0/query", official: false, fields: "Name,School_Level,School_Type,Board_Name,School_Type_Desc,Address_Full,Latitude,Longitude" }
+  ];
+  let features = [], used = null;
+  for (const source of sources) {
+    const params = new URLSearchParams({ f: "json", where: "1=1", geometry: `${longitude},${latitude}`, geometryType: "esriGeometryPoint", inSR: "4326", outSR: "4326", spatialRel: "esriSpatialRelIntersects", distance: "5000", units: "esriSRUnit_Meter", outFields: source.fields, returnGeometry: "true", resultRecordCount: "250" });
+    try {
+      const response = await fetch(`${source.url}?${params}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8e3) });
+      const payload = response.ok ? await response.json().catch(() => null) : null;
+      if (Array.isArray(payload?.features) && payload.features.length) {
+        features = payload.features;
+        used = source;
+        break;
+      }
+    } catch {
+    }
+  }
+  const candidates = features.map((feature) => normalizePublicSchool(feature, latitude, longitude)).filter(Boolean).sort((a, b) => a.distanceKm - b.distanceKm);
+  const result = candidates[0] || null;
+  if (!result) return null;
+  result.source = used?.official ? "City of Toronto Open Data" : "Toronto public school-location dataset";
+  if (cache) {
+    const cachedResponse = json7(result, 200, { "Cache-Control": "public, max-age=2592000" });
+    await cache.put(cacheKey, cachedResponse).catch(() => null);
+  }
+  return result;
+}
+__name(findNearestFreeSchool, "findNearestFreeSchool");
+function normalizePublicSchool(feature, propertyLatitude, propertyLongitude) {
+  const attributes = feature?.attributes;
+  if (!attributes || typeof attributes !== "object") return null;
+  const name = clean5(attributes.NAME || attributes.Name, 160);
+  const latitude = Number(attributes.LATITUDE || attributes.Latitude || feature?.geometry?.y), longitude = Number(attributes.LONGITUDE || attributes.Longitude || feature?.geometry?.x);
+  if (!name || !validCoordinate(latitude, longitude)) return null;
+  const distanceKm = haversineKm(propertyLatitude, propertyLongitude, latitude, longitude);
+  if (!Number.isFinite(distanceKm) || distanceKm > 5) return null;
+  const board = clean5(attributes.BOARD_NAME || attributes.Board_Name, 160);
+  const type = clean5(attributes.SCHOOL_TYPE_DESC || attributes.School_Type_Desc || attributes.SCHOOL_TYPE || attributes.School_Type, 100);
+  if (!/(public|separate|district school board|conseil scolaire)/i.test(`${type} ${board}`)) return null;
+  const level = clean5(attributes.SCHOOL_LEVEL || attributes.School_Level, 60);
+  const address = clean5(attributes.ADDRESS_FULL || attributes.Address_Full, 180);
+  return { name, board: board || null, type: type || null, level: level || null, address: address || null, distanceKm: Number(distanceKm.toFixed(1)), note: [`${distanceKm.toFixed(1)} km away`, board, type].filter(Boolean).join(" \xB7 ") + " \xB7 Closest geographically; confirm attendance boundaries with the school board.", rating: null };
+}
+__name(normalizePublicSchool, "normalizePublicSchool");
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const rad = /* @__PURE__ */ __name((value) => Number(value) * Math.PI / 180, "rad");
+  const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+__name(haversineKm, "haversineKm");
+function vowConfig(env) {
+  return json7({ ok: true, enabled: env.VOW_ACCESS_ENABLED === "true" && !!env.AMPRE_VOW_TOKEN, termsVersion: vowTermsVersion(env), termsFinal: !vowTermsVersion(env).endsWith("-draft") });
+}
+__name(vowConfig, "vowConfig");
+async function vowRegister(request, env) {
+  const input = await request.json().catch(() => ({}));
+  const email = clean5(input.email, 254).toLowerCase(), password = String(input.password || ""), fullName = clean5(input.full_name, 160), mobile = clean5(input.mobile, 50);
+  if (!validEmail(email)) return json7({ ok: false, error: "Enter a valid email address." }, 400);
+  if (password.length < 10) return json7({ ok: false, error: "Use a password with at least 10 characters." }, 400);
+  if (fullName.length < 2 || mobile.replace(/\D/g, "").length < 7) return json7({ ok: false, error: "Enter your full name and a valid mobile number." }, 400);
+  if (input.accept_terms !== true) return json7({ ok: false, error: "You must review and accept the VOW Terms of Use." }, 400);
+  const endpoint = `${supabaseUrl(env)}/auth/v1/signup?redirect_to=${encodeURIComponent("https://torontohousemarket.com/vow.html")}`;
+  const response = await fetch(endpoint, { method: "POST", headers: authApiHeaders(env), body: JSON.stringify({ email, password, data: { full_name: fullName, mobile, vow_terms_version: vowTermsVersion(env) } }) });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) return json7({ ok: false, error: clean5(data?.msg || data?.message || "Unable to create the account.", 240) }, response.status);
+  const createdSession = publicSession(data?.session || data);
+  return json7({ ok: true, needsEmailVerification: !createdSession, session: createdSession, message: createdSession ? "Account created." : "Check your email and verify the address, then sign in to activate VOW access." }, 201);
+}
+__name(vowRegister, "vowRegister");
+async function vowLogin(request, env) {
+  const input = await request.json().catch(() => ({})), email = clean5(input.email, 254).toLowerCase(), password = String(input.password || "");
+  if (!validEmail(email) || !password) return json7({ ok: false, error: "Enter your email and password." }, 400);
+  const response = await fetch(`${supabaseUrl(env)}/auth/v1/token?grant_type=password`, { method: "POST", headers: authApiHeaders(env), body: JSON.stringify({ email, password }) });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) return json7({ ok: false, error: clean5(data?.error_description || data?.msg || data?.message || "Unable to sign in.", 240) }, 401);
+  return json7({ ok: true, session: publicSession(data) });
+}
+__name(vowLogin, "vowLogin");
+async function vowLogout(request, env) {
+  const token = bearerToken(request);
+  if (token) await fetch(`${supabaseUrl(env)}/auth/v1/logout`, { method: "POST", headers: { ...authApiHeaders(env), Authorization: `Bearer ${token}` } }).catch(() => null);
+  return json7({ ok: true });
+}
+__name(vowLogout, "vowLogout");
+async function vowSession(request, env) {
+  const user = await authenticatedUser(request, env);
+  if (!user) return json7({ ok: false, error: "Sign in required." }, 401);
+  const access = await currentVowAccess(request, env, { user, touch: false });
+  return json7({ ok: true, user: { id: user.id, email: user.email, emailVerified: !!user.email_confirmed_at }, membership: access.member || null, termsVersion: vowTermsVersion(env), termsAccepted: access.ok, accessEnabled: env.VOW_ACCESS_ENABLED === "true" && !!env.AMPRE_VOW_TOKEN });
+}
+__name(vowSession, "vowSession");
+async function vowAcceptTerms(request, env, ctx) {
+  const user = await authenticatedUser(request, env);
+  if (!user) return json7({ ok: false, error: "Sign in required." }, 401);
+  if (!user.email_confirmed_at) return json7({ ok: false, error: "Verify your email address before accepting VOW access." }, 403);
+  const input = await request.json().catch(() => ({})), fullName = clean5(input.full_name || user.user_metadata?.full_name, 160), mobile = clean5(input.mobile || user.user_metadata?.mobile, 50);
+  if (input.accept_terms !== true || input.terms_version !== vowTermsVersion(env)) return json7({ ok: false, error: "Review and accept the current VOW Terms of Use." }, 400);
+  if (fullName.length < 2 || mobile.replace(/\D/g, "").length < 7) return json7({ ok: false, error: "Full name and mobile number are required." }, 400);
+  const now = (/* @__PURE__ */ new Date()).toISOString(), member = { user_id: user.id, email: String(user.email || "").toLowerCase(), full_name: fullName, mobile, status: "active", current_terms_version: vowTermsVersion(env), terms_accepted_at: now, email_verified_at: user.email_confirmed_at, updated_at: now };
+  const saved = await supabase(env, "/rest/v1/vow_members?on_conflict=user_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(member) });
+  if (!saved.ok) return json7({ ok: false, error: "Unable to save VOW membership." }, 502);
+  const acceptance = { user_id: user.id, terms_version: vowTermsVersion(env), terms_digest: String(env.VOW_TERMS_DIGEST || "pending"), accepted_at: now, ip_hash: await requestIpHash(request, env), user_agent: clean5(request.headers.get("User-Agent"), 500) || null, source_url: clean5(input.source_url, 1e3) || null };
+  const audit = await supabase(env, "/rest/v1/vow_terms_acceptances", { method: "POST", body: JSON.stringify(acceptance) });
+  if (!audit.ok) return json7({ ok: false, error: "Unable to record VOW terms acceptance." }, 502);
+  const linked = input.lead_id ? await linkLeadToVerifiedUser(env, input.lead_id, user) : false;
+  if (linked) ctx.waitUntil(processAutomationJobs(env));
+  return json7({ ok: true, membership: (await saved.json().catch(() => []))?.[0] || member });
+}
+__name(vowAcceptTerms, "vowAcceptTerms");
+async function vowActivateRequest(request, env, ctx) {
+  const user = await authenticatedUser(request, env);
+  if (!user) return json7({ ok: false, error: "Sign in required." }, 401);
+  if (!user.email_confirmed_at) return json7({ ok: false, error: "Verify your email address to continue." }, 403);
+  const input = await request.json().catch(() => ({})), requestedId = /^[0-9a-f-]{36}$/i.test(String(input.lead_id || "")) ? String(input.lead_id) : null, email = String(user.email || "").toLowerCase();
+  let query2 = `/rest/v1/pending_vow_acceptances?email=eq.${encodeURIComponent(email)}&activated_at=is.null&select=lead_id,email,full_name,mobile,terms_version,terms_digest,accepted_at,ip_hash,user_agent,source_url&order=accepted_at.asc&limit=20`;
+  if (requestedId) query2 += `&lead_id=eq.${encodeURIComponent(requestedId)}`;
+  const lookup = await supabase(env, query2), pending = await lookup.json().catch(() => []);
+  if (!lookup.ok) return json7({ ok: false, error: "Unable to verify the pending property request." }, 502);
+  const eligible = (Array.isArray(pending) ? pending : []).filter((x) => x.terms_version === vowTermsVersion(env));
+  if (!eligible.length) {
+    const access = await currentVowAccess(request, env, { user, touch: false });
+    return json7({ ok: true, linked: 0, membership: access.member || null });
+  }
+  const first = eligible[0], now = (/* @__PURE__ */ new Date()).toISOString(), member = { user_id: user.id, email, full_name: first.full_name, mobile: first.mobile, status: "active", current_terms_version: first.terms_version, terms_accepted_at: first.accepted_at, email_verified_at: user.email_confirmed_at, updated_at: now };
+  const saved = await supabase(env, "/rest/v1/vow_members?on_conflict=user_id", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify(member) });
+  if (!saved.ok) return json7({ ok: false, error: "Unable to activate VOW membership." }, 502);
+  let linked = 0;
+  for (const item of eligible) {
+    const audit = await supabase(env, "/rest/v1/vow_terms_acceptances", { method: "POST", body: JSON.stringify({ user_id: user.id, terms_version: item.terms_version, terms_digest: item.terms_digest, accepted_at: item.accepted_at, ip_hash: item.ip_hash, user_agent: item.user_agent, source_url: item.source_url }) });
+    if (!audit.ok) continue;
+    if (await linkLeadToVerifiedUser(env, item.lead_id, user)) {
+      await supabase(env, `/rest/v1/pending_vow_acceptances?lead_id=eq.${encodeURIComponent(item.lead_id)}`, { method: "PATCH", body: JSON.stringify({ activated_at: now, user_id: user.id }) });
+      linked++;
+    }
+  }
+  if (linked) ctx.waitUntil(processAutomationJobs(env));
+  return json7({ ok: true, linked, membership: (await saved.json().catch(() => []))?.[0] || member });
+}
+__name(vowActivateRequest, "vowActivateRequest");
+async function vowProperty(request, env, ctx) {
+  const access = await currentVowAccess(request, env);
+  if (!access.ok) return json7({ ok: false, error: access.error || "Active VOW membership required." }, access.status || 403);
+  if (env.VOW_ACCESS_ENABLED !== "true" || !env.AMPRE_VOW_TOKEN) return json7({ ok: false, error: "Your VOW account is ready, but the PropTx VOW data token has not been activated yet." }, 503);
+  const url = new URL(request.url);
+  url.pathname = "/api/property";
+  const vowEnv = { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN };
+  const response = await worker_v10_default.fetch(new Request(url.toString(), { method: "GET", headers: request.headers }), vowEnv, ctx);
+  const body = await response.clone().json().catch(() => null);
+  return body ? json7(body, response.status, { "Cache-Control": "private, no-store", "Vary": "Authorization" }) : response;
+}
+__name(vowProperty, "vowProperty");
+async function authenticatedUser(request, env) {
+  const token = bearerToken(request);
+  if (!token) return null;
+  const response = await fetch(`${supabaseUrl(env)}/auth/v1/user`, { headers: { ...authApiHeaders(env), Authorization: `Bearer ${token}` } });
+  if (!response.ok) return null;
+  return response.json().catch(() => null);
+}
+__name(authenticatedUser, "authenticatedUser");
+async function currentVowAccess(request, env, options = {}) {
+  const user = options.user || await authenticatedUser(request, env);
+  if (!user) return { ok: false, status: 401, error: "Sign in required." };
+  if (!user.email_confirmed_at) return { ok: false, status: 403, error: "Email verification required.", user };
+  const response = await supabase(env, `/rest/v1/vow_members?user_id=eq.${encodeURIComponent(user.id)}&select=user_id,email,full_name,mobile,status,current_terms_version,terms_accepted_at,relationship_started_at&limit=1`), rows = await response.json().catch(() => []), member = Array.isArray(rows) ? rows[0] : null;
+  if (!response.ok || !member) return { ok: false, status: 403, error: "Accept the current VOW Terms of Use to continue.", user, member: null };
+  if (member.status !== "active") return { ok: false, status: 403, error: "This VOW membership is not active.", user, member };
+  if (member.current_terms_version !== vowTermsVersion(env)) return { ok: false, status: 403, error: "The current VOW Terms of Use must be accepted.", user, member };
+  if (options.touch !== false) await supabase(env, `/rest/v1/vow_members?user_id=eq.${encodeURIComponent(user.id)}`, { method: "PATCH", body: JSON.stringify({ last_access_at: (/* @__PURE__ */ new Date()).toISOString(), updated_at: (/* @__PURE__ */ new Date()).toISOString() }) }).catch(() => null);
+  return { ok: true, user, member };
+}
+__name(currentVowAccess, "currentVowAccess");
+async function linkLeadToVerifiedUser(env, leadId, user) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(leadId)) || !user?.id || !user?.email) return false;
+  const lookup = await supabase(env, `/rest/v1/leads?id=eq.${encodeURIComponent(leadId)}&select=id,email&limit=1`), rows = await lookup.json().catch(() => []), lead = Array.isArray(rows) ? rows[0] : null;
+  if (!lookup.ok || !lead || String(lead.email || "").toLowerCase() !== String(user.email).toLowerCase()) return false;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const linked = await supabase(env, `/rest/v1/leads?id=eq.${encodeURIComponent(leadId)}`, { method: "PATCH", body: JSON.stringify({ vow_user_id: user.id, updated_at: now }) });
+  if (!linked.ok) return false;
+  await supabase(env, `/rest/v1/automation_jobs?lead_id=eq.${encodeURIComponent(leadId)}&job_type=eq.generate_report`, { method: "PATCH", body: JSON.stringify({ status: "queued", attempts: 0, available_at: now, locked_at: null, last_error: null, updated_at: now }) }).catch(() => null);
+  await supabase(env, `/rest/v1/property_reports?lead_id=eq.${encodeURIComponent(leadId)}`, { method: "PATCH", body: JSON.stringify({ status: "queued", error_message: null, updated_at: now }) }).catch(() => null);
+  return true;
+}
+__name(linkLeadToVerifiedUser, "linkLeadToVerifiedUser");
+function supabaseUrl(env) {
+  return env.SUPABASE_URL || "https://pwbtxyavjjotxtvegrqe.supabase.co";
+}
+__name(supabaseUrl, "supabaseUrl");
+function authApiHeaders(env) {
+  return { "Content-Type": "application/json", apikey: String(env.SUPABASE_PUBLISHABLE_KEY || "") };
+}
+__name(authApiHeaders, "authApiHeaders");
+function bearerToken(request) {
+  return clean5(String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, ""), 4096);
+}
+__name(bearerToken, "bearerToken");
+function publicSession(value) {
+  return value?.access_token ? { access_token: value.access_token, refresh_token: value.refresh_token, expires_in: value.expires_in, expires_at: value.expires_at, token_type: value.token_type, user: value.user ? { id: value.user.id, email: value.user.email, email_confirmed_at: value.user.email_confirmed_at } : null } : null;
+}
+__name(publicSession, "publicSession");
+function vowTermsVersion(env) {
+  return String(env.VOW_TERMS_VERSION || "2026-08-27-draft");
+}
+__name(vowTermsVersion, "vowTermsVersion");
+async function requestIpHash(request, env) {
+  const ip = request.headers.get("CF-Connecting-IP"), salt = env.VOW_AUDIT_SALT;
+  if (!ip || !salt) return null;
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${salt}:${ip}`));
+  return Array.from(new Uint8Array(bytes)).map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+__name(requestIpHash, "requestIpHash");
+function authorized(request, env) {
+  const expected = String(env.ADMIN_API_KEY || "");
+  const supplied = String(request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  return expected.length >= 24 && supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+__name(authorized, "authorized");
+async function vowDiagnostics(request, env) {
+  if (!authorized(request, env)) return json7({ ok: false, error: "Unauthorized" }, 401);
+  if (!env.AMPRE_VOW_TOKEN) return json7({ ok: false, configured: false, error: "AMPRE_VOW_TOKEN is not configured." }, 503);
+  const probeUrl = new URL("https://torontohousemarket.com/api/property");
+  const input = new URL(request.url).searchParams;
+  const listingKey = clean5(input.get("listingKey"), 40).toUpperCase();
+  if (/^[A-Z]\d{7,9}$/.test(listingKey)) probeUrl.searchParams.set("listingKey", listingKey);
+  else probeUrl.searchParams.set("q", clean5(input.get("q") || "297 Derrydown Road, Toronto, ON", 500));
+  const response = await worker_v10_default.fetch(new Request(probeUrl.toString(), { method: "GET" }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
+  } });
+  const body = await response.json().catch(() => null), property2 = body?.property || null, comparables = property2?.comparableContext?.comparables || property2?.comparables || [];
+  return json7({
+    ok: response.ok && !!property2,
+    configured: true,
+    upstreamStatus: response.status,
+    propertyResolved: !!property2,
+    listingStatus: clean5(property2?.status || property2?.standardStatus, 80) || null,
+    soldComparableCount: Array.isArray(comparables) ? comparables.length : 0,
+    comparableAvailable: property2?.comparableContext?.available === true,
+    subject: property2 ? { listingKey: property2.listingKey || null, propertySubType: property2.propertySubType || null, community: property2.cityRegion || null } : null,
+    policy: property2?.comparableContext?.policy || null,
+    selectedComparables: (Array.isArray(comparables) ? comparables : []).map((row) => ({ listingKey: row.listingKey || null, community: row.cityRegion || null, distanceKm: row.distanceKm ?? null, soldDate: row.soldDate || null })),
+    error: response.ok ? null : clean5(body?.error || body?.message || "VOW feed probe failed.", 240)
+  }, response.ok ? 200 : 502, { "Cache-Control": "private, no-store" });
+}
+__name(vowDiagnostics, "vowDiagnostics");
+async function vowQueryDiagnostics(request, env) {
+  if (!authorizedDiagnostic(request, env)) return json7({ ok: false, error: "Unauthorized" }, 401);
+  if (!env.AMPRE_VOW_TOKEN) return json7({ ok: false, error: "AMPRE_VOW_TOKEN is not configured." }, 503);
+  const input = new URL(request.url).searchParams;
+  const subtype = clean5(input.get("subtype") || "Detached", 80).replaceAll("'", "''");
+  const region = clean5(input.get("region") || "Bayview Woods-Steeles", 120).replaceAll("'", "''");
+  const city = clean5(input.get("city") || "Toronto", 80).replaceAll("'", "''");
+  const shapes = [
+    { name: "sold_only", filter: "ClosePrice gt 0", orderby: "PurchaseContractDate desc" },
     { name: "city_sold", filter: `contains(UnparsedAddress,'${city}') and ClosePrice gt 0`, orderby: "PurchaseContractDate desc" },
     { name: "region_contains_sold", filter: `contains(CityRegion,'${region}') and ClosePrice gt 0`, orderby: "PurchaseContractDate desc" },
     { name: "subtype_contains_sold", filter: `contains(PropertySubType,'${subtype}') and ClosePrice gt 0`, orderby: "PurchaseContractDate desc" },
