@@ -24,7 +24,7 @@ jobs:
           set -euo pipefail
           node --check worker-v11.js
           node --test tests/comparable-engine.test.mjs
-          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "b5e243c76788687c9a21583c5d4b089cec87daefffec696e48ec11f81b485dce"
+          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "0104e8495d0c8a61464cbf97b467559bafc8fb91457a8402fb5b7734aecb2b41"
 
       - name: Deploy with source guard and automatic rollback
         env:
@@ -32,8 +32,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           WORKER_NAME: prototype-1-torontohousemarket
           PRODUCTION_URL: https://torontohousemarket.com
-          EXPECTED_BEFORE_SHA: 96a31be076f9a9dc601ec46d79f7ba6835f7caf012a134ca15cf074f03ae34b8
-          EXPECTED_AFTER_SHA: b5e243c76788687c9a21583c5d4b089cec87daefffec696e48ec11f81b485dce
+          EXPECTED_BEFORE_SHA: b5e243c76788687c9a21583c5d4b089cec87daefffec696e48ec11f81b485dce
+          EXPECTED_AFTER_SHA: 0104e8495d0c8a61464cbf97b467559bafc8fb91457a8402fb5b7734aecb2b41
         run: |
           set -euo pipefail
           work_dir="$(mktemp -d)"
