@@ -3158,11 +3158,15 @@ async function vowDiagnostics(request, env) {
     community ? { name: "community_eq", filters: [`CityRegion eq '${community}'`] } : null,
     community ? { name: "community_contains", filters: [`contains(CityRegion,'${community}')`] } : null,
     postalPrefix ? { name: "postal_startswith", filters: [`startswith(PostalCode,'${postalPrefix}')`] } : null,
-    postalPrefix ? { name: "postal_contains", filters: [`contains(PostalCode,'${postalPrefix}')`] } : null
+    postalPrefix ? { name: "postal_contains", filters: [`contains(PostalCode,'${postalPrefix}')`] } : null,
+    postalPrefix ? { name: "postal_purchase_date_desc", filters: [`startswith(PostalCode,'${postalPrefix}')`], orderby: "PurchaseContractDate desc" } : null,
+    postalPrefix ? { name: "postal_close_date_desc", filters: [`startswith(PostalCode,'${postalPrefix}')`], orderby: "CloseDate desc" } : null,
+    postalPrefix ? { name: "postal_system_modified_desc", filters: [`startswith(PostalCode,'${postalPrefix}')`], orderby: "SystemModificationTimestamp desc" } : null,
+    postalPrefix ? { name: "postal_original_entry_desc", filters: [`startswith(PostalCode,'${postalPrefix}')`], orderby: "OriginalEntryTimestamp desc" } : null
   ].filter(Boolean);
   const filterSupport = await Promise.all(filterProbes.map(async (probe) => {
-    const result = await queryPropertiesDetailed(probe.filters, { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, 5, "");
-    return { name: probe.name, status: result.meta.status, count: result.meta.count };
+    const result = await queryPropertiesDetailed(probe.filters, { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, 5, probe.orderby || "");
+    return { name: probe.name, orderby: probe.orderby || null, firstStatus: result.meta.firstStatus, status: result.meta.status, retried: result.meta.retried, count: result.meta.count };
   }));
   return json7({
     ok: response.ok && !!property2,
