@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildAvmAnalysis,
   buildComparableContext,
   comparableIsLocal,
   distanceBetweenProperties,
@@ -9,6 +10,28 @@ import {
   numberOrNull,
   safeAmpreNextLink
 } from "../worker-v11.js";
+
+test("robust AVM reconciles weighted comps without inventing a model", () => {
+  const subject = soldRow({ ListingKey: "SUBJECT", ClosePrice: null });
+  const matches = [900000, 1000000, 1100000].map((price, index) => ({
+    record: soldRow({ ListingKey: `COMP${index}`, ClosePrice: price }),
+    price,
+    similarity: 80 + index * 3,
+    recency: 0.8 + index * 0.05,
+    reliability: 1,
+    distanceKm: null,
+    sameRegion: true,
+    samePostalPrefix: true
+  }));
+  const result = buildAvmAnalysis(subject, matches, 100);
+  assert.equal(result.available, true);
+  assert.equal(result.modelValue, null);
+  assert.equal(result.comparableWeightPct, 100);
+  assert.ok(result.realValue >= 900000 && result.realValue <= 1100000);
+  assert.ok(result.confidenceScore >= 0 && result.confidenceScore <= 100);
+  const totalWeight = matches.reduce((sum, match) => sum + match.avmDetail.normalizedWeight, 0);
+  assert.ok(Math.abs(totalWeight - 1) < 1e-9);
+});
 
 function soldRow(overrides = {}) {
   return {
