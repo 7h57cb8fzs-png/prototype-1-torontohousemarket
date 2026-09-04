@@ -3158,6 +3158,7 @@ async function vowDiagnostics(request, env) {
     comparableAvailable: property2?.comparableContext?.available === true,
     subject: property2 ? { listingKey: property2.listingKey || null, propertySubType: property2.propertySubType || null, community: property2.cityRegion || null } : null,
     policy: property2?.comparableContext?.policy || null,
+    retrievalDiagnostics: property2?.comparableContext?.diagnostics || null,
     selectedComparables: (Array.isArray(comparables) ? comparables : []).map((row) => ({ listingKey: row.listingKey || null, community: row.cityRegion || null, distanceKm: row.distanceKm ?? null, soldDate: row.soldDate || null })),
     error: response.ok ? null : clean5(body?.error || body?.message || "VOW feed probe failed.", 240)
   }, response.ok ? 200 : 502, { "Cache-Control": "private, no-store" });
