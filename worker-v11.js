@@ -2762,11 +2762,13 @@ var worker_v11_default = {
     if (url.pathname === "/api/admin/settings" && request.method === "GET") return adminSettings(request, env);
     if (url.pathname === "/api/admin/settings" && request.method === "PATCH") return updateSettings(request, env);
     if (url.pathname === "/api/admin/vow/diagnostics" && request.method === "GET") return vowDiagnostics(request, env);
+    if (url.pathname === "/api/admin/vow/diagnostic-console" && request.method === "GET") return adminDiagnosticConsole();
     if (url.pathname === "/api/admin/vow/query-diagnostics" && request.method === "GET") return vowQueryDiagnostics(request, env);
     if (url.pathname === "/api/admin/media/diagnostics" && request.method === "GET") return mediaDiagnostics(request, env);
     if (url.pathname === "/api/admin/ai/diagnostics" && request.method === "GET") return aiDiagnostics(request, env);
     if (url.pathname === "/api/admin/automation/run" && request.method === "POST") return runAutomation(request, env);
     if (url.pathname.startsWith("/api/admin/reports/") && url.pathname.endsWith("/run") && request.method === "POST") return runSingleReport(request, env, url.pathname.split("/")[4]);
+    if (url.pathname.startsWith("/api/admin/reports/") && url.pathname.endsWith("/test-email") && request.method === "POST") return runTestReportEmail(request, env, url.pathname.split("/")[4]);
     return worker_v10_default.fetch(request, env, ctx);
   },
   async scheduled(_controller, env, ctx) {
@@ -3139,7 +3141,10 @@ async function vowDiagnostics(request, env) {
   if (!authorized(request, env)) return json7({ ok: false, error: "Unauthorized" }, 401);
   if (!env.AMPRE_VOW_TOKEN) return json7({ ok: false, configured: false, error: "AMPRE_VOW_TOKEN is not configured." }, 503);
   const probeUrl = new URL("https://torontohousemarket.com/api/property");
-  probeUrl.searchParams.set("q", clean5(new URL(request.url).searchParams.get("q") || "297 Derrydown Road, Toronto, ON", 500));
+  const input = new URL(request.url).searchParams;
+  const listingKey = clean5(input.get("listingKey"), 40).toUpperCase();
+  if (/^[A-Z]\d{7,9}$/.test(listingKey)) probeUrl.searchParams.set("listingKey", listingKey);
+  else probeUrl.searchParams.set("q", clean5(input.get("q") || "297 Derrydown Road, Toronto, ON", 500));
   const response = await worker_v10_default.fetch(new Request(probeUrl.toString(), { method: "GET" }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
   } });
   const body = await response.json().catch(() => null), property2 = body?.property || null, comparables = property2?.comparableContext?.comparables || property2?.comparables || [];
@@ -3151,6 +3156,9 @@ async function vowDiagnostics(request, env) {
     listingStatus: clean5(property2?.status || property2?.standardStatus, 80) || null,
     soldComparableCount: Array.isArray(comparables) ? comparables.length : 0,
     comparableAvailable: property2?.comparableContext?.available === true,
+    subject: property2 ? { listingKey: property2.listingKey || null, propertySubType: property2.propertySubType || null, community: property2.cityRegion || null } : null,
+    policy: property2?.comparableContext?.policy || null,
+    selectedComparables: (Array.isArray(comparables) ? comparables : []).map((row) => ({ listingKey: row.listingKey || null, community: row.cityRegion || null, distanceKm: row.distanceKm ?? null, soldDate: row.soldDate || null })),
     error: response.ok ? null : clean5(body?.error || body?.message || "VOW feed probe failed.", 240)
   }, response.ok ? 200 : 502, { "Cache-Control": "private, no-store" });
 }
@@ -3274,6 +3282,40 @@ async function runSingleReport(request, env, leadId) {
   }
 }
 __name(runSingleReport, "runSingleReport");
+async function runTestReportEmail(request, env, leadId) {
+  if (!authorized(request, env)) return json7({ ok: false, error: "Unauthorized" }, 401);
+  if (!/^[0-9a-f-]{36}$/i.test(String(leadId || ""))) return json7({ ok: false, error: "Invalid lead." }, 400);
+  if (!env.RESEND_API_KEY) return json7({ ok: false, error: "Resend is not configured." }, 503);
+  const lead = await loadLeadForReport(env, leadId);
+  if (!lead || !validEmail(String(lead.email || ""))) return json7({ ok: false, error: "A valid buyer email is required." }, 404);
+  const reportResponse = await supabase(env, `/rest/v1/property_reports?lead_id=eq.${leadId}&select=id&limit=1`);
+  const reportRows = await reportResponse.json().catch(() => []), reportRow = Array.isArray(reportRows) ? reportRows[0] : null;
+  if (!reportResponse.ok || !reportRow?.id) return json7({ ok: false, error: "Report record is unavailable." }, 404);
+  let emailJob = null;
+  try {
+    const requestId = `admin-test-${crypto.randomUUID()}`;
+    const property2 = await loadPropertyForReport(env, lead, requestId);
+    const report = await buildPropertyReport(env, lead, property2, requestId);
+    const saved = await supabase(env, `/rest/v1/property_reports?id=eq.${reportRow.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ status: "ready", report_payload: report, generated_at: (/* @__PURE__ */ new Date()).toISOString(), error_message: null, updated_at: (/* @__PURE__ */ new Date()).toISOString() }) });
+    if (!saved.ok) throw new Error("Unable to save the fresh test report.");
+    const inserted = await supabase(env, "/rest/v1/automation_jobs", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ lead_id: leadId, report_id: reportRow.id, job_type: "email_buyer", recipient: String(lead.email).toLowerCase(), status: "processing", attempts: 1, locked_at: (/* @__PURE__ */ new Date()).toISOString(), payload: { reason: "admin_test_report", request_id: requestId } }) });
+    const insertedRows = await inserted.json().catch(() => []);
+    emailJob = Array.isArray(insertedRows) ? insertedRows[0] : insertedRows;
+    if (!inserted.ok || !emailJob?.id) throw new Error("Unable to create the isolated test email job.");
+    await deliverEmailJob(env, emailJob);
+    const statusResponse = await supabase(env, `/rest/v1/automation_jobs?id=eq.${emailJob.id}&select=id,status,completed_at,last_error&limit=1`), statusRows = await statusResponse.json().catch(() => []), finalJob = Array.isArray(statusRows) ? statusRows[0] : null;
+    return json7({ ok: finalJob?.status === "sent", lead_id: leadId, report_id: reportRow.id, email_job: finalJob || { id: emailJob.id, status: "unknown" }, comparable_count: Array.isArray(report.comparables) ? report.comparables.length : 0, comparable_communities: [...new Set((report.comparables || []).map((row) => row.cityRegion).filter(Boolean))], valuation_available: report.valuation?.available === true, confidence: report.valuation?.confidence || "Unavailable" }, finalJob?.status === "sent" ? 200 : 502);
+  } catch (error) {
+    if (emailJob?.id) await rpc(env, "fail_email_job", { p_job_id: emailJob.id, p_error: clean5(error?.message || "Test report email failed.", 300) }).catch(() => null);
+    return json7({ ok: false, error: clean5(error?.message || "Test report email failed.", 300) }, 502);
+  }
+}
+__name(runTestReportEmail, "runTestReportEmail");
+function adminDiagnosticConsole() {
+  const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>THM VOW Diagnostics</title><style>body{font:16px system-ui;max-width:820px;margin:40px auto;padding:0 18px;color:#111827}input,button,select{font:inherit;padding:11px;margin:5px 0}input{width:min(520px,90%)}button{cursor:pointer;background:#3155f5;color:#fff;border:0;border-radius:8px}button.danger{background:#9f1239}pre{white-space:pre-wrap;background:#f3f4f6;padding:16px;border-radius:10px}small{color:#64748b}</style></head><body><h1>Protected comparable diagnostics</h1><p>Read-only diagnostics use the licensed VOW feed. The test-email action regenerates one selected existing report and creates exactly one isolated email job.</p><label>Admin API key<br><input id="key" type="password" autocomplete="current-password"></label><p><button id="load">Load 494 Donlands test lead</button></p><select id="lead"><option value="">Load a matching lead first</option></select><p><button id="diagnose">Run read-only comparable diagnostic</button> <button class="danger" id="send">Generate + send one test report</button></p><small>The send action does not run the general automation queue.</small><pre id="out">Ready.</pre><script>const key=document.getElementById('key'),out=document.getElementById('out'),lead=document.getElementById('lead');async function api(path,options={}){const response=await fetch(path,{...options,headers:{Authorization:'Bearer '+key.value.trim(),'Content-Type':'application/json',...(options.headers||{})},cache:'no-store'});const body=await response.json().catch(()=>null);if(!response.ok)throw new Error(body?.error||'Request failed');return body}document.getElementById('load').onclick=async()=>{try{const body=await api('/api/admin/leads');const matches=(body.leads||[]).filter(x=>String(x.resolved_address||'').toLowerCase().includes('494 donlands'));lead.innerHTML=matches.map(x=>'<option value="'+x.id+'">494 Donlands test lead · '+x.id.slice(0,8)+'</option>').join('')||'<option value="">No matching lead</option>';out.textContent=JSON.stringify({matchingLeads:matches.length},null,2)}catch(e){out.textContent=e.message}};document.getElementById('diagnose').onclick=async()=>{try{out.textContent=JSON.stringify(await api('/api/admin/vow/diagnostics?listingKey=E13689546'),null,2)}catch(e){out.textContent=e.message}};document.getElementById('send').onclick=async()=>{if(!lead.value){out.textContent='Load and select a lead first.';return}try{out.textContent='Generating…';out.textContent=JSON.stringify(await api('/api/admin/reports/'+lead.value+'/test-email',{method:'POST',body:'{}'}),null,2)}catch(e){out.textContent=e.message}};</script></body></html>`;
+  return new Response(body, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'" } });
+}
+__name(adminDiagnosticConsole, "adminDiagnosticConsole");
 async function adminSettings(request, env) {
   if (!authorized(request, env)) return json7({ ok: false, error: "Unauthorized" }, 401);
   const response = await supabase(env, "/rest/v1/app_settings?select=key,value&key=in.(owner_notification_email,assignment_method,first_response_sla_minutes,service_hours)"), rows = await response.json().catch(() => null);
@@ -3716,19 +3758,7 @@ async function processEmailJobs(env, limit = 10) {
   let sent = 0, failed = 0;
   for (const job of Array.isArray(jobs) ? jobs : []) {
     try {
-      const lead = await loadLeadForEmail(env, job.lead_id);
-      if (!lead) throw new Error("Lead data is unavailable.");
-      if (job.job_type === "email_buyer") {
-        const report = firstRelation(lead.property_reports);
-        if (report?.status !== "ready") throw new Error("Buyer report held until report generation is complete.");
-      }
-      const message = buildEmail(job, lead);
-      const sendPayload = { from: env.RESEND_FROM_EMAIL || "Alireza Golestan | Toronto House Market <notifications@updates.torontohousemarket.com>", to: [job.recipient], reply_to: "alireza.golestan@century21.ca", subject: message.subject, html: message.html, text: message.text };
-      if (Array.isArray(message.attachments) && message.attachments.length) sendPayload.attachments = message.attachments;
-      const response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": `thm-job-${job.id}-v1` }, body: JSON.stringify(sendPayload) });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(`Resend ${response.status}: ${clean5(result?.message || result?.name || "delivery rejected", 300)}`);
-      await rpc(env, "complete_email_job", { p_job_id: job.id, p_provider_id: String(result.id || "") });
+      const result = await deliverEmailJob(env, job);
       sent++;
       console.log(JSON.stringify({ event: "email_sent", job_id: job.id, lead_id: job.lead_id, type: job.job_type, provider_id: result.id || null }));
     } catch (error) {
@@ -3742,6 +3772,23 @@ async function processEmailJobs(env, limit = 10) {
   return { claimed: Array.isArray(jobs) ? jobs.length : 0, sent, failed };
 }
 __name(processEmailJobs, "processEmailJobs");
+async function deliverEmailJob(env, job) {
+  const lead = await loadLeadForEmail(env, job.lead_id);
+  if (!lead) throw new Error("Lead data is unavailable.");
+  if (job.job_type === "email_buyer") {
+    const report = firstRelation(lead.property_reports);
+    if (report?.status !== "ready") throw new Error("Buyer report held until report generation is complete.");
+  }
+  const message = buildEmail(job, lead);
+  const sendPayload = { from: env.RESEND_FROM_EMAIL || "Alireza Golestan | Toronto House Market <notifications@updates.torontohousemarket.com>", to: [job.recipient], reply_to: "alireza.golestan@century21.ca", subject: message.subject, html: message.html, text: message.text };
+  if (Array.isArray(message.attachments) && message.attachments.length) sendPayload.attachments = message.attachments;
+  const response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": `thm-job-${job.id}-v1` }, body: JSON.stringify(sendPayload) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`Resend ${response.status}: ${clean5(result?.message || result?.name || "delivery rejected", 300)}`);
+  await rpc(env, "complete_email_job", { p_job_id: job.id, p_provider_id: String(result.id || "") });
+  return result;
+}
+__name(deliverEmailJob, "deliverEmailJob");
 async function loadLeadForEmail(env, id) {
   const select = "id,name,mobile,email,status,stage,showing_timing,first_response_due_at,resolved_address,metadata,agents(id,display_name,email,mobile),property_reports(status,report_payload,generated_at)";
   const response = await supabase(env, `/rest/v1/leads?id=eq.${id}&select=${encodeURIComponent(select)}&limit=1`), rows = await response.json().catch(() => []);
