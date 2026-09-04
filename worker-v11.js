@@ -672,7 +672,7 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
     subject_property_subtype: cleanText(subject?.PropertySubType || subject?.PropertyType) || null,
     subject_community: cleanText(subject?.CityRegion) || null,
     search_window_days: windowDays,
-    radius_km: null,
+    radius_km: 5,
     candidate_counts: {
       fetched: (raw || []).length,
       unique: unique.length,
@@ -726,9 +726,10 @@ async function querySoldComparableRows(baseFilters, env, top) {
   const rows = [];
   const audit = [];
   let accepted = false;
-  const pageSize = Math.min(250, top);
+  const pageSize = Math.min(100, top);
   let nextUrl = null;
-  for (let page = 0; page < 4 && rows.length < top; page++) {
+  const maxPages = Math.max(1, Math.ceil(top / pageSize));
+  for (let page = 0; page < maxPages && rows.length < top; page++) {
     const result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "ModificationTimestamp desc,ListingKey desc", 0);
     audit.push({ queryScope: "local_exact_subtype_page", page, ...result.meta });
     if (result.meta.status === 200) accepted = true;
