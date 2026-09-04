@@ -729,7 +729,7 @@ async function querySoldComparableRows(baseFilters, env, top) {
   let nextUrl = null;
   const maxPages = Math.max(1, Math.ceil(top / pageSize));
   for (let page = 0; page < maxPages && rows.length < top; page++) {
-    const result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "ModificationTimestamp desc,ListingKey desc", 0);
+    const result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "ModificationTimestamp desc", 0);
     audit.push({ queryScope: "local_exact_subtype_page", page, ...result.meta });
     if (result.meta.status === 200) accepted = true;
     rows.push(...result.rows);
