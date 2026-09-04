@@ -98,7 +98,8 @@ test("engine excludes unrelated communities before applying the price screen", a
     assert.ok(decodedCalls.some((url) => url.includes("startswith(PostalCode,'M4J')")));
     assert.ok(decodedCalls.every((url) => !url.includes("PropertySubType eq")));
     assert.ok(decodedCalls.every((url) => url.includes("$top=100")));
-    assert.ok(decodedCalls.every((url) => url.includes("$orderby=ModificationTimestamp desc")));
+    assert.ok(decodedCalls.some((url) => url.includes("$skip=1000")));
+    assert.ok(decodedCalls.every((url) => !url.includes("$orderby=")));
   } finally {
     globalThis.fetch = originalFetch;
   }
