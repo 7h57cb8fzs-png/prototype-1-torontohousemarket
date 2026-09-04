@@ -1,59 +1,85 @@
-name: Recover and patch active production Worker
+name: Preserve active Cloudflare Worker source
 
 on:
+  push:
+    branches:
+      - fix/vow-comparable-engine
+    paths:
+      - .github/workflows/export-cloudflare-worker.yml
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  recover:
+  preserve:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out working branch
+      - name: Check out forensic branch
         uses: actions/checkout@v4
         with:
-          ref: codex/fix-complete-ai-report
+          ref: fix/vow-comparable-engine
 
-      - name: Recover active Worker and apply v85 comparable patch
+      - name: Export active source and sanitized metadata
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           WORKER_NAME: prototype-1-torontohousemarket
         run: |
           set -euo pipefail
-          mkdir -p active-worker
+          export_dir="production-snapshots/2026-09-04-v99"
+          work_dir="$(mktemp -d)"
+          trap 'rm -rf "${work_dir}"' EXIT
+          mkdir -p "${export_dir}"
           api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
-          curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -o active-worker/deployments.json "${api}/workers/scripts/${WORKER_NAME}/deployments"
-          version_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' active-worker/deployments.json | head -1)"
-          if [ -z "${version_id}" ] || [ "${version_id}" = "null" ]; then
-            echo "::error::No active 100% Worker version was found."
-            exit 1
-          fi
-          curl -fsS -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -o active-worker/version.json "${api}/workers/workers/${WORKER_NAME}/versions/${version_id}?include=modules"
-          jq -e '.success == true and (.result.modules | length) > 0' active-worker/version.json >/dev/null
-          jq -r '.result.modules[] | select(.name == "worker-v11.js") | .content_base64' active-worker/version.json | base64 --decode > active-worker/worker-v11.js
-          test -s active-worker/worker-v11.js
-          node scripts/recover-and-patch-production-worker.mjs active-worker/worker-v11.js production-patches/v85-comparables-block.js.txt worker-v11.js
-          node --check worker-v11.js
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
 
-      - name: Commit recovered v85 source
+          curl -fsS -H "${auth}" -o "${work_dir}/deployments.json" "${api}/workers/scripts/${WORKER_NAME}/deployments"
+          version_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' "${work_dir}/deployments.json" | head -1)"
+          test -n "${version_id}"
+          test "${version_id}" != "null"
+
+          curl -fsS -H "${auth}" -o "${work_dir}/version.json" "${api}/workers/workers/${WORKER_NAME}/versions/${version_id}?include=modules"
+          jq -e '.success == true and (.result.modules | length) > 0' "${work_dir}/version.json" >/dev/null
+          jq -r '.result.modules[] | select(.name == "worker-v11.js") | .content_base64' "${work_dir}/version.json" | base64 --decode > "${export_dir}/worker-v11.js"
+          test -s "${export_dir}/worker-v11.js"
+          node --check "${export_dir}/worker-v11.js"
+
+          curl -sS -H "${auth}" -o "${work_dir}/schedules.json" "${api}/workers/scripts/${WORKER_NAME}/schedules"
+          curl -sS -H "${auth}" -o "${work_dir}/worker.json" "${api}/workers/workers/${WORKER_NAME}"
+
+          jq -n             --arg account_id "${CLOUDFLARE_ACCOUNT_ID}"             --arg worker_name "${WORKER_NAME}"             --arg version_id "${version_id}"             --arg source_sha256 "$(sha256sum "${export_dir}/worker-v11.js" | cut -d' ' -f1)"             --slurpfile version "${work_dir}/version.json"             --slurpfile schedules "${work_dir}/schedules.json"             --slurpfile worker "${work_dir}/worker.json"             '{
+              recovered_at: "2026-09-04",
+              account_id: $account_id,
+              worker_name: $worker_name,
+              active_version_id: $version_id,
+              source_sha256: $source_sha256,
+              bindings: (($version[0].result.bindings // []) | map({name, type}) | sort_by(.name)),
+              schedules: ($schedules[0].result // []),
+              domains: (($worker[0].result.references.domains // []) | map({hostname, zone_name}) | sort_by(.hostname)),
+              observability: ($worker[0].result.observability // null)
+            }' > "${export_dir}/manifest.json"
+
+          if cmp -s worker-v11.js "${export_dir}/worker-v11.js"; then
+            printf '%s\n' "MATCHES_GITHUB_WORKER=true" > "${export_dir}/comparison.txt"
+          else
+            printf '%s\n' "MATCHES_GITHUB_WORKER=false" > "${export_dir}/comparison.txt"
+            diff --brief worker-v11.js "${export_dir}/worker-v11.js" >> "${export_dir}/comparison.txt" || true
+          fi
+
+      - name: Commit preserved production snapshot
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add worker-v11.js
-          if git diff --cached --quiet; then
-            echo "worker-v11.js is already current."
-            exit 0
-          fi
-          git commit -m "Recover production Worker and apply v85 sold comparables fix"
-          git push origin HEAD:codex/fix-complete-ai-report
+          git add production-snapshots/2026-09-04-v99
+          git commit -m "Preserve active production Worker v99 source"
+          git push origin HEAD:fix/vow-comparable-engine
 
-      - name: Upload recovered source for audit
+      - name: Upload source snapshot
         uses: actions/upload-artifact@v4
         with:
-          name: recovered-production-worker-v85
-          path: worker-v11.js
+          name: active-production-worker-v99
+          path: production-snapshots/2026-09-04-v99
           if-no-files-found: error
-          retention-days: 3
+          retention-days: 14
