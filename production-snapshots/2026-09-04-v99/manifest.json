@@ -1,0 +1,136 @@
+{
+  "recovered_at": "2026-09-04",
+  "account_id": "80022b7ed0560b75d96cc593b0cfaf22",
+  "worker_name": "prototype-1-torontohousemarket",
+  "active_version_id": "338451d5-f8ab-4ab8-98cc-ad324c55dfa8",
+  "source_sha256": "f78ad8db25f13239eca5162be5ef6182c0e14982d4597a718a6d515e913f1d5c",
+  "bindings": [
+    {
+      "name": "ADMIN_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "AGENT_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "AI",
+      "type": "ai"
+    },
+    {
+      "name": "AI_FALLBACK_PROVIDER",
+      "type": "plain_text"
+    },
+    {
+      "name": "AI_PRIMARY_PROVIDER",
+      "type": "plain_text"
+    },
+    {
+      "name": "AMPRE_TOKEN",
+      "type": "secret_text"
+    },
+    {
+      "name": "AMPRE_VOW_TOKEN",
+      "type": "secret_text"
+    },
+    {
+      "name": "ASSETS",
+      "type": "assets"
+    },
+    {
+      "name": "GEMINI_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "GEMINI_MODEL",
+      "type": "plain_text"
+    },
+    {
+      "name": "OPENAI_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "OPENAI_SCHOOL_MODEL",
+      "type": "plain_text"
+    },
+    {
+      "name": "OPENROUTER_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "OPENROUTER_MODEL",
+      "type": "plain_text"
+    },
+    {
+      "name": "PROPERTY_REPORT_PROMPT_VERSION",
+      "type": "plain_text"
+    },
+    {
+      "name": "RESEND_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "SUPABASE_PUBLISHABLE_KEY",
+      "type": "plain_text"
+    },
+    {
+      "name": "SUPABASE_SERVICE_ROLE_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "SUPABASE_URL",
+      "type": "plain_text"
+    },
+    {
+      "name": "VOW_ACCESS_ENABLED",
+      "type": "plain_text"
+    },
+    {
+      "name": "VOW_AUDIT_SALT",
+      "type": "secret_text"
+    },
+    {
+      "name": "VOW_TERMS_DIGEST",
+      "type": "plain_text"
+    },
+    {
+      "name": "VOW_TERMS_VERSION",
+      "type": "plain_text"
+    }
+  ],
+  "schedules": {
+    "schedules": [
+      {
+        "cron": "* * * * *",
+        "created_on": "2026-08-26T15:30:31.424278Z",
+        "modified_on": "2026-09-01T16:25:12.761893Z"
+      }
+    ]
+  },
+  "domains": [
+    {
+      "hostname": "torontohousemarket.com",
+      "zone_name": "torontohousemarket.com"
+    },
+    {
+      "hostname": "www.torontohousemarket.com",
+      "zone_name": "torontohousemarket.com"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "redact_query_string": false,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    },
+    "traces": {
+      "enabled": false,
+      "head_sampling_rate": 1,
+      "persist": true
+    }
+  }
+}
