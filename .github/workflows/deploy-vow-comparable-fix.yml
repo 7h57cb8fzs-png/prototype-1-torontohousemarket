@@ -96,8 +96,13 @@ jobs:
           test "${settings_status}" -lt 300
           jq -e '.success == true' "${work_dir}/settings-response.json" >/dev/null
 
-          curl -fsS -H "${auth}" -o "${work_dir}/deployments-after.json" "${api}/workers/scripts/${WORKER_NAME}/deployments"
-          active_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' "${work_dir}/deployments-after.json" | head -1)"
+          active_id="${rollback_id}"
+          for attempt in 1 2 3 4 5; do
+            curl -fsS -H "${auth}" -o "${work_dir}/deployments-after.json" "${api}/workers/scripts/${WORKER_NAME}/deployments"
+            active_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' "${work_dir}/deployments-after.json" | head -1)"
+            if [ -n "${active_id}" ] && [ "${active_id}" != "${rollback_id}" ]; then break; fi
+            sleep 2
+          done
           test "${active_id}" != "${rollback_id}"
           curl -fsS -H "${auth}" -o "${work_dir}/version-after.json" "${api}/workers/workers/${WORKER_NAME}/versions/${active_id}?include=modules"
           jq -r '.result.modules[] | select(.name == "worker-v11.js") | .content_base64' "${work_dir}/version-after.json" | base64 --decode > "${work_dir}/worker-after.js"
