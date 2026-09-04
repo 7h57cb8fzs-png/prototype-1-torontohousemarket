@@ -598,7 +598,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   ].filter(Boolean);
   const queryAudit = [];
   let raw = [];
-  const searchResults = await Promise.all(localSearches.map(async (search) => ({ search, result: await querySoldComparableRows(search.filters, env, 1500, search.startSkip) })));
+  const searchResults = await Promise.all(localSearches.map(async (search) => ({ search, result: await querySoldComparableRows(search.filters, env, 1e3, search.startSkip) })));
   for (const { search, result } of searchResults) {
     raw.push(...result.rows);
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
@@ -3152,26 +3152,6 @@ async function vowDiagnostics(request, env) {
   const response = await worker_v10_default.fetch(new Request(probeUrl.toString(), { method: "GET" }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
   } });
   const body = await response.json().catch(() => null), property2 = body?.property || null, comparables = property2?.comparableContext?.comparables || property2?.comparables || [];
-  const subtype = clean5(property2?.propertySubType, 80).replaceAll("'", "''");
-  const community = clean5(property2?.cityRegion, 120).replaceAll("'", "''");
-  const postalPrefix = clean5(property2?.postalCode, 12).replace(/\s+/g, "").slice(0, 3).replaceAll("'", "''");
-  const filterProbes = [
-    { name: "unfiltered", filters: [] },
-    subtype ? { name: "subtype_eq", filters: [`PropertySubType eq '${subtype}'`] } : null,
-    subtype ? { name: "subtype_contains", filters: [`contains(PropertySubType,'${subtype}')`] } : null,
-    community ? { name: "community_eq", filters: [`CityRegion eq '${community}'`] } : null,
-    community ? { name: "community_contains", filters: [`contains(CityRegion,'${community}')`] } : null,
-    postalPrefix ? { name: "postal_startswith", filters: [`startswith(PostalCode,'${postalPrefix}')`] } : null,
-    postalPrefix ? { name: "postal_contains", filters: [`contains(PostalCode,'${postalPrefix}')`] } : null,
-    postalPrefix ? { name: "postal_purchase_date_desc", filters: [`startswith(PostalCode,'${postalPrefix}')`], orderby: "PurchaseContractDate desc" } : null,
-    postalPrefix ? { name: "postal_close_date_desc", filters: [`startswith(PostalCode,'${postalPrefix}')`], orderby: "CloseDate desc" } : null,
-    postalPrefix ? { name: "postal_system_modified_desc", filters: [`startswith(PostalCode,'${postalPrefix}')`], orderby: "SystemModificationTimestamp desc" } : null,
-    postalPrefix ? { name: "postal_original_entry_desc", filters: [`startswith(PostalCode,'${postalPrefix}')`], orderby: "OriginalEntryTimestamp desc" } : null
-  ].filter(Boolean);
-  const filterSupport = await Promise.all(filterProbes.map(async (probe) => {
-    const result = await queryPropertiesDetailed(probe.filters, { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, 5, probe.orderby || "");
-    return { name: probe.name, orderby: probe.orderby || null, firstStatus: result.meta.firstStatus, status: result.meta.status, retried: result.meta.retried, count: result.meta.count };
-  }));
   return json7({
     ok: response.ok && !!property2,
     configured: true,
@@ -3182,7 +3162,6 @@ async function vowDiagnostics(request, env) {
     comparableAvailable: property2?.comparableContext?.available === true,
     subject: property2 ? { listingKey: property2.listingKey || null, propertySubType: property2.propertySubType || null, community: property2.cityRegion || null } : null,
     policy: property2?.comparableContext?.policy || null,
-    filterSupport,
     retrievalDiagnostics: property2?.comparableContext?.diagnostics || null,
     selectedComparables: (Array.isArray(comparables) ? comparables : []).map((row) => ({ listingKey: row.listingKey || null, community: row.cityRegion || null, distanceKm: row.distanceKm ?? null, soldDate: row.soldDate || null })),
     error: response.ok ? null : clean5(body?.error || body?.message || "VOW feed probe failed.", 240)
