@@ -93,8 +93,10 @@ test("engine excludes unrelated communities before applying the price screen", a
     assert.equal(result.available, true);
     assert.deepEqual(result.comparables.map((row) => row.listingKey).sort(), ["LOCAL1", "LOCAL2", "LOCAL3", "LOCAL4"]);
     assert.ok(result.comparables.every((row) => row.cityRegion === "East York"));
-    assert.ok(calls.some((url) => url.includes("CityRegion+eq+%27East+York%27")));
-    assert.ok(calls.every((url) => url.includes("PropertySubType+eq+%27Detached%27")));
+    const decodedCalls = calls.map((url) => decodeURIComponent(url.replaceAll("+", " ")));
+    assert.ok(decodedCalls.some((url) => url.includes("contains(CityRegion,'East York')")));
+    assert.ok(decodedCalls.every((url) => url.includes("contains(PropertySubType,'Detached')")));
+    assert.ok(decodedCalls.every((url) => url.includes("$top=100")));
   } finally {
     globalThis.fetch = originalFetch;
   }
