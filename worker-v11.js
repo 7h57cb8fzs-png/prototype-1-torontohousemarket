@@ -593,12 +593,12 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
   const regionFilter = subject.CityRegion ? `contains(CityRegion,'${odataString(subject.CityRegion)}')` : null;
   const localSearches = [
-    regionFilter ? { name: "same_community", filters: [regionFilter] } : null,
-    postalPrefix ? { name: "same_postal_prefix", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`] } : null
+    regionFilter ? { name: "same_community", filters: [regionFilter], startSkip: 0 } : null,
+    postalPrefix ? { name: "same_postal_prefix", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`], startSkip: 1e3 } : null
   ].filter(Boolean);
   const queryAudit = [];
   let raw = [];
-  const searchResults = await Promise.all(localSearches.map(async (search) => ({ search, result: await querySoldComparableRows(search.filters, env, 2e3) })));
+  const searchResults = await Promise.all(localSearches.map(async (search) => ({ search, result: await querySoldComparableRows(search.filters, env, 1500, search.startSkip) })));
   for (const { search, result } of searchResults) {
     raw.push(...result.rows);
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
@@ -718,7 +718,7 @@ function comparableIsLocal(candidate, radiusKm = 5) {
   return !!candidate && (candidate.sameRegion || candidate.samePostalPrefix || Number.isFinite(candidate.distanceKm) && candidate.distanceKm <= radiusKm);
 }
 __name(comparableIsLocal, "comparableIsLocal");
-async function querySoldComparableRows(baseFilters, env, top) {
+async function querySoldComparableRows(baseFilters, env, top, startSkip = 0) {
   // This AMPRE VOW feed returns sold fields but rejects filters on them. Page
   // through the permitted local history query so active inventory cannot fill
   // the first result window, then qualify genuine sold rows locally.
@@ -729,7 +729,11 @@ async function querySoldComparableRows(baseFilters, env, top) {
   let nextUrl = null;
   const maxPages = Math.max(1, Math.ceil(top / pageSize));
   for (let page = 0; page < maxPages && rows.length < top; page++) {
-    const result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "ModificationTimestamp desc", 0);
+    let result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "", startSkip);
+    if (page === 0 && startSkip > 0 && result.meta.status === 200 && !result.rows.length) {
+      result = await queryPropertiesDetailed(baseFilters, env, pageSize, "", 0);
+      audit.push({ queryScope: "local_history_skip_fallback", page, requestedSkip: startSkip, ...result.meta });
+    }
     audit.push({ queryScope: "local_exact_subtype_page", page, ...result.meta });
     if (result.meta.status === 200) accepted = true;
     rows.push(...result.rows);
