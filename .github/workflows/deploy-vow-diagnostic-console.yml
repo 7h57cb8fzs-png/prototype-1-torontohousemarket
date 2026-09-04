@@ -1,4 +1,4 @@
-name: Deploy VOW diagnostic console
+name: Restore diagnostics-only Worker
 
 on:
   push:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check worker-v11.js
-          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "45bcce98958ba233363229f734f90fa6b5b3f018f1d899d34b1a12208d55dac5"
+          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "96a31be076f9a9dc601ec46d79f7ba6835f7caf012a134ca15cf074f03ae34b8"
           grep -F 'comparable_selection_diagnostic' worker-v11.js >/dev/null
           grep -F 'ai_narrative_diagnostic' worker-v11.js >/dev/null
           grep -F 'report_generation_status' worker-v11.js >/dev/null
@@ -34,8 +34,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           WORKER_NAME: prototype-1-torontohousemarket
           PRODUCTION_URL: https://torontohousemarket.com
-          BEFORE_SHA256: 96a31be076f9a9dc601ec46d79f7ba6835f7caf012a134ca15cf074f03ae34b8
-          AFTER_SHA256: 45bcce98958ba233363229f734f90fa6b5b3f018f1d899d34b1a12208d55dac5
+          BEFORE_SHA256: 45bcce98958ba233363229f734f90fa6b5b3f018f1d899d34b1a12208d55dac5
+          AFTER_SHA256: 96a31be076f9a9dc601ec46d79f7ba6835f7caf012a134ca15cf074f03ae34b8
         run: |
           set -euo pipefail
           work_dir="$(mktemp -d)"
@@ -74,7 +74,7 @@ jobs:
           jq -S '[.result.bindings[] | select(.type != "plain_text") | {name, type}] | sort_by(.name)' "${work_dir}/version-mid.json" > "${work_dir}/protected-mid.json"
           cmp "${work_dir}/protected-before.json" "${work_dir}/protected-mid.json"
 
-          jq '.result as $s | {annotations:{"workers/message":"Temporary admin-only VOW diagnostic console","workers/tag":"vow-diagnostic-console-20260904"},bindings:[inputs.result.bindings[] | if (.type == "plain_text" or .type == "json") then . else {name:.name,type:"inherit",version_id:"latest"} end],compatibility_date:$s.compatibility_date,compatibility_flags:($s.compatibility_flags // []),usage_model:$s.usage_model,limits:$s.limits,observability:$s.observability,placement:$s.placement,cache_options:$s.cache_options,tail_consumers:$s.tail_consumers,logpush:$s.logpush} | with_entries(select(.value != null))' "${work_dir}/settings-before.json" "${work_dir}/version-before.json" > "${work_dir}/settings-patch.json"
+          jq '.result as $s | {annotations:{"workers/message":"Diagnostics-only comparable and AI observability","workers/tag":"diagnostics-only-20260904"},bindings:[inputs.result.bindings[] | if (.type == "plain_text" or .type == "json") then . else {name:.name,type:"inherit",version_id:"latest"} end],compatibility_date:$s.compatibility_date,compatibility_flags:($s.compatibility_flags // []),usage_model:$s.usage_model,limits:$s.limits,observability:$s.observability,placement:$s.placement,cache_options:$s.cache_options,tail_consumers:$s.tail_consumers,logpush:$s.logpush} | with_entries(select(.value != null))' "${work_dir}/settings-before.json" "${work_dir}/version-before.json" > "${work_dir}/settings-patch.json"
 
           status="$(curl -sS --request PATCH -H "${auth}" -F 'settings=@'"${work_dir}"'/settings-patch.json;type=application/json' -o "${work_dir}/settings-response.json" -w '%{http_code}' "${api}/workers/scripts/${WORKER_NAME}/settings")"
           test "${status}" -ge 200
