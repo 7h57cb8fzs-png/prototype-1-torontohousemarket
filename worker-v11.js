@@ -26,6 +26,12 @@ var worker_default = {
 var AMPRE_BASE = "https://query.ampre.ca/odata";
 var SUPABASE_URL = "https://pwbtxyavjjotxtvegrqe.supabase.co";
 var TEN_YEARS_MS = 10 * 365.25 * 24 * 60 * 60 * 1e3;
+function diagnosticLog(level, event, payload = {}) {
+  const entry = { event, ...payload };
+  const writer = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
+  writer(JSON.stringify(entry));
+}
+__name(diagnosticLog, "diagnosticLog");
 async function handleFeaturedListings(env) {
   if (!env.AMPRE_TOKEN) return json({ ok: false, error: "IDX connection is not configured." }, 503);
   let records = await queryProperties(["contains(ListOfficeName,'Leading Edge')"], env, 100, "OriginalEntryTimestamp desc,ListingKey desc");
@@ -60,6 +66,7 @@ async function handleProperty(request, env) {
   const url = new URL(request.url);
   const publicSnapshot = url.searchParams.get("mode") === "public_snapshot";
   const reportEvidence = url.searchParams.get("mode") === "report_evidence";
+  const requestId = clean(request.headers.get("X-THM-Request-Id"), 100) || crypto.randomUUID();
   const listingKeyParam = clean(url.searchParams.get("listingKey"), 40).toUpperCase();
   const rawQuery = clean(url.searchParams.get("q"), 1e3);
   const rawInput = listingKeyParam || rawQuery;
@@ -98,7 +105,7 @@ async function handleProperty(request, env) {
   const displayRestricted = activeForSale && !fullDisplayAllowed;
   const embeddedMedia = Array.isArray(subject.Media) ? subject.Media : [];
   const [comparableContext, mediaRecords] = await Promise.all([
-    publicSnapshot ? Promise.resolve({ available: false, matchCount: 0, confidence: "Available after request", basis: "Protected analysis is prepared after registration." }) : buildComparableContext(subject, env, activeForSale),
+    publicSnapshot ? Promise.resolve({ available: false, matchCount: 0, confidence: "Available after request", basis: "Protected analysis is prepared after registration." }) : buildComparableContext(subject, env, activeForSale, requestId),
     activeForSale && fullDisplayAllowed && !reportEvidence ? embeddedMedia.length ? Promise.resolve(embeddedMedia) : fetchPropertyMedia(subject.ListingKey, env) : Promise.resolve([])
   ]);
   const historySummary = summarizeHistory(history, subject);
@@ -579,7 +586,7 @@ function historicalSoldSummary(r) {
   return { price, date: dateOnly(date) };
 }
 __name(historicalSoldSummary, "historicalSoldSummary");
-async function buildComparableContext(subject, env, activeForSale) {
+async function buildComparableContext(subject, env, activeForSale, requestId = null) {
   if (!subject) return unavailableComp("No subject property was available.");
   const subtype = cleanText(subject.PropertySubType);
   if (!subtype) return unavailableComp("The subject property subtype is unavailable, so an exact-subtype range cannot be produced.");
@@ -611,7 +618,10 @@ async function buildComparableContext(subject, env, activeForSale) {
     window = qualified;
   }
   const beforePriceCluster = window.length;
-  if (!window.length) return unavailableComp("No exact-subtype sold comparables were found within the available 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
+  if (!window.length) {
+    logComparableDiagnostics(requestId, subject, raw, qualified, window, [], [], windowDays, 10, queryAudit, "insufficient_sold_evidence");
+    return unavailableComp("No exact-subtype sold comparables were found within the available 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
+  }
   const clusterMedian = medianPrice(window.map((candidate) => candidate.price));
   let priceTolerancePct = 10;
   let candidates = filterPriceCluster(window, 0.1).matches;
@@ -623,8 +633,12 @@ async function buildComparableContext(subject, env, activeForSale) {
     priceTolerancePct = 20;
     candidates = filterPriceCluster(window, 0.2).matches;
   }
-  if (!candidates.length) return unavailableComp("No exact-subtype sale remained after the adaptive median price filter.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0 });
+  if (!candidates.length) {
+    logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, [], windowDays, priceTolerancePct, queryAudit, "price_cluster_empty");
+    return unavailableComp("No exact-subtype sale remained after the adaptive median price filter.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0 });
+  }
   const selected = candidates.sort(compareComparable).slice(0, 5);
+  logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, selected, windowDays, priceTolerancePct, queryAudit, "selected");
   const band = weightedBand(selected);
   const avgScore = selected.reduce((sum, x) => sum + x.similarity, 0) / selected.length;
   const avgRecency = selected.reduce((sum, x) => sum + x.recency, 0) / selected.length;
@@ -648,6 +662,52 @@ async function buildComparableContext(subject, env, activeForSale) {
   };
 }
 __name(buildComparableContext, "buildComparableContext");
+function logComparableDiagnostics(requestId, subject, raw, qualified, window, clustered, selected, windowDays, priceTolerancePct, queryAudit, status) {
+  const unique = dedupe(raw || []);
+  const notSubject = unique.filter((row) => row.ListingKey !== subject?.ListingKey);
+  const exactSubtype = notSubject.filter((row) => exactComparableType(subject, row));
+  const soldWithin600 = exactSubtype.filter((row) => isSoldWithinDays(row, 600));
+  const selectedWithDistance = (selected || []).filter((row) => Number.isFinite(row.distanceKm));
+  diagnosticLog("log", "comparable_selection_diagnostic", {
+    request_id: requestId,
+    subject_listing_key: subject?.ListingKey || null,
+    subject_property_subtype: cleanText(subject?.PropertySubType || subject?.PropertyType) || null,
+    subject_community: cleanText(subject?.CityRegion) || null,
+    search_window_days: windowDays,
+    radius_km: null,
+    candidate_counts: {
+      fetched: (raw || []).length,
+      unique: unique.length,
+      excluding_subject: notSubject.length,
+      exact_subtype: exactSubtype.length,
+      sold_within_600_days: soldWithin600.length,
+      similarity_qualified: (qualified || []).length,
+      selected_window: (window || []).length,
+      after_price_cluster: (clustered || []).length,
+      selected: (selected || []).length
+    },
+    rejection_reason_counts: {
+      duplicate: Math.max(0, (raw || []).length - unique.length),
+      subject_listing: Math.max(0, unique.length - notSubject.length),
+      subtype_mismatch: Math.max(0, notSubject.length - exactSubtype.length),
+      not_sold_within_600_days: Math.max(0, exactSubtype.length - soldWithin600.length),
+      similarity_below_threshold: Math.max(0, soldWithin600.length - (qualified || []).length),
+      outside_selected_window: Math.max(0, (qualified || []).length - (window || []).length),
+      price_cluster: Math.max(0, (window || []).length - (clustered || []).length),
+      rank_cutoff: Math.max(0, (clustered || []).length - (selected || []).length)
+    },
+    price_tolerance_pct: priceTolerancePct,
+    selected_comp_listing_keys: (selected || []).map((row) => row.record?.ListingKey).filter(Boolean),
+    distance_calculation_status: {
+      subject_coordinates: !!propertyCoordinates(subject),
+      selected_numeric: selectedWithDistance.length,
+      selected_missing: Math.max(0, (selected || []).length - selectedWithDistance.length)
+    },
+    provider_pages: (queryAudit || []).map((entry) => ({ status: entry.status, skip: entry.skip, returned: entry.count })),
+    status
+  });
+}
+__name(logComparableDiagnostics, "logComparableDiagnostics");
 function unavailableComp(basis, matchCount = 0, diagnostics = null, policy = null) {
   return { available: false, matchCount, confidence: "Unavailable", basis, ...diagnostics ? { diagnostics } : {}, ...policy ? { policy } : {} };
 }
@@ -3269,20 +3329,22 @@ async function processReportJobs(env, limit = 3) {
   const jobs = await rpc(env, "claim_report_jobs", { p_limit: limit });
   let completed = 0, failed = 0;
   for (const job of Array.isArray(jobs) ? jobs : []) {
+    const requestId = `report-job-${job.id}`;
+    diagnosticLog("log", "report_generation_status", { request_id: requestId, report_id: job.report_id, job_id: job.id, report_generation_status: "started" });
     try {
       const lead = await loadLeadForReport(env, job.lead_id);
       if (!lead) throw new Error("Lead data is unavailable.");
-      const property2 = await loadPropertyForReport(env, lead);
-      const report = await buildPropertyReport(env, lead, property2);
+      const property2 = await loadPropertyForReport(env, lead, requestId);
+      const report = await buildPropertyReport(env, lead, property2, requestId);
       await rpc(env, "complete_report_job", { p_job_id: job.id, p_report_id: job.report_id, p_report_payload: report });
       completed++;
-      console.log(JSON.stringify({ event: "report_ready", job_id: job.id, lead_id: job.lead_id, report_id: job.report_id, confidence: report.valuation?.confidence || "Unavailable" }));
+      diagnosticLog("log", "report_generation_status", { request_id: requestId, report_id: job.report_id, job_id: job.id, report_generation_status: "ready", confidence: report.valuation?.confidence || "Unavailable" });
     } catch (error) {
       failed++;
       const message = error instanceof Error ? error.message : String(error);
       await rpc(env, "fail_report_job", { p_job_id: job.id, p_report_id: job.report_id, p_error: message }).catch(() => {
       });
-      console.error(JSON.stringify({ event: "report_failed", job_id: job.id, lead_id: job.lead_id, error: message.slice(0, 300) }));
+      diagnosticLog("error", "report_generation_status", { request_id: requestId, report_id: job.report_id, job_id: job.id, report_generation_status: "failed", error_category: diagnosticErrorCategory(error) });
     }
   }
   return { claimed: Array.isArray(jobs) ? jobs.length : 0, completed, failed };
@@ -3295,7 +3357,7 @@ async function loadLeadForReport(env, id) {
   return Array.isArray(rows) ? rows[0] : null;
 }
 __name(loadLeadForReport, "loadLeadForReport");
-async function loadPropertyForReport(env, lead) {
+async function loadPropertyForReport(env, lead, requestId = null) {
   const url = new URL("https://torontohousemarket.com/api/property");
   const capturedSnapshot = Object.keys(lead.property_snapshot || {}).length ? lead.property_snapshot : lead.metadata?.property_snapshot || {};
   const listingKey = capturedSnapshot?.listingKey || lead.metadata?.listing_key || lead.metadata?.listingKey || null;
@@ -3309,9 +3371,9 @@ async function loadPropertyForReport(env, lead) {
   else protectedUrl.searchParams.set("q", lead.resolved_address || lead.metadata?.resolved_address || capturedSnapshot?.address || lead.metadata?.property_input || "");
   protectedUrl.searchParams.set("mode", "report_evidence");
   const [idxResponse, vowResponse] = await Promise.all([
-    worker_v10_default.fetch(new Request(publicUrl.toString(), { method: "GET" }), env, { waitUntil() {
+    worker_v10_default.fetch(new Request(publicUrl.toString(), { method: "GET", headers: { "X-THM-Request-Id": requestId || crypto.randomUUID() } }), env, { waitUntil() {
     } }),
-    worker_v10_default.fetch(new Request(protectedUrl.toString(), { method: "GET" }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
+    worker_v10_default.fetch(new Request(protectedUrl.toString(), { method: "GET", headers: { "X-THM-Request-Id": requestId || crypto.randomUUID() } }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
     } })
   ]);
   const [idxBody, vowBody] = await Promise.all([idxResponse.json().catch(() => null), vowResponse.json().catch(() => null)]);
@@ -3335,7 +3397,7 @@ function mergeCurrentIdxWithVow(currentProperty, protectedProperty, subjectSourc
   };
 }
 __name(mergeCurrentIdxWithVow, "mergeCurrentIdxWithVow");
-async function buildPropertyReport(env, lead, property2) {
+async function buildPropertyReport(env, lead, property2, requestId = null) {
   const comp = property2.comparableContext || {};
   const comparables = Array.isArray(comp.comparables) ? comp.comparables.slice(0, 5) : [];
   const soldTimes = comparables.map((c) => Date.parse(c.soldDate || "")).filter(Number.isFinite), newestSold = soldTimes.length ? new Date(Math.max(...soldTimes)) : null;
@@ -3382,10 +3444,11 @@ async function buildPropertyReport(env, lead, property2) {
     return null;
   }) : null;
   const fallback = buildDeterministicNarrative(facts, valuation, comparables, property2);
-  const ai = await generateAiNarrative(env, facts, valuation, comparables, property2, publicResearch).catch((error) => {
-    console.warn(JSON.stringify({ event: "report_ai_fallback", lead_id: lead.id, error: String(error).slice(0, 240) }));
+  const ai = await generateAiNarrative(env, facts, valuation, comparables, property2, publicResearch, requestId).catch((error) => {
+    diagnosticLog("warn", "ai_narrative_diagnostic", { request_id: requestId, provider: "deterministic_fallback", model: null, provider_latency_ms: null, fallback_used: true, schema_validation_result: "not_run", error_category: diagnosticErrorCategory(error) });
     return null;
   });
+  if (!ai) diagnosticLog("warn", "ai_narrative_diagnostic", { request_id: requestId, provider: "deterministic_fallback", model: null, provider_latency_ms: null, fallback_used: true, schema_validation_result: "not_available", error_category: "providers_exhausted" });
   const narrative = groundReportNarrative(ai?.narrative || fallback, facts, valuation, comparables, comp.policy || {});
   const valueRating = buildValueRating(facts, valuation, comp.policy || {}, comparables.length);
   return {
@@ -3421,7 +3484,7 @@ async function buildPropertyReport(env, lead, property2) {
   };
 }
 __name(buildPropertyReport, "buildPropertyReport");
-async function generateAiNarrative(env, facts, valuation, comparables, property2, publicResearch = null) {
+async function generateAiNarrative(env, facts, valuation, comparables, property2, publicResearch = null, requestId = null) {
   const system = "You are a careful Toronto real-estate research analyst. Ground every statement in the supplied licensed evidence. Never invent sold prices, comparable sales, taxes, measurements, schools, permits, zoning, distances, history or neighbourhood statistics. Do not call this an appraisal. Return JSON only.";
   const prompt = `Return an object with string fields executive_summary, market_read, buyer_strategy and string arrays strengths, risks, inspection_priorities, questions_for_realtor. Write like a sharp buyer adviser, not a generic property brochure. The executive summary must give a direct 30-second read in no more than 55 words and mention two or three distinctive supplied property facts. The market read and buyer strategy must each be no more than 70 words. Keep every bullet concrete, property-specific and under 18 words; omit filler such as "verify all facts". Use the listing remarks to identify specific benefits, maintenance questions and potentially expensive uncertainties, but label listing claims as reported rather than independently proven. If sold evidence is unavailable, use the separately supplied public research only for public property, school, transit, development and neighbourhood context. Do not use consumer-site sold prices, asking prices or web estimates as comparable evidence, and never create a price range or value score from public research. Do not spend the whole report repeating the sold-data limitation: give a useful property-and-showing analysis, then state once that price requires fresh licensed sold evidence. Every claim must be traceable to the supplied facts, remarks, comparable rows or public research. Never infer a neighbourhood price range, market trend, demand level, renovation cost or recent-sale pattern unless that exact licensed evidence is supplied. Explain the valuation range and strongest comparable evidence when available. Do not call sold evidence recent when the newest sold date is more than 12 months old. If the verified facts contain bedrooms or bathrooms, never describe the subject as vacant land or a vacant lot. Use concise, warm Canadian English written to help a serious buyer decide whether to book a showing and speak with the assigned Realtor.
 
@@ -3434,20 +3497,31 @@ ${JSON.stringify({ licensed: { facts, valuation, comparables, listing_remarks: p
   ];
   let firstFailure = false;
   for (const attempt of attempts) {
+    const startedAt = Date.now();
     try {
       const result = await attempt.run(), parsed = parseJsonObject(result.text), narrative = sanitizeNarrative(parsed);
       if (!validNarrative(narrative)) throw new Error("AI response did not match the report schema.");
       if ((Number(facts?.beds) > 0 || Number(facts?.baths) > 0) && /\bvacant[ -](?:lot|land)\b/i.test(JSON.stringify(narrative))) throw new Error("AI response contradicted the verified subject-property type.");
-      console.log(JSON.stringify({ event: "ai_report_generated", provider: attempt.provider, model: result.model || attempt.model, fallback_used: firstFailure }));
+      diagnosticLog("log", "ai_narrative_diagnostic", { request_id: requestId, provider: attempt.provider, model: result.model || attempt.model, provider_latency_ms: Date.now() - startedAt, fallback_used: firstFailure, schema_validation_result: "valid", error_category: null });
       return { narrative, provider: attempt.provider, model: result.model || attempt.model, fallback_used: firstFailure, web_grounded: !!publicResearch, sources: publicResearch?.sources || [] };
     } catch (error) {
       firstFailure = true;
-      console.warn(JSON.stringify({ event: "ai_provider_failed", provider: attempt.provider, error: String(error).slice(0, 220) }));
+      diagnosticLog("warn", "ai_narrative_diagnostic", { request_id: requestId, provider: attempt.provider, model: attempt.model, provider_latency_ms: Date.now() - startedAt, fallback_used: true, schema_validation_result: diagnosticErrorCategory(error) === "schema_validation" ? "invalid" : "not_available", error_category: diagnosticErrorCategory(error) });
     }
   }
   return null;
 }
 __name(generateAiNarrative, "generateAiNarrative");
+function diagnosticErrorCategory(error) {
+  const message = String(error instanceof Error ? error.message : error || "").toLowerCase();
+  if (/abort|timed out|timeout/.test(message)) return "timeout";
+  if (/not configured/.test(message)) return "not_configured";
+  if (/schema|json|parse/.test(message)) return "schema_validation";
+  if (/contradict/.test(message)) return "content_validation";
+  if (/\b(?:400|401|403|404|408|409|422|429|500|502|503|504)\b/.test(message)) return "provider_http_error";
+  return "unexpected_error";
+}
+__name(diagnosticErrorCategory, "diagnosticErrorCategory");
 function groundReportNarrative(narrative, facts, valuation, comparables, policy = {}) {
   const grounded = { ...narrative };
   const region = clean5(facts.neighbourhood, 120);
