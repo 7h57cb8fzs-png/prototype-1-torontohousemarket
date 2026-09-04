@@ -633,7 +633,8 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
       activeForSale
     };
   }
-  const band = weightedBand(selected);
+  const avm = buildAvmAnalysis(subject, selected, windowDays);
+  const band = avm.available ? { low: avm.lowEstimate, mid: avm.realValue, high: avm.highEstimate } : weightedBand(selected);
   const avgScore = selected.reduce((sum, x) => sum + x.similarity, 0) / selected.length;
   const avgRecency = selected.reduce((sum, x) => sum + x.recency, 0) / selected.length;
   const numericDistances = selected.map((x) => x.distanceKm).filter(Number.isFinite);
@@ -653,6 +654,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
     sourceLabel: "recent sold MLS comparables",
     basis: buildBasisText(subject, selected),
     comparables: selected.map(publicComparable),
+    avm,
     policy: { ...policy, farthestKm: farthest, allDistancesKnown },
     activeForSale
   };
@@ -869,7 +871,16 @@ function publicComparable(c) {
     distanceKm: c.distanceKm,
     cityRegion: r.CityRegion || null,
     postalCode: r.PostalCode || null,
-    priceDeviationPct: c.priceDeviationPct ?? null
+    priceDeviationPct: c.priceDeviationPct ?? null,
+    recencyWeight: c.avmDetail?.recencyWeight ?? c.recency ?? null,
+    dataQualityWeight: c.avmDetail?.dataQualityWeight ?? null,
+    outlierWeight: c.avmDetail?.outlierWeight ?? null,
+    finalWeightPct: c.avmDetail?.normalizedWeight != null ? Math.round(c.avmDetail.normalizedWeight * 1e4) / 100 : null,
+    adjustedValue: c.avmDetail?.adjustedValue ?? c.price,
+    marketTimeAdjustment: c.avmDetail?.marketTimeAdjustment ?? null,
+    propertyAdjustments: c.avmDetail?.propertyAdjustments || null,
+    importantDifferences: c.avmDetail?.importantDifferences || [],
+    similarityComponents: c.avmDetail?.similarityComponents || null
   };
 }
 __name(publicComparable, "publicComparable");
@@ -925,6 +936,125 @@ function weightedBand(matches) {
   };
 }
 __name(weightedBand, "weightedBand");
+function buildAvmAnalysis(subject, matches, windowDays) {
+  if (!Array.isArray(matches) || matches.length < 3) return { available: false, reason: "At least three qualified sold comparables are required." };
+  const prices = matches.map((m) => Number(m.price)).filter((x) => Number.isFinite(x) && x > 0);
+  const median = medianPrice(prices);
+  const deviations = prices.map((price) => Math.abs(price - median));
+  const mad = medianPrice(deviations) || 0;
+  let totalRawWeight = 0;
+  const details = matches.map((match) => {
+    const r = match.record || {};
+    const components = avmSimilarityComponents(subject, r, match);
+    match.similarity = components.score;
+    const similarity = components.score / 100;
+    const dataQuality = avmDataQuality(subject, r);
+    const robustZ = mad > 0 ? 0.6745 * Math.abs(match.price - median) / mad : 0;
+    const outlierWeight = robustZ > 3.5 ? 0.2 : robustZ > 2.5 ? 0.55 : 1;
+    const rawWeight = Math.max(1e-6, similarity * similarity * match.recency * dataQuality * match.reliability * outlierWeight);
+    totalRawWeight += rawWeight;
+    return {
+      match,
+      similarityComponents: components.components,
+      recencyWeight: Math.round(match.recency * 1e4) / 1e4,
+      dataQualityWeight: Math.round(dataQuality * 1e3) / 1e3,
+      marketReliabilityWeight: match.reliability,
+      outlierWeight,
+      robustZ: Math.round(robustZ * 100) / 100,
+      marketTimeAdjustment: null,
+      propertyAdjustments: { total: null, status: "Not applied: no defensible paired-sales or local regression evidence was available." },
+      adjustedValue: match.price,
+      importantDifferences: avmImportantDifferences(subject, r),
+      rawWeight
+    };
+  });
+  for (const detail of details) {
+    detail.normalizedWeight = detail.rawWeight / totalRawWeight;
+    detail.match.avmDetail = detail;
+  }
+  const comparableValue = details.reduce((sum, d) => sum + d.adjustedValue * d.normalizedWeight, 0);
+  const weightedItems = details.map((d) => ({ price: d.adjustedValue, weight: d.normalizedWeight })).sort((a, b) => a.price - b.price);
+  const weightedMedian = weightedQuantile(weightedItems, 0.5);
+  const unweightedMedian = medianPrice(details.map((d) => d.adjustedValue));
+  const variance = details.reduce((sum, d) => sum + d.normalizedWeight * Math.pow(d.adjustedValue - comparableValue, 2), 0);
+  const dispersion = Math.sqrt(Math.max(0, variance));
+  const quantityQuality = clamp(matches.length / 5, 0, 1);
+  const recencyQuality = details.reduce((sum, d) => sum + d.recencyWeight * d.normalizedWeight, 0);
+  const similarityQuality = details.reduce((sum, d) => sum + d.match.similarity / 100 * d.normalizedWeight, 0);
+  const dataCompleteness = details.reduce((sum, d) => sum + d.dataQualityWeight * d.normalizedWeight, 0);
+  const geographicQuality = details.every((d) => Number.isFinite(d.match.distanceKm)) ? details.reduce((sum, d) => sum + clamp(1 - d.match.distanceKm / 5, 0, 1) * d.normalizedWeight, 0) : details.reduce((sum, d) => sum + (d.match.sameRegion ? 0.85 : d.match.samePostalPrefix ? 0.65 : 0.35) * d.normalizedWeight, 0);
+  const outlierRisk = details.reduce((sum, d) => sum + (1 - d.outlierWeight) * d.normalizedWeight, 0);
+  const confidenceScore = Math.round(clamp((0.24 * similarityQuality + 0.2 * recencyQuality + 0.18 * geographicQuality + 0.16 * dataCompleteness + 0.12 * quantityQuality + 0.1 * (1 - outlierRisk)) * 100, 0, 100));
+  const realValue = roundMarket(comparableValue);
+  const observedMargin = Math.max(dispersion, Math.abs(realValue - weightedMedian), Math.abs(realValue - unweightedMedian));
+  const uncertaintyMargin = roundMarket(observedMargin);
+  return {
+    available: true,
+    method: "Robust weighted sales comparison",
+    realValue,
+    lowEstimate: roundMarket(realValue - uncertaintyMargin),
+    highEstimate: roundMarket(realValue + uncertaintyMargin),
+    uncertaintyMargin,
+    confidenceScore,
+    confidenceLabel: confidenceScore >= 90 ? "Exceptional" : confidenceScore >= 80 ? "High" : confidenceScore >= 70 ? "Good" : confidenceScore >= 60 ? "Moderate" : confidenceScore >= 50 ? "Low" : "Very Low",
+    comparableValue: realValue,
+    weightedMedian: roundMarket(weightedMedian),
+    unweightedMedian: roundMarket(unweightedMedian),
+    dispersion: roundMarket(dispersion),
+    modelValue: null,
+    comparableWeightPct: 100,
+    modelWeightPct: 0,
+    marketTimeAdjustment: { applied: false, reason: "No reliable subtype-and-neighbourhood market index was available." },
+    adjustmentMethod: "No unsupported dollar adjustments were invented; observed sold prices were weighted by similarity, recency, data quality, reliability and robust outlier control.",
+    searchPass: windowDays <= 100 ? 1 : 3,
+    comparableCount: matches.length
+  };
+}
+__name(buildAvmAnalysis, "buildAvmAnalysis");
+function avmSimilarityComponents(subject, record, match) {
+  const condo = /condo|apartment/i.test(`${subject?.PropertyType || ""} ${subject?.PropertySubType || ""}`);
+  const weights = condo ? { location: 26, type: 14, size: 26, lot: 0, bedBath: 10, age: 4, parking: 8, basement: 0, building: 12 } : { location: 27, type: 15, size: 16, lot: 16, bedBath: 9, age: 5, parking: 5, basement: 4, building: 3 };
+  const components = {};
+  const distance = match.distanceKm;
+  components.location = Number.isFinite(distance) ? clamp(1 - distance / 7, 0, 1) : match.sameRegion ? 1 : match.samePostalPrefix ? 0.75 : null;
+  components.type = exactComparableType(subject, record) ? 1 : 0;
+  const areaA = rangeMid(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), areaB = rangeMid(record.LivingAreaRange) || numberOrNull(record.BuildingAreaTotal);
+  components.size = areaA && areaB ? ratioCloseness(areaA, areaB, 0.5) : null;
+  const lotScores = [[subject.LotWidth, record.LotWidth], [subject.LotDepth, record.LotDepth]].map(([a, b]) => numberOrNull(a) && numberOrNull(b) ? ratioCloseness(numberOrNull(a), numberOrNull(b), 0.6) : null).filter((x) => x != null);
+  components.lot = lotScores.length ? lotScores.reduce((a, b) => a + b, 0) / lotScores.length : null;
+  const bedScores = [[subject.BedroomsTotal, record.BedroomsTotal], [subject.BathroomsTotalInteger, record.BathroomsTotalInteger]].map(([a, b]) => numberOrNull(a) != null && numberOrNull(b) != null ? diffScore(numberOrNull(a), numberOrNull(b), 3) : null).filter((x) => x != null);
+  components.bedBath = bedScores.length ? bedScores.reduce((a, b) => a + b, 0) / bedScores.length : null;
+  const yearA = firstFiniteNumber(subject, ["YearBuilt", "YearBuiltDetails"]), yearB = firstFiniteNumber(record, ["YearBuilt", "YearBuiltDetails"]);
+  components.age = yearA && yearB ? diffScore(yearA, yearB, 60) : null;
+  const parkA = numberOrNull(subject.ParkingTotal), parkB = numberOrNull(record.ParkingTotal);
+  components.parking = parkA != null && parkB != null ? diffScore(parkA, parkB, 5) : null;
+  const basementA = arrayText(subject.Basement), basementB = arrayText(record.Basement);
+  components.basement = basementA && basementB ? tokenOverlap(basementA, basementB) : null;
+  const buildingA = cleanText(subject.BuildingName || subject.AssociationName), buildingB = cleanText(record.BuildingName || record.AssociationName);
+  components.building = buildingA && buildingB ? (sameText(buildingA, buildingB) ? 1 : 0) : null;
+  let earned = 0, possible = 0;
+  for (const [key, weight] of Object.entries(weights)) if (weight > 0 && components[key] != null) { earned += weight * components[key]; possible += weight; }
+  return { score: possible ? Math.round(earned / possible * 100) : 0, components: Object.fromEntries(Object.entries(components).map(([key, value]) => [key, value == null ? null : Math.round(value * 100)])) };
+}
+__name(avmSimilarityComponents, "avmSimilarityComponents");
+function avmDataQuality(subject, record) {
+  const fields = ["PropertySubType", "CityRegion", "BedroomsTotal", "BathroomsTotalInteger", "LivingAreaRange", "LotWidth", "LotDepth", "ParkingTotal", "Basement"];
+  const present = fields.filter((field) => subject?.[field] != null && subject[field] !== "" && record?.[field] != null && record[field] !== "").length;
+  return 0.45 + 0.55 * present / fields.length;
+}
+__name(avmDataQuality, "avmDataQuality");
+function avmImportantDifferences(subject, record) {
+  const differences = [];
+  const compareNumber = (label, a, b, suffix = "") => { a = numberOrNull(a); b = numberOrNull(b); if (a != null && b != null && a !== b) differences.push(`${label}: subject ${a}${suffix}, comparable ${b}${suffix}`); };
+  compareNumber("Bedrooms", subject.BedroomsTotal, record.BedroomsTotal);
+  compareNumber("Bathrooms", subject.BathroomsTotalInteger, record.BathroomsTotalInteger);
+  compareNumber("Lot frontage", subject.LotWidth, record.LotWidth, " ft");
+  compareNumber("Lot depth", subject.LotDepth, record.LotDepth, " ft");
+  compareNumber("Parking", subject.ParkingTotal, record.ParkingTotal);
+  if (subject.CityRegion && record.CityRegion && !sameText(subject.CityRegion, record.CityRegion)) differences.push(`Location: ${record.CityRegion} versus ${subject.CityRegion}`);
+  return differences.slice(0, 4);
+}
+__name(avmImportantDifferences, "avmImportantDifferences");
 function weightedQuantile(items, q) {
   const total = items.reduce((sum, i) => sum + i.weight, 0);
   let running = 0;
@@ -3485,6 +3615,7 @@ function mergeCurrentIdxWithVow(currentProperty, protectedProperty, subjectSourc
 __name(mergeCurrentIdxWithVow, "mergeCurrentIdxWithVow");
 async function buildPropertyReport(env, lead, property2, requestId = null) {
   const comp = property2.comparableContext || {};
+  const avm = comp.avm || null;
   const comparables = Array.isArray(comp.comparables) ? comp.comparables.slice(0, 5) : [];
   const soldTimes = comparables.map((c) => Date.parse(c.soldDate || "")).filter(Number.isFinite), newestSold = soldTimes.length ? new Date(Math.max(...soldTimes)) : null;
   const evidenceAgeDays = newestSold ? Math.max(0, Math.round((Date.now() - newestSold.getTime()) / 864e5)) : null;
@@ -3525,6 +3656,17 @@ async function buildPropertyReport(env, lead, property2, requestId = null) {
     evidence_recency: evidenceRecency,
     newest_sold_date: newestSold ? newestSold.toISOString().slice(0, 10) : null
   };
+  if (avm?.available) {
+    valuation.real_value = avm.realValue;
+    valuation.confidence_score = avm.confidenceScore;
+    valuation.confidence_label = avm.confidenceLabel;
+    valuation.comparable_value = avm.comparableValue;
+    valuation.model_value = avm.modelValue;
+    valuation.weighted_median = avm.weightedMedian;
+    valuation.unweighted_median = avm.unweightedMedian;
+    valuation.dispersion = avm.dispersion;
+    valuation.uncertainty_margin = avm.uncertaintyMargin;
+  }
   const publicResearch = !valuation.available ? await generatePublicResearch(env, { address: facts.address, property_type: facts.property_type, neighbourhood: facts.neighbourhood }).catch((error) => {
     console.warn(JSON.stringify({ event: "public_research_fallback", lead_id: lead.id, error: String(error).slice(0, 240) }));
     return null;
@@ -3538,14 +3680,37 @@ async function buildPropertyReport(env, lead, property2, requestId = null) {
   const narrative = groundReportNarrative(ai?.narrative || fallback, facts, valuation, comparables, comp.policy || {});
   const valueRating = buildValueRating(facts, valuation, comp.policy || {}, comparables.length);
   return {
-    schema_version: 4,
+    schema_version: 5,
     generated_at: (/* @__PURE__ */ new Date()).toISOString(),
     report_type: "THM AI buyer intelligence brief",
     prompt_version: String(env.PROPERTY_REPORT_PROMPT_VERSION || "vow-ai-v1"),
     ai_generation: ai ? { provider: ai.provider, model: ai.model, fallback_used: ai.fallback_used, web_grounded: !!ai.web_grounded } : null,
     research_sources: Array.isArray(ai?.sources) ? ai.sources.slice(0, 6) : [],
     facts,
+    subject_profile: {
+      address: facts.address,
+      municipality: property2.city || null,
+      neighbourhood: facts.neighbourhood,
+      property_type: property2.propertyType || null,
+      exact_subtype: property2.propertySubType || null,
+      bedrooms: facts.beds,
+      bathrooms: facts.baths,
+      above_grade_living_area: property2.livingAreaRange || property2.buildingAreaTotal || null,
+      total_finished_area: property2.totalFinishedArea || null,
+      lot_frontage: property2.lotWidth || null,
+      lot_depth: property2.lotDepth || null,
+      lot_area: property2.lotArea || null,
+      garage: facts.garage,
+      parking: facts.parking,
+      basement: facts.basement,
+      year_built: property2.yearBuilt || null,
+      condition: property2.condition || null,
+      storeys: property2.stories || null,
+      exterior: property2.exteriorConstruction || null,
+      special_features: property2.details?.interior || null
+    },
     valuation,
+    avm_calculation: avm,
     value_rating: valueRating,
     comparables,
     comparable_policy: comp.policy || { windowDays: 300, expandedWindow: true, exactSubtype: true, priceTolerancePct: 10 },
@@ -3868,7 +4033,7 @@ function buildEmail(job, lead) {
 __name(buildEmail, "buildEmail");
 function propertyReportEmail(address, agentData, report) {
   const agent = agentData?.display_name || "your assigned Realtor", agentEmail = clean5(agentData?.email, 254), agentMobile = clean5(agentData?.mobile, 50);
-  const v = report.valuation || {}, n = report.narrative || {}, facts = report.facts || {}, history = report.history || {}, policy = report.comparable_policy || {}, comps = Array.isArray(report.comparables) ? report.comparables.slice(0, 5) : [];
+  const v = report.valuation || {}, avm = report.avm_calculation || {}, n = report.narrative || {}, facts = report.facts || {}, history = report.history || {}, policy = report.comparable_policy || {}, comps = Array.isArray(report.comparables) ? report.comparables.slice(0, 5) : [];
   const research = Array.isArray(report.research_sources) ? report.research_sources.filter((source) => /^https:\/\//i.test(String(source?.url || ""))).slice(0, 4) : [];
   const rating = report.value_rating || buildValueRating(facts, v, policy, comps.length);
   const briefScore = buildBuyerReadScore(facts, n);
@@ -3928,7 +4093,8 @@ function propertyReportEmail(address, agentData, report) {
   const ratingVisual = rating.available ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;background:#f7f8fb;border-top:4px solid ${indicatorColor}"><tr><td style="padding:20px"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td><p style="margin:0;color:#6f788c;font:800 9px Arial,sans-serif;letter-spacing:1px">THM VALUE RATING</p><p style="margin:6px 0 0;color:#151b2b;font:800 31px Arial,sans-serif">${html(rating.score)}<span style="font-size:14px;color:#7b8395"> / 10</span></p></td><td align="right"><p style="margin:0;color:${indicatorColor};font:800 11px Arial,sans-serif;letter-spacing:1px">${html(moveSignal)}</p><p style="margin:5px 0 0;color:#151b2b;font:800 18px Arial,sans-serif">${html(rating.label)}</p></td></tr></table><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:13px"><tr>${ratingSegments}</tr><tr><td colspan="3" align="left" style="padding-top:5px;color:#a63d40;font:700 8px Arial,sans-serif">CAUTION</td><td colspan="4" align="center" style="padding-top:5px;color:#8a6b1d;font:700 8px Arial,sans-serif">FAIR</td><td colspan="3" align="right" style="padding-top:5px;color:#087555;font:700 8px Arial,sans-serif">STRONG</td></tr></table><p style="margin:10px 0 0;color:#596277;font:400 12px Arial,sans-serif;line-height:1.5">${html(rating.reason)}</p></td></tr></table>` : `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;background:#f2f6ff;border-top:4px solid #3155f5"><tr><td style="padding:20px"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td><p style="margin:0;color:#3155f5;font:800 9px Arial,sans-serif;letter-spacing:1px">BUYER OPPORTUNITY SNAPSHOT</p><p style="margin:7px 0 0;color:#151b2b;font:800 22px Arial,sans-serif">Worth a closer look</p></td><td align="right"><p style="margin:0;color:#3155f5;font:800 28px Arial,sans-serif">${html(briefScore)}<span style="font-size:13px;color:#7b8395"> / 10</span></p><p style="margin:4px 0 0;color:#687286;font:700 9px Arial,sans-serif;letter-spacing:.6px">BUYER READ</p></td></tr></table><p style="margin:10px 0 0;color:#596277;font:400 12px Arial,sans-serif;line-height:1.5">This scores how useful the verified property facts are for deciding whether to investigate further; it is not a price rating. A Realtor should refresh the local sold evidence before an offer decision.</p></td></tr></table>`;
   const priceGauge = v.available ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;background:#f7f8fb"><tr><td style="padding:16px"><p style="margin:0 0 10px;color:#6f788c;font:800 9px Arial,sans-serif;letter-spacing:1px">PRICE POSITION</p><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="left" style="color:#657086;font:700 11px Arial,sans-serif">${html(cad(v.low) || "-")}</td><td align="center" style="color:#151b2b;font:800 12px Arial,sans-serif">MID ${html(cad(v.midpoint) || "-")}</td><td align="right" style="color:#657086;font:700 11px Arial,sans-serif">${html(cad(v.high) || "-")}</td></tr><tr><td colspan="3" style="padding-top:8px"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td width="33%" height="9" bgcolor="#3ea879"></td><td width="34%" height="9" bgcolor="#d1a84b"></td><td width="33%" height="9" bgcolor="#c95b5f"></td></tr></table></td></tr><tr><td colspan="3" style="padding-top:8px;color:#596277;font:400 11px Arial,sans-serif">Asking price: <strong>${html(cad(facts.list_price) || "-")}</strong>${policy.farthestKm ? ` | nearest evidence selected first` : ""}</td></tr></table></td></tr></table>` : "";
   const expandedNote = policy.expandedWindow ? `<p style="margin:0 0 18px;padding:10px 12px;background:#fff6ee;color:#87511d;font:700 11px Arial,sans-serif;line-height:1.45">Evidence note: the search was expanded from 100 to ${policy.windowDays || 300} days.</p>` : "";
-  const evidenceVisual = `${ratingVisual}${priceGauge}${expandedNote}`;
+  const avmVisual = avm.available ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;background:#10182d"><tr><td style="padding:20px"><p style="margin:0 0 7px;color:#c9b577;font:800 10px Arial,sans-serif;letter-spacing:1.2px">THM ROBUST AVM</p><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;color:#aeb8cc;font:700 9px Arial,sans-serif">REAL VALUE</p><p style="margin:5px 0 0;color:#fff;font:800 25px Arial,sans-serif">${html(cad(avm.realValue))}</p></td><td align="right"><p style="margin:0;color:#aeb8cc;font:700 9px Arial,sans-serif">CONFIDENCE</p><p style="margin:5px 0 0;color:#c9b577;font:800 22px Arial,sans-serif">${html(avm.confidenceScore)}/100</p><p style="margin:3px 0 0;color:#dce2ee;font:700 10px Arial,sans-serif">${html(avm.confidenceLabel)}</p></td></tr></table><p style="margin:14px 0 6px;color:#aeb8cc;font:700 9px Arial,sans-serif">LIKELY MARKET RANGE</p><p style="margin:0;color:#fff;font:800 17px Arial,sans-serif">${html(cad(avm.lowEstimate))} – ${html(cad(avm.highEstimate))}</p><table width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;border-top:1px solid #34405a"><tr><td style="padding-top:10px;color:#c7cfdf;font:400 10px Arial,sans-serif;line-height:1.6">Comparable value: <strong>${html(cad(avm.comparableValue))}</strong><br>Weighted median: <strong>${html(cad(avm.weightedMedian))}</strong><br>Unweighted median: <strong>${html(cad(avm.unweightedMedian))}</strong></td><td align="right" style="padding-top:10px;color:#c7cfdf;font:400 10px Arial,sans-serif;line-height:1.6">Comparable weight: <strong>${html(avm.comparableWeightPct)}%</strong><br>Model value: <strong>${html(avm.modelValue == null ? "Not available" : cad(avm.modelValue))}</strong><br>Dispersion: <strong>${html(cad(avm.dispersion))}</strong></td></tr></table><p style="margin:12px 0 0;color:#99a5bc;font:400 9px Arial,sans-serif;line-height:1.5">${html(avm.adjustmentMethod)}</p></td></tr></table>` : "";
+  const evidenceVisual = `${avmVisual}${ratingVisual}${priceGauge}${expandedNote}`;
   const htmlBody = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="X-UA-Compatible" content="IE=edge"></head><body style="margin:0;background:#eef1f5"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:22px 10px"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:680px;background:#ffffff"><tr><td bgcolor="#10182d" style="padding:30px;background:#10182d"><p style="margin:0 0 10px;color:#c9b577;font:800 11px Arial,sans-serif;letter-spacing:1.5px">THM BUYER INTELLIGENCE</p><h1 style="margin:0;color:#ffffff;font:800 27px Arial,sans-serif;line-height:1.22">${html(address)}</h1><p style="margin:12px 0 0;color:#b9c2d5;font:400 12px Arial,sans-serif;line-height:1.55">${context}</p></td></tr><tr><td style="padding:26px"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4eddd;border:1px solid #e2d5b5"><tr><td style="padding:20px"><p style="margin:0 0 7px;color:#81682d;font:800 10px Arial,sans-serif;letter-spacing:1.2px">RECOMMENDED NEXT MOVE</p><h2 style="margin:0;color:#151b2b;font:800 22px Arial,sans-serif;line-height:1.25">${html(moveTitle)}</h2><p style="margin:8px 0 0;color:#5e5b53;font:400 13px Arial,sans-serif;line-height:1.55">${html(moveNote)}</p></td></tr></table><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 24px"><tr><td width="33%" valign="top" style="padding:14px;background:#f7f8fb;border-right:5px solid #fff"><p style="margin:0 0 6px;color:#7b8395;font:800 9px Arial,sans-serif;letter-spacing:1px">ASKING</p><p style="margin:0;color:#151b2b;font:800 17px Arial,sans-serif">${html(cad(facts.list_price) || "-")}</p></td><td width="34%" valign="top" style="padding:14px;background:#f7f8fb;border-right:5px solid #fff"><p style="margin:0 0 6px;color:#7b8395;font:800 9px Arial,sans-serif;letter-spacing:1px">EVIDENCE BAND</p><p style="margin:0;color:#151b2b;font:800 15px Arial,sans-serif;line-height:1.25">${html(range)}</p></td><td width="33%" valign="top" style="padding:14px;background:#f7f8fb"><p style="margin:0 0 6px;color:#7b8395;font:800 9px Arial,sans-serif;letter-spacing:1px">EVIDENCE</p><p style="margin:0;color:#151b2b;font:800 15px Arial,sans-serif;line-height:1.25">${html(`${comps.length} match${comps.length === 1 ? "" : "es"} / ${policy.windowDays || 100}d`)}</p></td></tr></table><p style="margin:0 0 7px;color:#3155f5;font:800 10px Arial,sans-serif;letter-spacing:1.2px">THE 30-SECOND READ</p><p style="margin:0 0 24px;color:#3f4a60;font:400 15px Arial,sans-serif;line-height:1.65">${html(n.executive_summary || "Review the price evidence and showing priorities below before deciding on the next step.")}</p><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:22px"><tr><td><h2 style="margin:0;color:#151b2b;font:800 19px Arial,sans-serif">Best sold evidence</h2><p style="margin:5px 0 0;color:#798196;font:400 12px Arial,sans-serif;line-height:1.45">Top ${topComps.length} of ${comps.length} licensed matches used. Newest record: ${html(v.newest_sold_date || "unknown")}. ${comps.length > 3 ? `${comps.length - 3} additional matches were analysed.` : ""}</p></td></tr>${compsHtml}</table><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;background:#f7f8fb"><tr><td style="padding:18px"><p style="margin:0 0 6px;color:#3155f5;font:800 10px Arial,sans-serif;letter-spacing:1px">AI EVIDENCE READ</p><p style="margin:0;color:#4e586d;font:400 13px Arial,sans-serif;line-height:1.55">${html(n.market_read || v.basis || "The assigned Realtor should refresh the local sold evidence before an offer decision.")}</p></td></tr></table><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px"><tr><td width="50%" valign="top" style="padding:18px;background:#f2faf6;border-right:7px solid #fff"><p style="margin:0 0 8px;color:#087555;font:800 10px Arial,sans-serif;letter-spacing:1px">WHAT HELPS</p>${compactBullets(n.strengths, "#087555")}</td><td width="50%" valign="top" style="padding:18px;background:#fff6ee"><p style="margin:0 0 8px;color:#a35c18;font:800 10px Arial,sans-serif;letter-spacing:1px">WHAT COULD CHANGE IT</p>${compactBullets(n.risks, "#a35c18")}</td></tr></table><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#10182d"><tr><td style="padding:22px"><p style="margin:0 0 7px;color:#c9b577;font:800 10px Arial,sans-serif;letter-spacing:1px">YOUR NEXT MOVE</p><h2 style="margin:0 0 9px;color:#ffffff;font:800 20px Arial,sans-serif">Use the showing to answer the value questions.</h2><p style="margin:0 0 13px;color:#c7cfdf;font:400 13px Arial,sans-serif;line-height:1.55">${html(n.buyer_strategy || "Confirm condition and the strongest local comparable before deciding on price or conditions.")}</p>${compactBullets(n.inspection_priorities, "#c9b577")}<p style="margin:17px 0 0"><a href="${html(contactHref)}" style="display:inline-block;background:#c9b577;color:#10182d;text-decoration:none;font:800 14px Arial,sans-serif;padding:13px 18px">Ask ${html(agent)} for the local price check</a></p></td></tr></table><p style="margin:18px 0 0;color:#8991a2;font:400 10px Arial,sans-serif;line-height:1.55">MLS history: ${html(historyText)} Analysis uses licensed AMPRE / PropTx listing and sold evidence after the property request. AI provider: ${html(report.ai_generation?.provider || "deterministic fallback")}.</p></td></tr></table></td></tr></table></body></html>`;
   const decisionMarker = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4eddd;border:1px solid #e2d5b5">';
   const soldEvidenceMarker = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:22px"><tr><td><h2 style="margin:0;color:#151b2b;font:800 19px Arial,sans-serif">Best sold evidence</h2>';
@@ -4166,6 +4332,7 @@ function json7(body, status = 200, headers = {}) {
 }
 __name(json7, "json");
 export {
+  buildAvmAnalysis,
   buildComparableContext,
   comparableIsLocal,
   distanceBetweenProperties,
