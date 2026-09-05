@@ -75,7 +75,7 @@ jobs:
 
           # Wrangler uploads the audited Worker and its static assets as one version.
           # Existing plain-text variables and all configured secrets are preserved.
-          npx --yes wrangler@4.33.1 deploy --no-bundle --keep-vars
+          npx --yes wrangler@4.129.0 deploy --no-bundle --keep-vars
 
           active_id="${rollback_id}"
           for attempt in 1 2 3 4 5; do
@@ -88,8 +88,10 @@ jobs:
           curl -fsS -H "${auth}" -o "${work_dir}/version-after.json" "${api}/workers/workers/${WORKER_NAME}/versions/${active_id}?include=modules"
           jq -r '.result.modules[] | select(.name == "worker-v11.js") | .content_base64' "${work_dir}/version-after.json" | base64 --decode > "${work_dir}/worker-after.js"
           test "$(sha256sum "${work_dir}/worker-after.js" | cut -d' ' -f1)" = "${EXPECTED_AFTER_SHA}"
-          jq -S '[.result.bindings[] | {name, type}] | sort_by(.name)' "${work_dir}/version-after.json" > "${work_dir}/bindings-after.json"
-          cmp "${work_dir}/bindings-before.json" "${work_dir}/bindings-after.json"
+          jq -S '[.result.bindings[] | select(.name != "ASSETS") | {name, type}] | sort_by(.name)' "${work_dir}/version-before.json" > "${work_dir}/non-asset-bindings-before.json"
+          jq -S '[.result.bindings[] | select(.name != "ASSETS") | {name, type}] | sort_by(.name)' "${work_dir}/version-after.json" > "${work_dir}/non-asset-bindings-after.json"
+          cmp "${work_dir}/non-asset-bindings-before.json" "${work_dir}/non-asset-bindings-after.json"
+          jq -e '[.result.bindings[].name] | index("ASSETS") != null' "${work_dir}/version-after.json" >/dev/null
 
           curl -sS -H "${auth}" -o "${work_dir}/schedules-after.json" "${api}/workers/scripts/${WORKER_NAME}/schedules" || true
           if jq -e '.success == true' "${work_dir}/schedules-before.json" >/dev/null 2>&1 && jq -e '.success == true' "${work_dir}/schedules-after.json" >/dev/null 2>&1; then
