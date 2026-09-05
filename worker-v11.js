@@ -629,7 +629,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   const beforePriceCluster = window.length;
   if (!window.length) {
     logComparableDiagnostics(requestId, subject, raw, qualified, window, [], [], windowDays, 10, queryAudit, "insufficient_local_sold_evidence", sizeFallbackUsed);
-    return unavailableComp("No same-type local sale was found within the 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !sizeFallbackUsed && !!livingAreaBounds(subject)?.banded, sizeFallbackUsed, sizeRule: sizeFallbackUsed ? "same_type_only_fallback" : "exact_living_area_band", subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_same_building_same_street_or_verified_radius", localOnly: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
+    return unavailableComp("No same-type local sale was found within the 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject, env.DIAGNOSTIC_MODE === "true"), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !sizeFallbackUsed && !!livingAreaBounds(subject)?.banded, sizeFallbackUsed, sizeRule: sizeFallbackUsed ? "same_type_only_fallback" : "exact_living_area_band", subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_same_building_same_street_or_verified_radius", localOnly: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
   }
   const clusterMedian = medianPrice(window.map((candidate) => candidate.price));
   const priceTolerancePct = 10;
@@ -925,7 +925,7 @@ function filterPriceCluster(candidates, tolerance = 0.1) {
   };
 }
 __name(filterPriceCluster, "filterPriceCluster");
-function comparableDiagnostics(records, subject = null) {
+function comparableDiagnostics(records, subject = null, includePreview = false) {
   const rows = dedupe(records || []);
   const priceKeys = ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"];
   const dateKeys = ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"];
@@ -942,7 +942,7 @@ function comparableDiagnostics(records, subject = null) {
   }
   const exact = subject ? rows.filter((r) => exactComparableType(subject, r)) : rows;
   const exactDates = exact.map((r) => soldRecordDate(r)).filter(Boolean).sort((a, b) => a - b);
-  return {
+  const result = {
     returned: rows.length,
     exactSubtype: exact.length,
     soldWithin100: exact.filter((r) => isSoldWithinDays(r, 100, subject)).length,
@@ -954,6 +954,26 @@ function comparableDiagnostics(records, subject = null) {
     statuses,
     subtypes
   };
+  if (includePreview && subject) {
+    result.recentExactSubtypePreview = exact.filter((row) => isSoldWithinDays(row, 600, subject)).slice(0, 20).map((row) => {
+      const normalized = normalizeComparable(subject, row);
+      return {
+        listingKey: row.ListingKey || null,
+        address: row.InternetAddressDisplayYN === false ? "Address display restricted" : row.UnparsedAddress || buildAddress(row),
+        community: cleanText(row.CityRegion) || null,
+        postalCode: cleanText(row.PostalCode) || null,
+        propertySubType: cleanText(row.PropertySubType) || null,
+        livingAreaRange: cleanText(row.LivingAreaRange) || null,
+        soldPrice: normalized.price,
+        soldDate: normalized.closeDate,
+        sameRegion: normalized.sameRegion,
+        sameBuilding: normalized.sameBuilding,
+        sameStreetPostal: normalized.sameStreetPostal,
+        distanceKm: normalized.distanceKm
+      };
+    });
+  }
+  return result;
 }
 __name(comparableDiagnostics, "comparableDiagnostics");
 function comparableAddressParts(record) {
@@ -3355,7 +3375,7 @@ async function vowDiagnostics(request, env) {
   const listingKey = clean5(input.get("listingKey"), 40).toUpperCase();
   if (/^[A-Z]\d{7,9}$/.test(listingKey)) probeUrl.searchParams.set("listingKey", listingKey);
   else probeUrl.searchParams.set("q", clean5(input.get("q") || "297 Derrydown Road, Toronto, ON", 500));
-  const response = await worker_v10_default.fetch(new Request(probeUrl.toString(), { method: "GET" }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
+  const response = await worker_v10_default.fetch(new Request(probeUrl.toString(), { method: "GET" }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN, DIAGNOSTIC_MODE: "true" }, { waitUntil() {
   } });
   const body = await response.json().catch(() => null), property2 = body?.property || null, comparables = property2?.comparableContext?.comparables || property2?.comparables || [];
   return json7({
