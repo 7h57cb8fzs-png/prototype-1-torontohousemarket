@@ -82,7 +82,7 @@ jobs:
             name="$(printf '%s' "${binding}" | jq -r '.name')"
             value="$(printf '%s' "${binding}" | jq -r '.text')"
             wrangler_args+=(--var "${name}:${value}")
-          done < <(jq -r '.result.bindings[] | select(.type == "plain_text") | {name,text} | @base64' "${work_dir}/settings-before.json")
+          done < <(jq -r '.result.bindings[] | select(.type == "plain_text") | {name,text} | @base64' "${work_dir}/version-before.json")
           if ! npx --yes wrangler@4.129.0 deploy --no-bundle "${wrangler_args[@]}" >"${work_dir}/wrangler.log" 2>&1; then
             echo "Wrangler deployment failed; production will be rolled back."
             exit 1
