@@ -960,7 +960,7 @@ function comparableAddressParts(record) {
   if (structuredName) return { number: structuredNumber, street: `${structuredName} ${structuredSuffix}`.trim(), query: structuredName };
   let raw = cleanText(record?.UnparsedAddress || buildAddress(record));
   if (!raw) return { number: null, street: null, query: null };
-  raw = raw.split(",")[0].replace(/\s+(?:unit|suite|apt)\s*[#-]?\s*[a-z0-9-]+$/i, "").replace(/\s+#\s*[a-z0-9-]+$/i, "").trim();
+  raw = raw.split(",")[0].replace(/\s+(?:unit|suite|apt)\s*[#-]?\s*[a-z0-9-]+$/i, "").replace(/\s+#\s*[a-z0-9-]+$/i, "").replace(/\b(road|rd|avenue|ave|street|st|drive|dr|crescent|cres|court|ct|boulevard|blvd|lane|ln|trail|trl|way)\.?\s+[a-z0-9-]+$/i, "$1").trim();
   const unitFirst = raw.match(/^\s*(?:unit\s*)?[a-z0-9]+\s*[-–]\s*(\d+[a-z]?)\s+(.+)$/i);
   const normal = raw.match(/^\s*(\d+[a-z]?)\s+(.+)$/i);
   const match = unitFirst || normal;
