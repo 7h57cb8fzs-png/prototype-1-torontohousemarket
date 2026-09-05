@@ -592,6 +592,8 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   if (!subtype) return unavailableComp("The subject property subtype is unavailable, so an exact-subtype range cannot be produced.");
   const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
   const regionFilter = subject.CityRegion ? `contains(CityRegion,'${odataString(subject.CityRegion)}')` : null;
+  const streetAnchor = comparableStreetAnchor(subject);
+  const streetSearch = streetAnchor ? { name: "same_street", filters: [`contains(UnparsedAddress,'${odataString(streetAnchor)}')`], rowLimit: 200, startSkip: 1e3 } : null;
   const communitySearch = regionFilter ? { name: "same_community", filters: [regionFilter], rowLimit: 300, startSkip: 1e3 } : null;
   const postalSearch = postalPrefix ? { name: "same_postal_prefix_fallback", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`], rowLimit: 500, startSkip: 1e3 } : null;
   const queryAudit = [];
@@ -602,6 +604,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
     raw.push(...result.rows);
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
   }, "runSearch");
+  await runSearch(streetSearch);
   await runSearch(communitySearch || postalSearch);
   let exactSizeQualified = qualifiedSoldComparableRows(subject, raw, 600).filter((candidate) => comparableIsLocal(candidate));
   if (communitySearch && postalSearch && !hasSufficientComparableEvidence(exactSizeQualified)) {
@@ -623,14 +626,19 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   const beforePriceCluster = window.length;
   if (!window.length) {
     logComparableDiagnostics(requestId, subject, raw, qualified, window, [], [], windowDays, 10, queryAudit, "insufficient_local_sold_evidence", sizeFallbackUsed);
-    return unavailableComp("No same-community sale matching the subject's exact property subtype was found within the 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !sizeFallbackUsed && !!livingAreaBounds(subject)?.banded, sizeFallbackUsed, sizeRule: sizeFallbackUsed ? "same_type_only_fallback" : "exact_living_area_band", subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_or_verified_radius", localOnly: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
+    return unavailableComp("No same-type local sale was found within the 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !sizeFallbackUsed && !!livingAreaBounds(subject)?.banded, sizeFallbackUsed, sizeRule: sizeFallbackUsed ? "same_type_only_fallback" : "exact_living_area_band", subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_same_building_same_street_or_verified_radius", localOnly: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
   }
   const clusterMedian = medianPrice(window.map((candidate) => candidate.price));
   const priceTolerancePct = 10;
   const candidates = filterPriceCluster(window, 0.1).matches;
   if (!candidates.length) {
-    logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, [], windowDays, priceTolerancePct, queryAudit, "price_cluster_empty", sizeFallbackUsed);
-    return unavailableComp("No local exact-subtype sale remained after the required 10% median price filter.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !sizeFallbackUsed && !!livingAreaBounds(subject)?.banded, sizeFallbackUsed, sizeRule: sizeFallbackUsed ? "same_type_only_fallback" : "exact_living_area_band", subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_or_verified_radius", localOnly: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0 });
+    const evidenceOnly = [...window].sort(compareComparable).slice(0, 5);
+    logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, evidenceOnly, windowDays, priceTolerancePct, queryAudit, "price_cluster_insufficient_for_valuation", sizeFallbackUsed);
+    return {
+      ...unavailableComp(`${evidenceOnly.length} valid local exact-subtype sold comparable${evidenceOnly.length === 1 ? " was" : "s were"} found, but the prices did not form the required 10% median cluster, so no valuation range was produced.`, evidenceOnly.length, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !sizeFallbackUsed && !!livingAreaBounds(subject)?.banded, sizeFallbackUsed, sizeRule: sizeFallbackUsed ? "same_type_only_fallback" : "exact_living_area_band", subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_same_building_same_street_or_verified_radius", localOnly: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0, evidenceOnly: true }),
+      comparables: evidenceOnly.map(publicComparable),
+      activeForSale
+    };
   }
   const selected = candidates.sort(compareComparable).slice(0, 5);
   const valuationAvailable = selected.length >= 3;
@@ -644,7 +652,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
     sizeFallbackUsed,
     sizeRule: sizeFallbackUsed ? "same_type_only_fallback" : "exact_living_area_band",
     subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal),
-    geographyRule: "same_community_or_verified_radius",
+    geographyRule: "same_community_same_building_same_street_or_verified_radius",
     localOnly: true,
     radiusKm: 5,
     priceTolerancePct,
@@ -754,7 +762,7 @@ function exactComparableType(subject, record) {
 }
 __name(exactComparableType, "exactComparableType");
 function comparableIsLocal(candidate, radiusKm = 5) {
-  return !!candidate && (candidate.sameRegion || Number.isFinite(candidate.distanceKm) && candidate.distanceKm <= radiusKm);
+  return !!candidate && (candidate.sameRegion || candidate.sameBuilding || candidate.sameStreetPostal || Number.isFinite(candidate.distanceKm) && candidate.distanceKm <= radiusKm);
 }
 __name(comparableIsLocal, "comparableIsLocal");
 async function locateRecentHistoryStart(baseFilters, env, windowRows, pageSize, initialSkip = 1e3) {
@@ -866,7 +874,8 @@ var COMPARABLE_SELECT_FIELDS = [
   "PurchaseContractDate", "ListPrice", "ModificationTimestamp", "SystemModificationTimestamp",
   "UnparsedAddress", "InternetAddressDisplayYN", "BedroomsTotal", "BathroomsTotalInteger",
   "LivingAreaRange", "BuildingAreaTotal", "LotWidth", "LotDepth", "ParkingTotal", "Basement",
-  "Latitude", "Longitude", "MapLatitude", "MapLongitude", "GeoLocation"
+  "Latitude", "Longitude", "MapLatitude", "MapLongitude", "GeoLocation",
+  "StreetNumber", "StreetName", "StreetSuffix", "StreetDirSuffix", "UnitNumber"
 ];
 function qualifiedSoldComparableRows(subject, records, maxAgeDays, options = {}) {
   const requireCompatibleSize = options.requireCompatibleSize !== false;
@@ -944,6 +953,32 @@ function comparableDiagnostics(records, subject = null) {
   };
 }
 __name(comparableDiagnostics, "comparableDiagnostics");
+function comparableAddressParts(record) {
+  const structuredNumber = cleanText(record?.StreetNumber);
+  const structuredName = cleanText(record?.StreetName);
+  const structuredSuffix = cleanText(record?.StreetSuffix);
+  if (structuredName) return { number: structuredNumber, street: `${structuredName} ${structuredSuffix}`.trim(), query: structuredName };
+  let raw = cleanText(record?.UnparsedAddress || buildAddress(record));
+  if (!raw) return { number: null, street: null, query: null };
+  raw = raw.split(",")[0].replace(/\s+(?:unit|suite|apt)\s*[#-]?\s*[a-z0-9-]+$/i, "").replace(/\s+#\s*[a-z0-9-]+$/i, "").trim();
+  const unitFirst = raw.match(/^\s*(?:unit\s*)?[a-z0-9]+\s*[-–]\s*(\d+[a-z]?)\s+(.+)$/i);
+  const normal = raw.match(/^\s*(\d+[a-z]?)\s+(.+)$/i);
+  const match = unitFirst || normal;
+  if (!match) return { number: null, street: raw, query: raw.replace(/\b(?:road|rd|avenue|ave|street|st|drive|dr|crescent|cres|court|ct|boulevard|blvd|lane|ln|trail|trl|way)\.?$/i, "").trim() };
+  const street = match[2].replace(/\s+#\s*[a-z0-9-]+$/i, "").trim();
+  const query = street.replace(/\b(?:road|rd|avenue|ave|street|st|drive|dr|crescent|cres|court|ct|boulevard|blvd|lane|ln|trail|trl|way)\.?$/i, "").trim();
+  return { number: match[1], street, query };
+}
+__name(comparableAddressParts, "comparableAddressParts");
+function normalizedStreetIdentity(value) {
+  return cleanText(value).toLowerCase().replace(/\broad\b/g, "rd").replace(/\bavenue\b/g, "ave").replace(/\bstreet\b/g, "st").replace(/\bdrive\b/g, "dr").replace(/\bcrescent\b/g, "cres").replace(/\bcourt\b/g, "ct").replace(/\bboulevard\b/g, "blvd").replace(/\blane\b/g, "ln").replace(/[^a-z0-9]+/g, " ").trim();
+}
+__name(normalizedStreetIdentity, "normalizedStreetIdentity");
+function comparableStreetAnchor(record) {
+  const query = comparableAddressParts(record).query;
+  return query && normalizedStreetIdentity(query).length >= 4 ? query : null;
+}
+__name(comparableStreetAnchor, "comparableStreetAnchor");
 function normalizeComparable(subject, r) {
   const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""}`;
   const soldLike = /closed|sold/i.test(status);
@@ -966,6 +1001,10 @@ function normalizeComparable(subject, r) {
   const distanceKm = distanceBetweenProperties(subject, r);
   const sameRegion = !!(subject.CityRegion && r.CityRegion && sameText(subject.CityRegion, r.CityRegion));
   const postalA = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3), postalB = String(r.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
+  const subjectAddress = comparableAddressParts(subject), recordAddress = comparableAddressParts(r);
+  const subjectStreet = normalizedStreetIdentity(subjectAddress.street), recordStreet = normalizedStreetIdentity(recordAddress.street);
+  const sameStreet = !!(subjectStreet && recordStreet && subjectStreet === recordStreet);
+  const sameBuilding = !!(sameStreet && subjectAddress.number && recordAddress.number && sameText(subjectAddress.number, recordAddress.number));
   return {
     record: r,
     source,
@@ -976,7 +1015,9 @@ function normalizeComparable(subject, r) {
     closeDate: dateOnly(recordDate),
     distanceKm,
     sameRegion,
-    samePostalPrefix: !!(postalA && postalB && postalA === postalB)
+    samePostalPrefix: !!(postalA && postalB && postalA === postalB),
+    sameStreetPostal: !!(sameStreet && postalA && postalB && postalA === postalB),
+    sameBuilding
   };
 }
 __name(normalizeComparable, "normalizeComparable");
@@ -1055,6 +1096,8 @@ function similarityScore(subject, c) {
 }
 __name(similarityScore, "similarityScore");
 function compareComparable(a, b) {
+  if (!!a.sameBuilding !== !!b.sameBuilding) return a.sameBuilding ? -1 : 1;
+  if (!!a.sameStreetPostal !== !!b.sameStreetPostal) return a.sameStreetPostal ? -1 : 1;
   if (a.distanceKm != null && b.distanceKm != null && Math.abs(a.distanceKm - b.distanceKm) >= 0.15) return a.distanceKm - b.distanceKm;
   if (a.distanceKm != null && b.distanceKm == null) return -1;
   if (a.distanceKm == null && b.distanceKm != null) return 1;
@@ -3373,24 +3416,35 @@ async function vowActiveSample(request, env) {
   const eligible = dedupe(rows).filter((row) => !excluded.has(String(row?.ListingKey || "").toUpperCase())).filter(isActiveForSale).filter((row) => /^[A-Z]\d{7,9}$/.test(String(row?.ListingKey || "").toUpperCase())).filter((row) => cleanText(row?.PropertySubType) && cleanText(row?.CityRegion) && cleanText(row?.PostalCode));
   const buckets = /* @__PURE__ */ new Map();
   for (const row of eligible) {
-    const bucket = cleanText(row.PropertySubType);
+    const prefix = String(row.PostalCode || "").replace(/\s+/g, "").slice(0, 3).toUpperCase();
+    const type = cleanText(row.PropertySubType);
+    const bucket = `${prefix}|${type}`;
     if (!buckets.has(bucket)) buckets.set(bucket, []);
     buckets.get(bucket).push(row);
   }
   const preferredTypes = ["Detached", "Semi-Detached", "Att/Row/Townhouse", "Condo Townhouse", "Condo Apartment"];
   const selected = [];
-  let cursor = 0;
-  while (selected.length < 20 && cursor < 20) {
+  const bucketOffsets = /* @__PURE__ */ new Map();
+  let round = 0;
+  while (selected.length < 20 && round < 20) {
     let added = false;
-    for (const type of preferredTypes) {
-      const row = (buckets.get(type) || [])[cursor];
-      if (!row) continue;
-      selected.push(row);
-      added = true;
+    for (let prefixIndex = 0; prefixIndex < postalPrefixes.length; prefixIndex++) {
+      const prefix = postalPrefixes[prefixIndex];
+      for (let typeOffset = 0; typeOffset < preferredTypes.length; typeOffset++) {
+        const type = preferredTypes[(round + prefixIndex + typeOffset) % preferredTypes.length];
+        const key = `${prefix}|${type}`;
+        const offset = bucketOffsets.get(key) || 0;
+        const row = (buckets.get(key) || [])[offset];
+        if (!row) continue;
+        selected.push(row);
+        bucketOffsets.set(key, offset + 1);
+        added = true;
+        break;
+      }
       if (selected.length >= 20) break;
     }
     if (!added) break;
-    cursor++;
+    round++;
   }
   return json7({
     ok: true,
