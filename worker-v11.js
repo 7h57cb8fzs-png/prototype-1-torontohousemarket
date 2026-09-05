@@ -593,12 +593,12 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
   const regionFilter = subject.CityRegion ? `contains(CityRegion,'${odataString(subject.CityRegion)}')` : null;
   const localSearches = [
-    regionFilter ? { name: "same_community", filters: [regionFilter], startSkip: 0 } : null,
-    postalPrefix ? { name: "same_postal_prefix", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`], startSkip: 1e3 } : null
+    regionFilter ? { name: "same_community", filters: [regionFilter], rowLimit: 300, startSkip: 0 } : null,
+    postalPrefix ? { name: "same_postal_prefix", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`], rowLimit: 500, startSkip: 1e3 } : null
   ].filter(Boolean);
   const queryAudit = [];
   let raw = [];
-  const searchResults = await Promise.all(localSearches.map(async (search) => ({ search, result: await querySoldComparableRows(search.filters, env, 1e3, search.startSkip) })));
+  const searchResults = await Promise.all(localSearches.map(async (search) => ({ search, result: await querySoldComparableRows(search.filters, env, search.rowLimit, search.startSkip) })));
   for (const { search, result } of searchResults) {
     raw.push(...result.rows);
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
@@ -765,6 +765,22 @@ async function locateRecentHistoryStart(baseFilters, env, windowRows, pageSize, 
   };
 }
 __name(locateRecentHistoryStart, "locateRecentHistoryStart");
+async function queryPropertyCount(baseFilters, env) {
+  const params = new URLSearchParams();
+  params.set("$count", "true");
+  params.set("$top", "0");
+  if (baseFilters?.length) params.set("$filter", baseFilters.join(" and "));
+  try {
+    const response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
+    if (!response.ok) return { count: null, meta: { firstStatus: response.status, status: response.status, count: 0 } };
+    const body = await response.json();
+    const count = Number(body?.["@odata.count"]);
+    return { count: Number.isSafeInteger(count) && count >= 0 ? count : null, meta: { firstStatus: response.status, status: response.status, count: 0 } };
+  } catch (error) {
+    return { count: null, meta: { firstStatus: 0, status: 0, count: 0, error: String(error?.name || "fetch_error").slice(0, 80) } };
+  }
+}
+__name(queryPropertyCount, "queryPropertyCount");
 async function querySoldComparableRows(baseFilters, env, top, startSkip = 0) {
   // This AMPRE VOW feed returns sold fields but rejects filters and sorting on
   // those fields. Locate the tail of each permitted local-history result set,
@@ -775,10 +791,17 @@ async function querySoldComparableRows(baseFilters, env, top, startSkip = 0) {
   const pageSize = Math.min(100, top);
   let effectiveStartSkip = startSkip;
   if (startSkip > 0) {
-    const tail = await locateRecentHistoryStart(baseFilters, env, top, pageSize, startSkip);
-    effectiveStartSkip = tail.startSkip;
-    audit.push(...tail.audit);
-    audit.push({ queryScope: "local_history_tail_window", requestedSkip: startSkip, effectiveStartSkip, tailSkip: tail.tailSkip ?? null, reliable: tail.reliable, capped: tail.capped === true });
+    const counted = await queryPropertyCount(baseFilters, env);
+    audit.push({ queryScope: "local_history_count", requestedSkip: startSkip, totalCount: counted.count, ...counted.meta });
+    if (counted.count != null) {
+      effectiveStartSkip = Math.max(0, counted.count - top);
+      audit.push({ queryScope: "local_history_tail_window", requestedSkip: startSkip, effectiveStartSkip, tailSkip: Math.max(0, counted.count - 1), reliable: true, capped: counted.count > 1e5 });
+    } else {
+      const tail = await locateRecentHistoryStart(baseFilters, env, top, pageSize, startSkip);
+      effectiveStartSkip = tail.startSkip;
+      audit.push(...tail.audit);
+      audit.push({ queryScope: "local_history_tail_window", requestedSkip: startSkip, effectiveStartSkip, tailSkip: tail.tailSkip ?? null, reliable: tail.reliable, capped: tail.capped === true });
+    }
   }
   let nextUrl = null;
   const maxPages = Math.max(1, Math.ceil(top / pageSize));
@@ -4230,6 +4253,7 @@ export {
   worker_v11_default as default,
   generateAiNarrative,
   locateRecentHistoryStart,
+  queryPropertyCount,
   mergeCurrentIdxWithVow,
   numberOrNull,
   propertyReportEmail,

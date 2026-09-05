@@ -8,6 +8,7 @@ import {
   filterPriceCluster,
   locateRecentHistoryStart,
   numberOrNull,
+  queryPropertyCount,
   safeAmpreNextLink
 } from "../worker-v11.js";
 
@@ -96,6 +97,26 @@ test("dynamic tail discovery scans the newest bounded history window", async () 
   }
 });
 
+test("property count locates the newest history window in one request", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    return new Response(JSON.stringify({ "@odata.count": 2701, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await queryPropertyCount(["startswith(PostalCode,'L4H')"], { AMPRE_TOKEN: "test-only" });
+    assert.equal(result.count, 2701);
+    assert.equal(calls.length, 1);
+    const decoded = decodeURIComponent(calls[0].replaceAll("+", " "));
+    assert.ok(decoded.includes("$count=true"));
+    assert.ok(decoded.includes("$top=0"));
+    assert.ok(decoded.includes("startswith(PostalCode,'L4H')"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("engine excludes unrelated communities before applying the price screen", async () => {
   const subject = soldRow({ ListingKey: "SUBJECT", UnparsedAddress: "494 Donlands Avenue, Toronto", ClosePrice: null });
   const rows = [
@@ -110,6 +131,10 @@ test("engine excludes unrelated communities before applying the price screen", a
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     calls.push(String(url));
+    const parsed = new URL(String(url));
+    if (parsed.searchParams.get("$count") === "true") {
+      return new Response(JSON.stringify({ "@odata.count": rows.length, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
     return new Response(JSON.stringify({ value: rows }), { status: 200, headers: { "Content-Type": "application/json" } });
   };
   try {
@@ -122,8 +147,8 @@ test("engine excludes unrelated communities before applying the price screen", a
     assert.ok(decodedCalls.some((url) => url.includes("startswith(PostalCode,'M4J')")));
     assert.ok(decodedCalls.every((url) => !url.includes("PropertySubType eq")));
     assert.ok(decodedCalls.some((url) => url.includes("$top=100")));
-    assert.ok(decodedCalls.some((url) => url.includes("$top=1")));
-    assert.ok(decodedCalls.some((url) => /[$]skip=(?:[2-9]\d{3}|\d{5,})/.test(url)));
+    assert.ok(decodedCalls.some((url) => url.includes("$count=true") && url.includes("$top=0")));
+    assert.ok(calls.every((url) => new URL(url).searchParams.get("$top") !== "1"));
     assert.ok(decodedCalls.every((url) => !url.includes("$orderby=")));
   } finally {
     globalThis.fetch = originalFetch;
