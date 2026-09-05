@@ -6,6 +6,7 @@ import {
   distanceBetweenProperties,
   exactComparableType,
   filterPriceCluster,
+  locateRecentHistoryStart,
   numberOrNull,
   safeAmpreNextLink
 } from "../worker-v11.js";
@@ -72,6 +73,29 @@ test("pagination links cannot leave the licensed AMPRE origin", () => {
   assert.match(safeAmpreNextLink("https://query.ampre.ca/odata/Property?$skip=250"), /^https:\/\/query\.ampre\.ca\/odata\/Property/);
 });
 
+test("dynamic tail discovery scans the newest bounded history window", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    const skip = Number(parsed.searchParams.get("$skip") || 0);
+    calls.push(skip);
+    const value = skip <= 2700 ? [{ ListingKey: `ROW-${skip}` }] : [];
+    return new Response(JSON.stringify({ value }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await locateRecentHistoryStart(["startswith(PostalCode,'L4H')"], { AMPRE_TOKEN: "test-only" }, 1000, 100, 1000);
+    assert.equal(result.startSkip, 1800);
+    assert.equal(result.tailSkip, 2700);
+    assert.equal(result.reliable, true);
+    assert.ok(calls.includes(1000));
+    assert.ok(calls.includes(2000));
+    assert.ok(calls.some((skip) => skip > 2700));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("engine excludes unrelated communities before applying the price screen", async () => {
   const subject = soldRow({ ListingKey: "SUBJECT", UnparsedAddress: "494 Donlands Avenue, Toronto", ClosePrice: null });
   const rows = [
@@ -97,8 +121,9 @@ test("engine excludes unrelated communities before applying the price screen", a
     assert.ok(decodedCalls.some((url) => url.includes("contains(CityRegion,'East York')")));
     assert.ok(decodedCalls.some((url) => url.includes("startswith(PostalCode,'M4J')")));
     assert.ok(decodedCalls.every((url) => !url.includes("PropertySubType eq")));
-    assert.ok(decodedCalls.every((url) => url.includes("$top=100")));
-    assert.ok(decodedCalls.some((url) => url.includes("$skip=1000")));
+    assert.ok(decodedCalls.some((url) => url.includes("$top=100")));
+    assert.ok(decodedCalls.some((url) => url.includes("$top=1")));
+    assert.ok(decodedCalls.some((url) => /[$]skip=(?:[2-9]\d{3}|\d{5,})/.test(url)));
     assert.ok(decodedCalls.every((url) => !url.includes("$orderby=")));
   } finally {
     globalThis.fetch = originalFetch;
