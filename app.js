@@ -21,7 +21,6 @@ const offMarketCopy = $("offMarketCopy");
 const seeHomeButton = $("seeHomeButton");
 const deepReportButton = $("deepReportButton");
 const sellerReportButton = $("sellerReportButton");
-const unlockReportButton = $("unlockReportButton");
 const detailsGrid = $("detailsGrid");
 const remarksToggle = $("remarksToggle");
 const listingRemarks = $("listingRemarks");
@@ -112,7 +111,6 @@ analysisForm.addEventListener("submit", async (event) => {
     liveListing = result.property;
     renderListing(liveListing);
     showResult();
-    enrichNearestSchool(liveListing);
 
     const verification = liveListing.inputValidation?.label || "Property checked.";
     setInputStatus("ok", verification);
@@ -323,12 +321,12 @@ function renderAiBrief(listing) {
         setSignal("priceSignal", "Inside THM range", `${money(listing.listPrice)} asking sits inside ${compactMoney(opinion.low)}–${compactMoney(opinion.high)}.`);
       }
     } else {
-      setSignal("priceSignal", listing.listPrice ? `${money(listing.listPrice)} asking` : "Price unavailable", "The private report tests this against qualified licensed sold evidence.");
+      setSignal("priceSignal", listing.listPrice ? `${money(listing.listPrice)} asking` : "Price unavailable", "We will not force a weak comparable range when the match set is too thin.");
     }
   } else if (opinion?.available) {
     setSignal("priceSignal", `${compactMoney(opinion.low)}–${compactMoney(opinion.high)}`, "Indicative off-market value range from the current MLS match set; not an appraisal or CMA.");
   } else {
-    setSignal("priceSignal", "Private review available", "A value range is kept private and shown only when qualified sold evidence supports it.");
+    setSignal("priceSignal", "Deep review available", "There is not enough public MLS data on this screen to responsibly force a value range.");
   }
 
   if (listing.forSale) {
@@ -346,47 +344,27 @@ function renderAiBrief(listing) {
   if (listing.details?.pool && joinValue(listing.details.pool)) flags.push(`Pool: ${joinValue(listing.details.pool)}`);
   setSignal("flagSignal", flags[0] || (listing.forSale ? "Verify material facts" : "Off-market path"), flags.slice(1).join(" · ") || (listing.forSale ? "Condition, legal use and major systems still need in-person or professional verification." : "Use the deeper property or seller report for the next layer."));
 
-  const fitFacts = [
-    listing.propertySubType || listing.propertyType,
-    listing.beds != null && listing.baths != null ? `${listing.beds} bed · ${listing.baths} bath` : null,
-    listing.livingAreaRange ? `${listing.livingAreaRange} sq ft` : null,
-    listing.parkingTotal != null ? `${listing.parkingTotal} parking` : null
-  ].filter(Boolean);
-  setSignal("fitSignal", fitFacts[0] || "Property facts limited", fitFacts.slice(1).join(" · ") || "The private review checks the deeper physical match.");
-
   const focus = listing.showingFocus;
   setSignal("showingSignal", focus?.title || (listing.forSale ? "Condition + layout" : "Deep property review"), focus?.note || "Verify what the listing cannot tell you.");
-
-  renderSchool(listing.schoolSummary);
-}
-
-function renderSchool(school) {
-  if (!school?.name) {
-    setSignal("schoolSignal", "Not yet identified", "Nearest-school research may be unavailable. Confirm attendance boundaries with the school board.");
-    return;
-  }
-  const detail = [
-    school.distanceKm != null ? `${formatNumber(school.distanceKm)} km away` : null,
-    school.board,
-    school.level || school.type
-  ].filter(Boolean).join(" · ");
-  setSignal("schoolSignal", school.name, `${detail || "Closest geographically"}. Attendance eligibility is not confirmed; verify with the school board.`);
-}
-
-async function enrichNearestSchool(listing) {
-  if (listing.schoolSummary?.name || !listing.schoolResearchToken) return;
-  setSignal("schoolSignal", "Locating…", "Checking public school-location data.");
-  try {
-    const response = await fetch(`/api/school-enrichment?token=${encodeURIComponent(listing.schoolResearchToken)}`, { headers: { Accept: "application/json" }, cache: "no-store" });
-    const result = await response.json().catch(() => null);
-    if (liveListing !== listing) return;
-    renderSchool(response.ok ? result?.schoolSummary : null);
-  } catch {
-    if (liveListing === listing) renderSchool(null);
-  }
 }
 
 function renderMarketRead(listing) {
+  const opinion = listing.priceOpinion;
+  const comp = listing.comparableContext;
+  const soldComps = $("soldComps");
+
+  $("soldRangeValue").textContent = opinion?.available ? `${compactMoney(opinion.low)} – ${compactMoney(opinion.high)}` : "No forced range";
+  $("soldRangeNote").textContent = opinion?.available ? `${opinion.confidence || comp?.confidence || "Indicative"} confidence · ${opinion.note || "weighted match set"}` : (opinion?.note || "Not enough reliable public MLS matches.");
+
+  $("compCountValue").textContent = comp?.available ? `${comp.matchCount} closest matches` : comp?.matchCount ? `${comp.matchCount} weak matches` : "Match set unavailable";
+  $("compCountNote").textContent = comp?.basis || "Property type, size, lot and recency weighted";
+
+  const rows = Array.isArray(comp?.comparables) ? comp.comparables.slice(0, 5) : [];
+  soldComps.innerHTML = rows.length ? rows.map((item) => {
+    const facts = [item.beds != null ? `${item.beds} bd` : null, item.baths != null ? `${item.baths} ba` : null, item.livingAreaRange, item.lotWidth && item.lotDepth ? `${formatNumber(item.lotWidth)}×${formatNumber(item.lotDepth)} lot` : null].filter(Boolean).join(" · ");
+    return `<article class="sold-comp"><div><span>${escapeHtml(item.address || "MLS comparable")}</span><small>${escapeHtml([item.soldDate ? formatDate(item.soldDate) : null, facts].filter(Boolean).join(" · "))}</small></div><div><strong>${money(item.soldPrice)}</strong><em>${Math.round(item.similarity || 0)}% match</em></div></article>`;
+  }).join("") : `<div class="sold-comps-empty">No responsible sold-comp set is available for this property yet. THM will not substitute asking prices for sold evidence.</div>`;
+
   $("offerTimingValue").textContent = listing.forSale ? (listing.offerTiming?.label || "Verify") : "Not for sale";
   $("offerTimingNote").textContent = listing.forSale ? (listing.offerTiming?.note || "Confirm before relying on timing.") : "No active showing or offer workflow.";
 
@@ -438,7 +416,6 @@ remarksToggle.addEventListener("click", () => {
 });
 
 seeHomeButton.addEventListener("click", () => openLeadModal("showing"));
-unlockReportButton.addEventListener("click", () => openLeadModal(liveListing?.forSale ? "showing" : "buyer_offmarket"));
 deepReportButton.addEventListener("click", () => openLeadModal("buyer_offmarket"));
 sellerReportButton.addEventListener("click", () => openLeadModal("seller"));
 

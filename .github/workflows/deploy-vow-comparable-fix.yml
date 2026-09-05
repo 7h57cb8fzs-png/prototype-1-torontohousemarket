@@ -31,10 +31,10 @@ jobs:
           node --check worker-v11.js
           node --check app.js
           node --test tests/comparable-engine.test.mjs
-          grep -q 'id="schoolSignal"' index.html
-          grep -q 'id="unlockReportButton"' index.html
-          grep -q 'function enrichNearestSchool' app.js
-          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "7bd4ffedc7beaf9034f85466966b41ba96cc1c8f8e14f6ef87eeb8cdcadce528"
+          grep -q 'AI DECISION BRIEF' index.html
+          grep -q 'RECENT SOLD MLS COMPARABLES' index.html
+          grep -q 'function renderMarketRead' app.js
+          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "8f32c4f4e9f36b20d27aa26ca3c039646beb0c546861fb7109492656412d5ff8"
 
       - name: Deploy with source guard and automatic rollback
         env:
@@ -43,7 +43,7 @@ jobs:
           WORKER_NAME: prototype-1-torontohousemarket
           PRODUCTION_URL: https://torontohousemarket.com
           EXPECTED_BEFORE_SHA: 7bd4ffedc7beaf9034f85466966b41ba96cc1c8f8e14f6ef87eeb8cdcadce528
-          EXPECTED_AFTER_SHA: 7bd4ffedc7beaf9034f85466966b41ba96cc1c8f8e14f6ef87eeb8cdcadce528
+          EXPECTED_AFTER_SHA: 8f32c4f4e9f36b20d27aa26ca3c039646beb0c546861fb7109492656412d5ff8
         run: |
           set -euo pipefail
           work_dir="$(mktemp -d)"
@@ -111,9 +111,10 @@ jobs:
           curl -fsS "${PRODUCTION_URL}/api/version" | jq -e '.ok == true and .vowAccess == true' >/dev/null
           curl -fsS "${PRODUCTION_URL}/" -o "${work_dir}/home.html"
           test "$(wc -c < "${work_dir}/home.html")" -gt 1000
-          grep -q 'INSTANT PROPERTY INTELLIGENCE' "${work_dir}/home.html"
-          curl -fsS "${PRODUCTION_URL}/app.js?v=stage45-20260904" -o "${work_dir}/app.js"
-          grep -q 'function enrichNearestSchool' "${work_dir}/app.js"
+          grep -q 'AI DECISION BRIEF' "${work_dir}/home.html"
+          grep -q 'RECENT SOLD MLS COMPARABLES' "${work_dir}/home.html"
+          curl -fsS "${PRODUCTION_URL}/app.js?v=stage4-20260901" -o "${work_dir}/app.js"
+          grep -q 'function renderMarketRead' "${work_dir}/app.js"
 
           trap - EXIT
           rm -rf "${work_dir}"

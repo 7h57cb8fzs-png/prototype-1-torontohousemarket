@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=stage45-20260904" />
+  <link rel="stylesheet" href="/styles.css?v=stage4-20260901" />
 </head>
 <body>
 <header class="site-header">
@@ -116,35 +116,26 @@
       <div class="content-grid">
         <section class="intel-panel ai-panel">
           <div class="panel-head">
-            <div><span class="panel-kicker">INSTANT PROPERTY INTELLIGENCE</span><h3>The 30-second read.</h3></div>
-            <span class="instant-pill">PUBLIC PREVIEW</span>
+            <div><span class="panel-kicker">AI DECISION BRIEF</span><h3>Useful before you step inside.</h3></div>
+            <span class="instant-pill">READY NOW</span>
           </div>
-          <p class="preview-intro">A fast, property-specific read from the live listing facts. The private report adds licensed sold evidence and a deeper value analysis.</p>
           <div class="ai-grid">
-            <article><span>ASKING SIGNAL</span><strong id="priceSignal">Checking</strong><p id="priceSignalText">Reading the public asking context.</p></article>
+            <article><span>PRICE POSITION</span><strong id="priceSignal">Checking</strong><p id="priceSignalText">Building a property-specific market range.</p></article>
             <article><span>MARKET TIMING</span><strong id="marketSignal">Checking</strong><p id="marketSignalText">Reading listing freshness and offer context.</p></article>
-            <article><span>PROPERTY FIT</span><strong id="fitSignal">Checking</strong><p id="fitSignalText">Reading type, space, lot and parking.</p></article>
-            <article><span>VALUE SENSITIVITY</span><strong id="flagSignal">Checking</strong><p id="flagSignalText">Looking for details that could move value.</p></article>
-            <article><span>SHOWING FOCUS</span><strong id="showingSignal">Checking</strong><p id="showingSignalText">What listing facts and photos cannot confirm.</p></article>
-            <article class="school-card"><span>NEAREST IDENTIFIED SCHOOL</span><strong id="schoolSignal">Locating…</strong><p id="schoolSignalText">Checking public school-location data.</p></article>
+            <article><span>WHAT STANDS OUT</span><strong id="flagSignal">Checking</strong><p id="flagSignalText">Looking for details that can change value or strategy.</p></article>
+            <article><span>WHAT TO VERIFY</span><strong id="showingSignal">Checking</strong><p id="showingSignalText">What photos and listing fields cannot confirm.</p></article>
           </div>
         </section>
 
-        <section class="intel-panel unlock-panel">
-          <div class="unlock-lock" aria-hidden="true">AI</div>
-          <div class="panel-head compact"><div><span class="panel-kicker">PRIVATE BUYER INTELLIGENCE</span><h3>Know what the asking price does not tell you.</h3></div></div>
-          <p class="unlock-copy">Request this property to unlock a private, evidence-led report prepared for you.</p>
-          <div class="unlock-list">
-            <div><span>01</span><p><strong>Closest qualified sold matches</strong><small>Exact subtype, locality, recency and similarity screened.</small></p></div>
-            <div><span>02</span><p><strong>Likely value range + confidence</strong><small>Only when the licensed evidence is strong enough.</small></p></div>
-            <div><span>03</span><p><strong>Offer and showing strategy</strong><small>Property-specific questions, risks and next moves.</small></p></div>
-          </div>
-          <div class="public-status-grid">
+        <section class="intel-panel market-panel">
+          <div class="panel-head compact"><div><span class="panel-kicker">RECENT SOLD MLS COMPARABLES</span><h3>Actual sales, weighted to this home.</h3></div></div>
+          <div class="market-pulse-grid">
+            <div><span>THM RANGE</span><strong id="soldRangeValue">—</strong><small id="soldRangeNote">Checking match quality</small></div>
+            <div><span>MATCH STRENGTH</span><strong id="compCountValue">—</strong><small id="compCountNote">Property type, size, lot and recency weighted</small></div>
             <div><span>OFFER / STATUS</span><strong id="offerTimingValue">—</strong><small id="offerTimingNote">Checking public listing context</small></div>
-            <div><span>MLS TIMING</span><strong id="listingTempoValue">—</strong><small id="listingTempoNote">Checking property history</small></div>
+            <div><span>MLS HISTORY</span><strong id="listingTempoValue">—</strong><small id="listingTempoNote">Checking property history</small></div>
           </div>
-          <button id="unlockReportButton" class="unlock-report-btn" type="button">Request showing + unlock report →</button>
-          <small class="unlock-note">No extra account or email-verification step on the request form.</small>
+          <div id="soldComps" class="sold-comps" aria-live="polite"></div>
         </section>
       </div>
 
@@ -247,6 +238,6 @@
   <div id="galleryCounter" class="gallery-counter"></div>
 </div>
 
-<script src="/app.js?v=stage45-20260904" defer></script>
+<script src="/app.js?v=stage4-20260901" defer></script>
 </body>
 </html>
