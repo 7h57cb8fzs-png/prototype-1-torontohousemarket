@@ -999,6 +999,7 @@ function publicComparable(c) {
   return {
     listingKey: r.ListingKey || null,
     address: r.InternetAddressDisplayYN === false ? "Address display restricted" : r.UnparsedAddress || buildAddress(r),
+    propertySubType: cleanText(r.PropertySubType) || null,
     soldPrice: c.price,
     soldDate: c.closeDate,
     beds: numberOrNull(r.BedroomsTotal),
@@ -3309,10 +3310,37 @@ async function vowDiagnostics(request, env) {
     listingStatus: clean5(property2?.status || property2?.standardStatus, 80) || null,
     soldComparableCount: Array.isArray(comparables) ? comparables.length : 0,
     comparableAvailable: property2?.comparableContext?.available === true,
-    subject: property2 ? { listingKey: property2.listingKey || null, propertySubType: property2.propertySubType || null, community: property2.cityRegion || null } : null,
+    subject: property2 ? {
+      listingKey: property2.listingKey || null,
+      address: property2.address || null,
+      listPrice: property2.listPrice ?? null,
+      propertySubType: property2.propertySubType || null,
+      community: property2.cityRegion || null,
+      postalCode: property2.postalCode || null,
+      livingAreaRange: property2.livingAreaRange || null,
+      beds: property2.beds ?? null,
+      baths: property2.baths ?? null,
+      lotWidth: property2.lotWidth ?? null,
+      lotDepth: property2.lotDepth ?? null,
+      parkingTotal: property2.parkingTotal ?? null
+    } : null,
     policy: property2?.comparableContext?.policy || null,
     retrievalDiagnostics: property2?.comparableContext?.diagnostics || null,
-    selectedComparables: (Array.isArray(comparables) ? comparables : []).map((row) => ({ listingKey: row.listingKey || null, community: row.cityRegion || null, distanceKm: row.distanceKm ?? null, soldDate: row.soldDate || null })),
+    selectedComparables: (Array.isArray(comparables) ? comparables : []).map((row) => ({
+      listingKey: row.listingKey || null,
+      address: row.address || null,
+      community: row.cityRegion || null,
+      propertySubType: row.propertySubType || null,
+      livingAreaRange: row.livingAreaRange || null,
+      beds: row.beds ?? null,
+      baths: row.baths ?? null,
+      soldPrice: row.soldPrice ?? null,
+      soldDate: row.soldDate || null,
+      lotWidth: row.lotWidth ?? null,
+      lotDepth: row.lotDepth ?? null,
+      distanceKm: row.distanceKm ?? null,
+      similarity: row.similarity ?? null
+    })),
     error: response.ok ? null : clean5(body?.error || body?.message || "VOW feed probe failed.", 240)
   }, response.ok ? 200 : 502, { "Cache-Control": "private, no-store" });
 }
@@ -3475,7 +3503,7 @@ async function runTestReportEmail(request, env, leadId) {
 }
 __name(runTestReportEmail, "runTestReportEmail");
 function adminDiagnosticConsole() {
-  const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>THM VOW Diagnostics</title><style>body{font:16px system-ui;max-width:820px;margin:40px auto;padding:0 18px;color:#111827}input,button,select{font:inherit;padding:11px;margin:5px 0}input{width:min(520px,90%)}button{cursor:pointer;background:#3155f5;color:#fff;border:0;border-radius:8px}button.danger{background:#9f1239}pre{white-space:pre-wrap;background:#f3f4f6;padding:16px;border-radius:10px}small{color:#64748b}</style></head><body><h1>Protected comparable diagnostics</h1><p>Read-only diagnostics use the licensed VOW feed. The test-email action regenerates one selected existing report and creates exactly one isolated email job.</p><label>Admin API key<br><input id="key" type="password" autocomplete="current-password"></label><p><button id="load">Load 494 Donlands test lead</button></p><select id="lead"><option value="">Load a matching lead first</option></select><p><button id="diagnose">Run read-only comparable diagnostic</button> <button class="danger" id="send">Generate + send one test report</button></p><small>The send action does not run the general automation queue.</small><pre id="out">Ready.</pre><script>const key=document.getElementById('key'),out=document.getElementById('out'),lead=document.getElementById('lead');async function api(path,options={}){const response=await fetch(path,{...options,headers:{Authorization:'Bearer '+key.value.trim(),'Content-Type':'application/json',...(options.headers||{})},cache:'no-store'});const body=await response.json().catch(()=>null);if(!response.ok)throw new Error(body?.error||'Request failed');return body}document.getElementById('load').onclick=async()=>{try{const body=await api('/api/admin/leads?property=494%20Donlands');const matches=body.leads||[];lead.replaceChildren();for(const x of matches){const option=document.createElement('option');option.value=x.id;option.textContent='494 Donlands · '+String(x.email||'no email')+' · '+x.id.slice(0,8);lead.append(option)}if(!matches.length){const option=document.createElement('option');option.textContent='No matching lead';lead.append(option)}out.textContent=JSON.stringify({matchingLeads:matches.length},null,2)}catch(e){out.textContent=e.message}};document.getElementById('diagnose').onclick=async()=>{try{out.textContent=JSON.stringify(await api('/api/admin/vow/diagnostics?listingKey=E13689546'),null,2)}catch(e){out.textContent=e.message}};document.getElementById('send').onclick=async()=>{if(!lead.value){out.textContent='Load and select a lead first.';return}try{out.textContent='Generating…';out.textContent=JSON.stringify(await api('/api/admin/reports/'+lead.value+'/test-email',{method:'POST',body:'{}'}),null,2)}catch(e){out.textContent=e.message}};</script></body></html>`;
+  const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>THM VOW Diagnostics</title><style>body{font:16px system-ui;max-width:920px;margin:40px auto;padding:0 18px;color:#111827}input,textarea,button,select{font:inherit;padding:11px;margin:5px 0}input,textarea{width:min(720px,90%)}textarea{min-height:120px}button{cursor:pointer;background:#3155f5;color:#fff;border:0;border-radius:8px}button.danger{background:#9f1239}pre{white-space:pre-wrap;background:#f3f4f6;padding:16px;border-radius:10px}small{color:#64748b}</style></head><body><h1>Protected comparable diagnostics</h1><p>Read-only diagnostics use the licensed VOW feed. Batch diagnostics create no leads, reports, jobs or emails.</p><label>Admin API key<br><input id="key" type="password" autocomplete="current-password"></label><label><br>MLS numbers, one per line<br><textarea id="batch" spellcheck="false" placeholder="N13547902&#10;E13563626"></textarea></label><p><button id="runBatch">Run read-only batch</button></p><hr><p><button id="load">Load 494 Donlands test lead</button></p><select id="lead"><option value="">Load a matching lead first</option></select><p><button id="diagnose">Run Donlands diagnostic</button> <button class="danger" id="send">Generate + send one test report</button></p><small>The send action does not run the general automation queue.</small><pre id="out">Ready.</pre><script>const key=document.getElementById('key'),out=document.getElementById('out'),lead=document.getElementById('lead'),batch=document.getElementById('batch');async function api(path,options={}){const response=await fetch(path,{...options,headers:{Authorization:'Bearer '+key.value.trim(),'Content-Type':'application/json',...(options.headers||{})},cache:'no-store'});const body=await response.json().catch(()=>null);if(!response.ok)throw new Error(body?.error||'Request failed');return body}document.getElementById('runBatch').onclick=async()=>{const keys=[...new Set(batch.value.toUpperCase().match(/[A-Z]\d{7,9}/g)||[])].slice(0,10);if(!keys.length){out.textContent='Enter at least one MLS number.';return}out.textContent='Running '+keys.length+' read-only diagnostics…';const results=[];for(const listingKey of keys){try{results.push(await api('/api/admin/vow/diagnostics?listingKey='+encodeURIComponent(listingKey)))}catch(e){results.push({ok:false,subject:{listingKey},error:e.message})}out.textContent=JSON.stringify(results,null,2)} };document.getElementById('load').onclick=async()=>{try{const body=await api('/api/admin/leads?property=494%20Donlands');const matches=body.leads||[];lead.replaceChildren();for(const x of matches){const option=document.createElement('option');option.value=x.id;option.textContent='494 Donlands · '+String(x.email||'no email')+' · '+x.id.slice(0,8);lead.append(option)}if(!matches.length){const option=document.createElement('option');option.textContent='No matching lead';lead.append(option)}out.textContent=JSON.stringify({matchingLeads:matches.length},null,2)}catch(e){out.textContent=e.message}};document.getElementById('diagnose').onclick=async()=>{try{out.textContent=JSON.stringify(await api('/api/admin/vow/diagnostics?listingKey=E13689546'),null,2)}catch(e){out.textContent=e.message}};document.getElementById('send').onclick=async()=>{if(!lead.value){out.textContent='Load and select a lead first.';return}try{out.textContent='Generating…';out.textContent=JSON.stringify(await api('/api/admin/reports/'+lead.value+'/test-email',{method:'POST',body:'{}'}),null,2)}catch(e){out.textContent=e.message}};</script></body></html>`;
   return new Response(body, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'" } });
 }
 __name(adminDiagnosticConsole, "adminDiagnosticConsole");

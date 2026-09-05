@@ -34,3 +34,30 @@ test("delivery reconciliation reads the Resend ID from the existing JSON payload
   assert.ok(source.includes("encodeURIComponent(job.payload.provider_id)"));
   assert.ok(!source.includes('select = "id,provider_id,payload"'));
 });
+
+test("admin diagnostics can audit ten MLS listings without creating report jobs", () => {
+  const consoleMatch = source.match(/function adminDiagnosticConsole\(\) \{([\s\S]*?)\n\}/);
+  assert.ok(consoleMatch, "admin diagnostic console must exist");
+  const body = consoleMatch[1];
+  assert.ok(body.includes('id="batch"'));
+  assert.ok(body.includes("slice(0,10)"));
+  assert.ok(body.includes("Run read-only batch"));
+  assert.ok(body.includes("/api/admin/vow/diagnostics?listingKey="));
+});
+
+test("comparable diagnostics expose the facts needed for a realtor audit", () => {
+  const diagnosticMatch = source.match(/async function vowDiagnostics\(request, env\) \{([\s\S]*?)\n\}/);
+  assert.ok(diagnosticMatch, "VOW diagnostics must exist");
+  const body = diagnosticMatch[1];
+  for (const field of [
+    "listPrice",
+    "propertySubType",
+    "livingAreaRange",
+    "beds",
+    "baths",
+    "soldPrice",
+    "soldDate",
+    "distanceKm",
+    "similarity"
+  ]) assert.ok(body.includes(field), `diagnostics must include ${field}`);
+});
