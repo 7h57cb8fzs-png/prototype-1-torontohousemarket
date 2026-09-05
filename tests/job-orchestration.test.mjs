@@ -41,6 +41,7 @@ test("admin diagnostics can audit ten MLS listings without creating report jobs"
   const body = consoleMatch[1];
   assert.ok(body.includes('id="batch"'));
   assert.ok(body.includes("slice(0,10)"));
+  assert.ok(body.includes("/[A-Z]\\\\d{7,9}/g"), "rendered console must preserve the MLS digit matcher");
   assert.ok(body.includes("Run read-only batch"));
   assert.ok(body.includes("/api/admin/vow/diagnostics?listingKey="));
 });
