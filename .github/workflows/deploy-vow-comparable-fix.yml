@@ -106,7 +106,7 @@ jobs:
 
           curl -sS -H "${auth}" -o "${work_dir}/schedules-after.json" "${api}/workers/scripts/${WORKER_NAME}/schedules" || true
           if jq -e '.success == true' "${work_dir}/schedules-before.json" >/dev/null 2>&1 && jq -e '.success == true' "${work_dir}/schedules-after.json" >/dev/null 2>&1; then
-            diff -u <(jq -S '.result' "${work_dir}/schedules-before.json") <(jq -S '.result' "${work_dir}/schedules-after.json")
+            diff -u <(jq -S '[.result[].cron]' "${work_dir}/schedules-before.json") <(jq -S '[.result[].cron]' "${work_dir}/schedules-after.json")
           fi
           curl -fsS "${PRODUCTION_URL}/api/version" | jq -e '.ok == true and .vowAccess == true' >/dev/null
           curl -fsS "${PRODUCTION_URL}/" -o "${work_dir}/home.html"
