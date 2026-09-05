@@ -35,12 +35,14 @@ test("delivery reconciliation reads the Resend ID from the existing JSON payload
   assert.ok(!source.includes('select = "id,provider_id,payload"'));
 });
 
-test("admin diagnostics can audit ten MLS listings without creating report jobs", () => {
+test("admin diagnostics can audit twenty MLS listings without creating report jobs", () => {
   const consoleMatch = source.match(/function adminDiagnosticConsole\(\) \{([\s\S]*?)\n\}/);
   assert.ok(consoleMatch, "admin diagnostic console must exist");
   const body = consoleMatch[1];
   assert.ok(body.includes('id="batch"'));
-  assert.ok(body.includes("slice(0,10)"));
+  assert.ok(body.includes("slice(0,30)"));
+  assert.ok(body.includes("Load 20 current active listings"));
+  assert.ok(source.includes('url.pathname === "/api/admin/vow/active-sample"'));
   assert.ok(body.includes("/[A-Z]\\\\d{7,9}/g"), "rendered console must preserve the MLS digit matcher");
   assert.ok(body.includes("Run read-only batch"));
   assert.ok(body.includes("/api/admin/vow/diagnostics?listingKey="));
