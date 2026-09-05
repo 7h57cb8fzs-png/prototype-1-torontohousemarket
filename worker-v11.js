@@ -662,7 +662,7 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
   const unique = dedupe(raw || []);
   const notSubject = unique.filter((row) => row.ListingKey !== subject?.ListingKey);
   const exactSubtype = notSubject.filter((row) => exactComparableType(subject, row));
-  const soldWithin300 = exactSubtype.filter((row) => isSoldWithinDays(row, 300));
+  const soldWithin300 = exactSubtype.filter((row) => isSoldWithinDays(row, 300, subject));
   const selectedWithDistance = (selected || []).filter((row) => Number.isFinite(row.distanceKm));
   const subjectCoordinates = propertyCoordinates(subject);
   diagnosticLog("log", "comparable_selection_diagnostic", {
@@ -822,7 +822,7 @@ async function querySoldComparableRows(baseFilters, env, top, startSkip = 0) {
 }
 __name(querySoldComparableRows, "querySoldComparableRows");
 function qualifiedSoldComparableRows(subject, records, maxAgeDays) {
-  return dedupe(records || []).filter((record) => record.ListingKey !== subject.ListingKey).filter((record) => exactComparableType(subject, record)).filter((record) => isSoldWithinDays(record, maxAgeDays)).map((record) => {
+  return dedupe(records || []).filter((record) => record.ListingKey !== subject.ListingKey).filter((record) => exactComparableType(subject, record)).filter((record) => isSoldWithinDays(record, maxAgeDays, subject)).map((record) => {
     const candidate = normalizeComparable(subject, record);
     const soldDate = soldRecordDate(record);
     return { ...candidate, ageDays: soldDate ? Math.max(0, (Date.now() - soldDate.getTime()) / 864e5) : Number.POSITIVE_INFINITY };
@@ -865,9 +865,9 @@ function comparableDiagnostics(records, subject = null) {
   return {
     returned: rows.length,
     exactSubtype: exact.length,
-    soldWithin100: exact.filter((r) => isSoldWithinDays(r, 100)).length,
-    soldWithin300: exact.filter((r) => isSoldWithinDays(r, 300)).length,
-    soldWithin600: exact.filter((r) => isSoldWithinDays(r, 600)).length,
+    soldWithin100: exact.filter((r) => isSoldWithinDays(r, 100, subject)).length,
+    soldWithin300: exact.filter((r) => isSoldWithinDays(r, 300, subject)).length,
+    soldWithin600: exact.filter((r) => isSoldWithinDays(r, 600, subject)).length,
     soldDateRange: exactDates.length ? { oldest: dateOnly(exactDates[0]), newest: dateOnly(exactDates[exactDates.length - 1]), future: exactDates.filter((d) => d.getTime() > Date.now()).length } : null,
     priceFields: present(priceKeys),
     dateFields: present(dateKeys),
@@ -912,12 +912,16 @@ function normalizeComparable(subject, r) {
   };
 }
 __name(normalizeComparable, "normalizeComparable");
-function isSoldWithinDays(r, windowDays) {
+function isSoldWithinDays(r, windowDays, subject = null) {
   const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""}`;
+  const transaction = String(r?.TransactionType || "");
   const price = firstFiniteNumber(r, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"]);
   const date = soldRecordDate(r);
   const soldEvidence = /closed|sold|deal firm/i.test(status) || !!validDate(firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"]));
+  if (/lease|leased|rent|rented/i.test(`${status} ${transaction}`)) return false;
   if (!soldEvidence || !price || !date) return false;
+  const subjectPrice = firstFiniteNumber(subject, ["ListPrice", "ClosePrice", "SoldPrice", "SalePrice"]);
+  if (subjectPrice >= 1e5 && price < Math.max(5e4, subjectPrice * 0.15)) return false;
   const ageDays = (Date.now() - date.getTime()) / 864e5;
   return ageDays >= 0 && ageDays <= windowDays;
 }
@@ -4253,6 +4257,7 @@ export {
   worker_v11_default as default,
   generateAiNarrative,
   locateRecentHistoryStart,
+  isSoldWithinDays,
   queryPropertyCount,
   mergeCurrentIdxWithVow,
   numberOrNull,

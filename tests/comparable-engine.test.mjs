@@ -6,6 +6,7 @@ import {
   distanceBetweenProperties,
   exactComparableType,
   filterPriceCluster,
+  isSoldWithinDays,
   locateRecentHistoryStart,
   numberOrNull,
   queryPropertyCount,
@@ -55,6 +56,14 @@ test("property subtype matching is exact", () => {
   assert.equal(exactComparableType({ PropertySubType: "Detached" }, { PropertySubType: "Detached" }), true);
   assert.equal(exactComparableType({ PropertySubType: "Detached" }, { PropertySubType: "Semi-Detached" }), false);
   assert.equal(exactComparableType({ PropertySubType: "Att/Row/Townhouse" }, { PropertySubType: "Condo Townhouse" }), false);
+});
+
+test("closed rental listings cannot become sold comparables", () => {
+  const subject = soldRow({ ListPrice: 1128000, ClosePrice: null });
+  assert.equal(isSoldWithinDays(soldRow({ TransactionType: "For Lease", ClosePrice: 3950 }), 100, subject), false);
+  assert.equal(isSoldWithinDays(soldRow({ MlsStatus: "Leased", ClosePrice: 3900 }), 100, subject), false);
+  assert.equal(isSoldWithinDays(soldRow({ TransactionType: "For Sale", ClosePrice: 3800 }), 100, subject), false);
+  assert.equal(isSoldWithinDays(soldRow({ TransactionType: "For Sale", ClosePrice: 1050000 }), 100, subject), true);
 });
 
 test("price screen uses the geographically qualified candidate median", () => {
