@@ -45,9 +45,9 @@ test("distance is calculated only from real coordinates", () => {
   assert.ok(km > 1 && km < 2);
 });
 
-test("locality accepts same community, same postal prefix, or verified radius only", () => {
+test("locality accepts only the same community or a verified radius", () => {
   assert.equal(comparableIsLocal({ sameRegion: true, samePostalPrefix: false, distanceKm: null }), true);
-  assert.equal(comparableIsLocal({ sameRegion: false, samePostalPrefix: true, distanceKm: null }), true);
+  assert.equal(comparableIsLocal({ sameRegion: false, samePostalPrefix: true, distanceKm: null }), false);
   assert.equal(comparableIsLocal({ sameRegion: false, samePostalPrefix: false, distanceKm: 4.9 }), true);
   assert.equal(comparableIsLocal({ sameRegion: false, samePostalPrefix: false, distanceKm: 5.1 }), false);
   assert.equal(comparableIsLocal({ sameRegion: false, samePostalPrefix: false, distanceKm: null }), false);
@@ -59,12 +59,12 @@ test("property subtype matching is exact", () => {
   assert.equal(exactComparableType({ PropertySubType: "Att/Row/Townhouse" }, { PropertySubType: "Condo Townhouse" }), false);
 });
 
-test("known living-area bands must overlap or be genuinely adjacent", () => {
+test("known living-area bands must match exactly", () => {
   const subject = { LivingAreaRange: "2500-3000" };
   assert.equal(comparableHasCompatibleSize(subject, { LivingAreaRange: "2500-3000" }), true);
-  assert.equal(comparableHasCompatibleSize(subject, { LivingAreaRange: "2000-2500" }), true);
+  assert.equal(comparableHasCompatibleSize(subject, { LivingAreaRange: "2000-2500" }), false);
   assert.equal(comparableHasCompatibleSize(subject, { LivingAreaRange: "1500-2000" }), false);
-  assert.equal(comparableHasCompatibleSize(subject, { LivingAreaRange: null }), true);
+  assert.equal(comparableHasCompatibleSize(subject, { LivingAreaRange: null }), false);
 });
 
 test("closed rental listings cannot become sold comparables", () => {
@@ -162,12 +162,46 @@ test("engine excludes unrelated communities before applying the price screen", a
     assert.ok(result.comparables.every((row) => row.cityRegion === "East York"));
     const decodedCalls = calls.map((url) => decodeURIComponent(url.replaceAll("+", " ")));
     assert.ok(decodedCalls.some((url) => url.includes("contains(CityRegion,'East York')")));
-    assert.ok(decodedCalls.some((url) => url.includes("startswith(PostalCode,'M4J')")));
+    assert.ok(decodedCalls.every((url) => !url.includes("startswith(PostalCode,'M4J')")), "postal fallback should not run when community evidence is sufficient");
     assert.ok(decodedCalls.every((url) => !url.includes("PropertySubType eq")));
     assert.ok(decodedCalls.some((url) => url.includes("$top=100")));
-    assert.ok(decodedCalls.some((url) => url.includes("$count=true") && url.includes("$top=0")));
     assert.ok(calls.every((url) => new URL(url).searchParams.get("$top") !== "1"));
     assert.ok(decodedCalls.every((url) => !url.includes("$orderby=")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("engine uses the postal history scan only when community evidence is insufficient", async () => {
+  const subject = soldRow({ ListingKey: "SUBJECT", UnparsedAddress: "494 Donlands Avenue, Toronto", ClosePrice: null });
+  const communityRows = [
+    soldRow({ ListingKey: "COMMUNITY1", ClosePrice: 950000 }),
+    soldRow({ ListingKey: "COMMUNITY2", ClosePrice: 975000 })
+  ];
+  const postalRows = [
+    ...communityRows,
+    soldRow({ ListingKey: "POSTAL3", ClosePrice: 1000000 }),
+    soldRow({ ListingKey: "POSTAL4", ClosePrice: 1025000 })
+  ];
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls.push(String(url));
+    const decoded = decodeURIComponent(String(url).replaceAll("+", " "));
+    const parsed = new URL(String(url));
+    if (parsed.searchParams.get("$count") === "true") {
+      return new Response(JSON.stringify({ "@odata.count": postalRows.length, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    const value = decoded.includes("startswith(PostalCode,'M4J')") ? postalRows : communityRows;
+    return new Response(JSON.stringify({ value }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only" }, true, "postal-fallback-test");
+    assert.equal(result.available, true);
+    assert.deepEqual(result.comparables.map((row) => row.listingKey).sort(), ["COMMUNITY1", "COMMUNITY2", "POSTAL3", "POSTAL4"]);
+    const decodedCalls = calls.map((url) => decodeURIComponent(url.replaceAll("+", " ")));
+    assert.ok(decodedCalls.some((url) => url.includes("contains(CityRegion,'East York')")));
+    assert.ok(decodedCalls.some((url) => url.includes("startswith(PostalCode,'M4J')")));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -203,8 +237,39 @@ test("engine does not reuse small-home sales for a materially larger townhouse",
   try {
     const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only" }, true, "size-gate-test");
     assert.equal(result.available, true);
-    assert.deepEqual(result.comparables.map((row) => row.listingKey).sort(), ["LARGE-1", "LARGE-2", "LARGE-3", "LARGE-4"]);
+    assert.deepEqual(result.comparables.map((row) => row.listingKey).sort(), ["LARGE-1", "LARGE-2", "LARGE-4"]);
     assert.ok(result.comparables.every((row) => row.livingAreaRange !== "1500-2000"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a 2000-2500 subject cannot reuse the Davos 1500-2000 comparables", async () => {
+  const subject = soldRow({
+    ListingKey: "LINDBERGH",
+    PropertySubType: "Att/Row/Townhouse",
+    CityRegion: "Vellore Village",
+    PostalCode: "L4H 1M1",
+    LivingAreaRange: "2000-2500",
+    ListPrice: 950000,
+    ClosePrice: null
+  });
+  const rows = [
+    ...["LAURELHURST", "WARDLAW", "MONTE-CARLO"].map((key, index) => soldRow({ ListingKey: key, PropertySubType: "Att/Row/Townhouse", CityRegion: "Vellore Village", PostalCode: "L4H 2M8", LivingAreaRange: "1500-2000", ClosePrice: 900000 + index * 10000 })),
+    ...["EXACT-1", "EXACT-2", "EXACT-3"].map((key, index) => soldRow({ ListingKey: key, PropertySubType: "Att/Row/Townhouse", CityRegion: "Vellore Village", PostalCode: "L4H 1M2", LivingAreaRange: "2000-2500", ClosePrice: 1000000 + index * 10000 }))
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.searchParams.get("$count") === "true") return new Response(JSON.stringify({ "@odata.count": rows.length, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    assert.match(decodeURIComponent(String(url)), /\$select=.*ListingKey/);
+    return new Response(JSON.stringify({ value: rows }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only" }, true, "lindbergh-size-regression");
+    assert.equal(result.available, true);
+    assert.deepEqual(result.comparables.map((row) => row.listingKey).sort(), ["EXACT-1", "EXACT-2", "EXACT-3"]);
+    assert.equal(result.policy.exactLivingAreaBand, true);
   } finally {
     globalThis.fetch = originalFetch;
   }

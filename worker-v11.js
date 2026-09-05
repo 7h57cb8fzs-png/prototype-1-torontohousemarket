@@ -592,18 +592,22 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   if (!subtype) return unavailableComp("The subject property subtype is unavailable, so an exact-subtype range cannot be produced.");
   const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
   const regionFilter = subject.CityRegion ? `contains(CityRegion,'${odataString(subject.CityRegion)}')` : null;
-  const localSearches = [
-    regionFilter ? { name: "same_community", filters: [regionFilter], rowLimit: 300, startSkip: 0 } : null,
-    postalPrefix ? { name: "same_postal_prefix", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`], rowLimit: 500, startSkip: 1e3 } : null
-  ].filter(Boolean);
+  const communitySearch = regionFilter ? { name: "same_community", filters: [regionFilter], rowLimit: 300, startSkip: 1e3 } : null;
+  const postalSearch = postalPrefix ? { name: "same_postal_prefix_fallback", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`], rowLimit: 500, startSkip: 1e3 } : null;
   const queryAudit = [];
   let raw = [];
-  const searchResults = await Promise.all(localSearches.map(async (search) => ({ search, result: await querySoldComparableRows(search.filters, env, search.rowLimit, search.startSkip) })));
-  for (const { search, result } of searchResults) {
+  const runSearch = /* @__PURE__ */ __name(async (search) => {
+    if (!search) return;
+    const result = await querySoldComparableRows(search.filters, env, search.rowLimit, search.startSkip);
     raw.push(...result.rows);
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
+  }, "runSearch");
+  await runSearch(communitySearch || postalSearch);
+  let qualified = qualifiedSoldComparableRows(subject, raw, 300).filter((candidate) => comparableIsLocal(candidate));
+  if (communitySearch && postalSearch && !hasSufficientComparableEvidence(qualified)) {
+    await runSearch(postalSearch);
+    qualified = qualifiedSoldComparableRows(subject, raw, 300).filter((candidate) => comparableIsLocal(candidate));
   }
-  const qualified = qualifiedSoldComparableRows(subject, raw, 300).filter((candidate) => comparableIsLocal(candidate));
   let windowDays = 100;
   let window = qualified.filter((candidate) => candidate.ageDays <= 100);
   if (window.length < 3) {
@@ -625,7 +629,21 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   const selected = candidates.sort(compareComparable).slice(0, 5);
   const valuationAvailable = selected.length >= 3;
   logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, selected, windowDays, priceTolerancePct, queryAudit, valuationAvailable ? "selected" : "insufficient_qualified_comparables");
-  const policy = { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, localOnly: true, radiusKm: 5, priceTolerancePct, clusterMedian, beforePriceCluster, afterPriceCluster: candidates.length };
+  const subjectArea = livingAreaBounds(subject);
+  const policy = {
+    windowDays,
+    expandedWindow: windowDays > 100,
+    exactSubtype: true,
+    exactLivingAreaBand: !!subjectArea?.banded,
+    subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal),
+    geographyRule: "same_community_or_verified_radius",
+    localOnly: true,
+    radiusKm: 5,
+    priceTolerancePct,
+    clusterMedian,
+    beforePriceCluster,
+    afterPriceCluster: candidates.length
+  };
   if (!valuationAvailable) {
     return {
       ...unavailableComp(`Only ${selected.length} local exact-subtype sold comparable${selected.length === 1 ? " was" : "s were"} available after the required 10% price screen; at least 3 are required for a price range.`, selected.length, { ...comparableDiagnostics(raw, subject), queryAudit }, policy),
@@ -658,6 +676,14 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   };
 }
 __name(buildComparableContext, "buildComparableContext");
+function hasSufficientComparableEvidence(candidates) {
+  for (const windowDays of [100, 300]) {
+    const window = (candidates || []).filter((candidate) => candidate.ageDays <= windowDays);
+    if (filterPriceCluster(window, 0.1).matches.length >= 3) return true;
+  }
+  return false;
+}
+__name(hasSufficientComparableEvidence, "hasSufficientComparableEvidence");
 function logComparableDiagnostics(requestId, subject, raw, qualified, window, clustered, selected, windowDays, priceTolerancePct, queryAudit, status) {
   const unique = dedupe(raw || []);
   const notSubject = unique.filter((row) => row.ListingKey !== subject?.ListingKey);
@@ -717,7 +743,7 @@ function exactComparableType(subject, record) {
 }
 __name(exactComparableType, "exactComparableType");
 function comparableIsLocal(candidate, radiusKm = 5) {
-  return !!candidate && (candidate.sameRegion || candidate.samePostalPrefix || Number.isFinite(candidate.distanceKm) && candidate.distanceKm <= radiusKm);
+  return !!candidate && (candidate.sameRegion || Number.isFinite(candidate.distanceKm) && candidate.distanceKm <= radiusKm);
 }
 __name(comparableIsLocal, "comparableIsLocal");
 async function locateRecentHistoryStart(baseFilters, env, windowRows, pageSize, initialSkip = 1e3) {
@@ -808,9 +834,9 @@ async function querySoldComparableRows(baseFilters, env, top, startSkip = 0) {
   let nextUrl = null;
   const maxPages = Math.max(1, Math.ceil(top / pageSize));
   for (let page = 0; page < maxPages && rows.length < top; page++) {
-    let result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "", effectiveStartSkip);
+    let result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "", effectiveStartSkip, COMPARABLE_SELECT_FIELDS);
     if (page === 0 && effectiveStartSkip > 0 && result.meta.status === 200 && !result.rows.length) {
-      result = await queryPropertiesDetailed(baseFilters, env, pageSize, "", 0);
+      result = await queryPropertiesDetailed(baseFilters, env, pageSize, "", 0, COMPARABLE_SELECT_FIELDS);
       audit.push({ queryScope: "local_history_skip_fallback", page, requestedSkip: effectiveStartSkip, ...result.meta });
     }
     audit.push({ queryScope: "local_exact_subtype_page", page, requestedSkip: page === 0 ? effectiveStartSkip : null, ...result.meta });
@@ -823,6 +849,14 @@ async function querySoldComparableRows(baseFilters, env, top, startSkip = 0) {
   return { rows: dedupe(rows), audit };
 }
 __name(querySoldComparableRows, "querySoldComparableRows");
+var COMPARABLE_SELECT_FIELDS = [
+  "ListingKey", "PropertySubType", "PropertyType", "CityRegion", "City", "PostalCode",
+  "StandardStatus", "MlsStatus", "ContractStatus", "TransactionType", "ClosePrice",
+  "PurchaseContractDate", "ListPrice", "ModificationTimestamp", "SystemModificationTimestamp",
+  "UnparsedAddress", "InternetAddressDisplayYN", "BedroomsTotal", "BathroomsTotalInteger",
+  "LivingAreaRange", "BuildingAreaTotal", "LotWidth", "LotDepth", "ParkingTotal", "Basement",
+  "Latitude", "Longitude", "GeoLocation"
+];
 function qualifiedSoldComparableRows(subject, records, maxAgeDays) {
   return dedupe(records || []).filter((record) => record.ListingKey !== subject.ListingKey).filter((record) => exactComparableType(subject, record)).filter((record) => comparableHasCompatibleSize(subject, record)).filter((record) => isSoldWithinDays(record, maxAgeDays, subject)).map((record) => {
     const candidate = normalizeComparable(subject, record);
@@ -833,19 +867,22 @@ function qualifiedSoldComparableRows(subject, records, maxAgeDays) {
 __name(qualifiedSoldComparableRows, "qualifiedSoldComparableRows");
 function livingAreaBounds(record) {
   const numbers = String(record?.LivingAreaRange || "").match(/\d[\d,]*/g)?.map((number) => Number(number.replace(/,/g, ""))).filter((number) => Number.isFinite(number) && number > 0) || [];
-  if (numbers.length >= 2) return { low: Math.min(numbers[0], numbers[1]), high: Math.max(numbers[0], numbers[1]) };
+  if (numbers.length >= 2) return { low: Math.min(numbers[0], numbers[1]), high: Math.max(numbers[0], numbers[1]), banded: true };
   const exact = numbers[0] || numberOrNull(record?.BuildingAreaTotal);
-  return exact ? { low: exact, high: exact } : null;
+  return exact ? { low: exact, high: exact, banded: false } : null;
 }
 __name(livingAreaBounds, "livingAreaBounds");
 function comparableHasCompatibleSize(subject, record) {
   const subjectArea = livingAreaBounds(subject);
   const comparableArea = livingAreaBounds(record);
-  if (!subjectArea || !comparableArea) return true;
-  if (Math.min(subjectArea.high, comparableArea.high) >= Math.max(subjectArea.low, comparableArea.low)) return true;
+  if (!subjectArea) return true;
+  if (!comparableArea) return false;
+  if (subjectArea.banded && comparableArea.banded) return subjectArea.low === comparableArea.low && subjectArea.high === comparableArea.high;
+  if (subjectArea.banded) return comparableArea.low >= subjectArea.low && comparableArea.high <= subjectArea.high;
+  if (comparableArea.banded) return subjectArea.low >= comparableArea.low && subjectArea.high <= comparableArea.high;
   const subjectMid = (subjectArea.low + subjectArea.high) / 2;
   const comparableMid = (comparableArea.low + comparableArea.high) / 2;
-  return Math.abs(subjectMid - comparableMid) / subjectMid <= 0.22;
+  return Math.abs(subjectMid - comparableMid) / subjectMid <= 0.15;
 }
 __name(comparableHasCompatibleSize, "comparableHasCompatibleSize");
 function medianPrice(values) {
@@ -1122,12 +1159,13 @@ async function queryProperties(filters, env, top = 100, orderby = "ModificationT
   return (await queryPropertiesDetailed(filters, env, top, orderby)).rows;
 }
 __name(queryProperties, "queryProperties");
-async function queryPropertiesDetailed(filters, env, top = 100, orderby = "ModificationTimestamp desc,ListingKey desc", skip = 0) {
+async function queryPropertiesDetailed(filters, env, top = 100, orderby = "ModificationTimestamp desc,ListingKey desc", skip = 0, selectFields = null) {
   const params = new URLSearchParams();
   params.set("$top", String(top));
   if (skip > 0) params.set("$skip", String(skip));
   if (filters?.length) params.set("$filter", filters.join(" and "));
   if (orderby) params.set("$orderby", orderby);
+  if (Array.isArray(selectFields) && selectFields.length) params.set("$select", selectFields.join(","));
   try {
     let response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
     const firstStatus = response.status;
@@ -1138,10 +1176,17 @@ async function queryPropertiesDetailed(filters, env, top = 100, orderby = "Modif
       params.delete("$orderby");
       response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
     }
-    if (!response.ok) return { rows: [], nextLink: null, meta: { firstStatus, status: response.status, retried, count: 0 } };
+    let selectFallback = false;
+    if (!response.ok && params.has("$select")) {
+      selectFallback = true;
+      retried = true;
+      params.delete("$select");
+      response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
+    }
+    if (!response.ok) return { rows: [], nextLink: null, meta: { firstStatus, status: response.status, retried, selectFallback, count: 0 } };
     const body = await response.json();
     const rows = Array.isArray(body.value) ? body.value : [];
-    return { rows, nextLink: safeAmpreNextLink(body["@odata.nextLink"]), meta: { firstStatus, status: response.status, retried, count: rows.length } };
+    return { rows, nextLink: safeAmpreNextLink(body["@odata.nextLink"]), meta: { firstStatus, status: response.status, retried, selectFallback, count: rows.length } };
   } catch (error) {
     return { rows: [], nextLink: null, meta: { firstStatus: 0, status: 0, retried: false, count: 0, error: String(error?.name || "fetch_error").slice(0, 80) } };
   }
@@ -3506,11 +3551,18 @@ async function runScheduledNotifications(env) {
 }
 __name(runScheduledNotifications, "runScheduledNotifications");
 async function processAutomationJobs(env) {
-  // Deliver already-ready emails before expensive VOW report generation.
-  // A report completed in this run is delivered by the next minute's fresh invocation.
-  const emails = await processEmailJobs(env, 20);
-  const reports = await processReportJobs(env, 3);
-  return { reports, emails };
+  // Deliver already-ready emails first, generate one report, then immediately
+  // deliver the email unlocked by that report in the same scheduled invocation.
+  const delivery = await reconcileRecentEmailDeliveries(env, 5);
+  const emailsBefore = await processEmailJobs(env, 20);
+  const reports = await processReportJobs(env, 1);
+  const emailsAfter = reports.completed ? await processEmailJobs(env, 20) : { claimed: 0, sent: 0, failed: 0 };
+  const emails = {
+    claimed: Number(emailsBefore.claimed || 0) + Number(emailsAfter.claimed || 0),
+    sent: Number(emailsBefore.sent || 0) + Number(emailsAfter.sent || 0),
+    failed: Number(emailsBefore.failed || 0) + Number(emailsAfter.failed || 0)
+  };
+  return { reports, emails, delivery };
 }
 __name(processAutomationJobs, "processAutomationJobs");
 async function processReportJobs(env, limit = 3) {
@@ -3623,7 +3675,7 @@ async function buildPropertyReport(env, lead, property2, requestId = null) {
     high: comp.rangeHigh || null,
     confidence: evidenceAgeDays != null && evidenceAgeDays > 540 && comp.available ? "Low" : comp.confidence || "Unavailable",
     basis: `${comp.basis || "The protected feed did not return enough reliable sold matches to calculate a responsible range."}${newestSold ? ` \xB7 newest sold evidence ${newestSold.toISOString().slice(0, 10)}` : ""}`,
-    methodology: `Sold AMPRE/PropTx records must match the exact property subtype. The nearest qualifying sales are prioritized from the last ${comp.policy?.windowDays || 100} days, then scored for bedrooms, bathrooms, living area, lot and parking.`,
+    methodology: `Sold AMPRE/PropTx records must match the exact property subtype and the subject's living-area band when that band is known. Same-community sales are prioritized from the last ${comp.policy?.windowDays || 100} days, then scored for bedrooms, bathrooms, lot and parking.`,
     evidence_recency: evidenceRecency,
     newest_sold_date: newestSold ? newestSold.toISOString().slice(0, 10) : null
   };
@@ -3644,7 +3696,7 @@ async function buildPropertyReport(env, lead, property2, requestId = null) {
     generated_at: (/* @__PURE__ */ new Date()).toISOString(),
     report_type: "THM AI buyer intelligence brief",
     prompt_version: String(env.PROPERTY_REPORT_PROMPT_VERSION || "vow-ai-v1"),
-    ai_generation: ai ? { provider: ai.provider, model: ai.model, fallback_used: ai.fallback_used, web_grounded: !!ai.web_grounded } : null,
+    ai_generation: ai ? { provider: ai.provider, model: ai.model, fallback_used: ai.fallback_used, web_grounded: !!ai.web_grounded } : { provider: "deterministic_fallback", model: null, fallback_used: true, web_grounded: false },
     research_sources: Array.isArray(ai?.sources) ? ai.sources.slice(0, 6) : [],
     facts,
     valuation,
@@ -3768,7 +3820,7 @@ function buildBuyerReadScore(facts, narrative = {}) {
 __name(buildBuyerReadScore, "buildBuyerReadScore");
 async function generatePublicResearch(env, property2) {
   if (!env.GEMINI_API_KEY) throw new Error("Gemini is not configured.");
-  const model = String(env.GEMINI_MODEL || "gemini-2.5-flash"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 2e3);
+  const model = String(env.GEMINI_MODEL || "gemini-2.5-flash"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12e3);
   const prompt = `Research current, publicly available buyer context for this publicly listed property: ${JSON.stringify(property2)}. Focus only on official or trustworthy sources for nearby schools and attendance caveats, transit, parks/trails, road or development context, and practical location considerations. Do not search for, quote or summarize sold prices, asking prices, valuations, estimates, owner information or private facts. Return a concise factual brief under 450 words. Clearly distinguish verified public facts from listing claims.`;
   try {
     const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY }, body: JSON.stringify({ model, input: prompt, store: false, tools: [{ type: "google_search" }], generation_config: { max_output_tokens: 1e3 } }) });
@@ -3786,7 +3838,7 @@ async function generatePublicResearch(env, property2) {
 __name(generatePublicResearch, "generatePublicResearch");
 async function generateWithGemini(env, system, prompt) {
   if (!env.GEMINI_API_KEY) throw new Error("Gemini is not configured.");
-  const model = String(env.GEMINI_MODEL || "gemini-2.5-flash"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 2e3);
+  const model = String(env.GEMINI_MODEL || "gemini-2.5-flash"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12e3);
   try {
     const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY }, body: JSON.stringify({ model, input: prompt, system_instruction: system, store: false, generation_config: { max_output_tokens: 2e3 }, response_format: { type: "text", mime_type: "application/json", schema: narrativeJsonSchema() } }) });
     const data = await response.json().catch(() => null);
@@ -3801,7 +3853,7 @@ async function generateWithGemini(env, system, prompt) {
 __name(generateWithGemini, "generateWithGemini");
 async function generateWithOpenRouter(env, system, prompt) {
   if (!env.OPENROUTER_API_KEY) throw new Error("OpenRouter is not configured.");
-  const model = String(env.OPENROUTER_MODEL || "openrouter/free"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 2e3);
+  const model = String(env.OPENROUTER_MODEL || "openrouter/free"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 10e3);
   try {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "HTTP-Referer": "https://torontohousemarket.com", "X-Title": "Toronto House Market" }, body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }], temperature: 0.2, max_tokens: 2e3, response_format: { type: "json_schema", json_schema: { name: "property_report_narrative", strict: true, schema: narrativeJsonSchema() } } }) });
     const data = await response.json().catch(() => null);
@@ -3819,7 +3871,7 @@ async function generateWithCloudflare(env, system, prompt) {
   const model = "@cf/meta/llama-3.1-8b-instruct-fast";
   let timer;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error("Cloudflare AI timed out.")), 2e3);
+    timer = setTimeout(() => reject(new Error("Cloudflare AI timed out.")), 8e3);
   });
   const result = await Promise.race([env.AI.run(model, { messages: [{ role: "system", content: system }, { role: "user", content: prompt }], max_tokens: 2e3, temperature: 0.2 }), timeout]).finally(() => clearTimeout(timer));
   const text = typeof result?.response === "string" ? result.response : typeof result === "string" ? result : "";
@@ -3888,6 +3940,31 @@ async function processEmailJobs(env, limit = 10) {
   return { claimed: Array.isArray(jobs) ? jobs.length : 0, sent, failed };
 }
 __name(processEmailJobs, "processEmailJobs");
+async function reconcileRecentEmailDeliveries(env, limit = 5) {
+  if (!env.RESEND_API_KEY || !env.SUPABASE_SERVICE_ROLE_KEY) return { checked: 0, updated: 0 };
+  const select = "id,provider_id,payload";
+  const response = await supabase(env, `/rest/v1/automation_jobs?job_type=eq.email_buyer&status=eq.sent&provider_id=not.is.null&select=${encodeURIComponent(select)}&order=completed_at.desc&limit=20`);
+  const jobs = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(jobs)) return { checked: 0, updated: 0 };
+  const pending = jobs.filter((job) => !["delivered", "bounced", "failed", "suppressed", "complained"].includes(String(job.payload?.delivery_event || "").toLowerCase())).slice(0, limit);
+  let updated = 0;
+  for (const job of pending) {
+    try {
+      const deliveryResponse = await fetch(`https://api.resend.com/emails/${encodeURIComponent(job.provider_id)}`, { headers: { Authorization: `Bearer ${env.RESEND_API_KEY}` } });
+      const delivery = await deliveryResponse.json().catch(() => ({}));
+      if (!deliveryResponse.ok || !delivery?.last_event) continue;
+      const event = String(delivery.last_event).toLowerCase();
+      const payload = { ...(job.payload || {}), delivery_event: event, delivery_checked_at: (/* @__PURE__ */ new Date()).toISOString() };
+      const patch = await supabase(env, `/rest/v1/automation_jobs?id=eq.${job.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ payload }) });
+      if (patch.ok) updated++;
+      console.log(JSON.stringify({ event: "email_delivery_reconciled", job_id: job.id, delivery_event: event }));
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "email_delivery_reconcile_failed", job_id: job.id, error: String(error).slice(0, 200) }));
+    }
+  }
+  return { checked: pending.length, updated };
+}
+__name(reconcileRecentEmailDeliveries, "reconcileRecentEmailDeliveries");
 async function deliverEmailJob(env, job) {
   const lead = await loadLeadForEmail(env, job.lead_id);
   if (!lead) throw new Error("Lead data is unavailable.");
@@ -4065,7 +4142,7 @@ function propertyReportEmail(address, agentData, report) {
     .replaceAll("PRICE POSITION", "SOLD PRICE RANGE")
     .replace(">MID ", ">MIDPOINT ");
   const text = ["YOUR BUYER DECISION REPORT", address, context, `Value rating: ${displayedRating}`, "BOTTOM LINE", verdict, verdictReason, `Asking price: ${cad(facts.list_price) || "-"}`, `Recent sold range: ${range}`, `Comparables: ${comps.length} / ${policy.windowDays || 100} days`, policy.expandedWindow ? `Evidence note: search expanded from 100 to ${policy.windowDays || 300} days.` : null, "QUICK READ", n.executive_summary, "RECENT COMPARABLE SALES", ...topComps.map((c, i) => `${i + 1}. ${c.address} | ${cad(c.soldPrice)} | ${c.soldDate}${c.distanceKm != null ? ` | ${Number(c.distanceKm).toFixed(2)} km` : ""} | ${Math.round(Number(c.similarity) || 0)}% match`), "WHAT THE NUMBERS SAY", n.market_read, "STRENGTHS", ...(n.strengths || []).slice(0, 3).map((x) => `- ${x}`), "WATCH", ...(n.risks || []).slice(0, 3).map((x) => `- ${x}`), "READY TO SEE IT?", n.buyer_strategy, ...(n.inspection_priorities || []).slice(0, 3).map((x) => `- ${x}`), `Request a showing with ${agent}: ${agentMobile || agentEmail || "torontohousemarket.com"}`, "AI-assisted preliminary decision support using licensed MLS evidence. Not an appraisal, legal advice, inspection, or guarantee of value. Verify material facts with a registered real estate professional."].filter(Boolean).join("\n\n");
-  return { subject: `Buyer Report: ${address} | ${rating.available ? `Value Rating ${rating.score}/10` : "Realtor Review"}`, html: finalHtmlBody, text };
+  return { subject: `AI Property Report Ready: ${address} | ${rating.available ? `Value Rating ${rating.score}/10` : "Realtor Review"}`, html: finalHtmlBody, text };
 }
 __name(propertyReportEmail, "propertyReportEmail");
 function propertyReportPdf(address, agentData, report) {
