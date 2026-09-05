@@ -108,6 +108,40 @@ test("same-building sales are local and ranked before other community sales", as
   }
 });
 
+test("sparse same-type evidence uses verified coordinates instead of postal proximity", async () => {
+  const subject = soldRow({ ListingKey: "PINE-SPARSE", PropertySubType: "Condo Townhouse", CityRegion: "Islington Woods", PostalCode: "L4L 0H8", UnparsedAddress: "201 Pine Grove Road 405, Vaughan", LivingAreaRange: "1000-1199", ClosePrice: null });
+  const rows = [
+    soldRow({ ListingKey: "NEAR-1", PropertySubType: "Condo Townhouse", CityRegion: "East Woodbridge", PostalCode: "L4L 1J4", UnparsedAddress: "26 Bruce Street E08, Vaughan", LivingAreaRange: "1000-1199", ClosePrice: 700000 }),
+    soldRow({ ListingKey: "NEAR-2", PropertySubType: "Condo Townhouse", CityRegion: "Vaughan Grove", PostalCode: "L4L 0J1", UnparsedAddress: "32 Coles Avenue 103, Vaughan", LivingAreaRange: "1000-1199", ClosePrice: 710000 }),
+    soldRow({ ListingKey: "NEAR-3", PropertySubType: "Condo Townhouse", CityRegion: "West Woodbridge", PostalCode: "L4L 0C5", UnparsedAddress: "27 Powseland Crescent, Vaughan", LivingAreaRange: "1000-1199", ClosePrice: 720000 })
+  ];
+  const points = new Map([
+    ["201 Pine Grove Road 405, Vaughan", [43.79, -79.58]],
+    ["26 Bruce Street E08, Vaughan", [43.79, -79.57]],
+    ["32 Coles Avenue 103, Vaughan", [43.8, -79.59]],
+    ["27 Powseland Crescent, Vaughan", [43.81, -79.6]]
+  ]);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.hostname === "gis.toronto.ca") return new Response(JSON.stringify({ features: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (parsed.hostname === "nominatim.openstreetmap.org") {
+      const point = points.get(parsed.searchParams.get("q"));
+      return new Response(JSON.stringify(point ? [{ lat: point[0], lon: point[1] }] : []), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (parsed.searchParams.get("$count") === "true") return new Response(JSON.stringify({ "@odata.count": rows.length, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ value: rows }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only", VOW_AUDIT_SALT: "test-salt", COMPARABLE_GEOCODE_THROTTLE_MS: 0 }, true, "verified-radius-test");
+    assert.equal(result.available, true);
+    assert.equal(result.comparables.length, 3);
+    assert.ok(result.comparables.every((row) => Number.isFinite(row.distanceKm) && row.distanceKm <= 5));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("property subtype matching is exact", () => {
   assert.equal(exactComparableType({ PropertySubType: "Detached" }, { PropertySubType: "Detached" }), true);
   assert.equal(exactComparableType({ PropertySubType: "Detached" }, { PropertySubType: "Semi-Detached" }), false);
