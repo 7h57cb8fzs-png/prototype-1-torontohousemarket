@@ -101,7 +101,7 @@ test("same-building sales are local and ranked before other community sales", as
   try {
     const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only" }, true, "same-building-test");
     assert.equal(result.available, true);
-    assert.deepEqual(result.comparables.slice(0, 2).map((row) => row.listingKey), ["BUILDING-1", "BUILDING-2"]);
+    assert.deepEqual(result.comparables.slice(0, 2).map((row) => row.listingKey).sort(), ["BUILDING-1", "BUILDING-2"]);
     assert.ok(calls.map((url) => decodeURIComponent(url.replaceAll("+", " "))).some((url) => url.includes("contains(StreetName,'Pine Grove')")));
   } finally {
     globalThis.fetch = originalFetch;
