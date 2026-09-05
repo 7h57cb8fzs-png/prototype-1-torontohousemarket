@@ -109,11 +109,11 @@ jobs:
             diff -u <(jq -S '[.result[].cron]' "${work_dir}/schedules-before.json") <(jq -S '[.result[].cron]' "${work_dir}/schedules-after.json")
           fi
           curl -fsS "${PRODUCTION_URL}/api/version" | jq -e '.ok == true and .vowAccess == true' >/dev/null
-          curl -fsS "${PRODUCTION_URL}/" -o "${work_dir}/home.html"
+          curl -fsS -H 'Cache-Control: no-cache' "${PRODUCTION_URL}/?restore=${GITHUB_SHA}" -o "${work_dir}/home.html"
           test "$(wc -c < "${work_dir}/home.html")" -gt 1000
           grep -q 'AI DECISION BRIEF' "${work_dir}/home.html"
           grep -q 'RECENT SOLD MLS COMPARABLES' "${work_dir}/home.html"
-          curl -fsS "${PRODUCTION_URL}/app.js?v=stage4-20260901" -o "${work_dir}/app.js"
+          curl -fsS -H 'Cache-Control: no-cache' "${PRODUCTION_URL}/app.js?v=stage4-20260901&restore=${GITHUB_SHA}" -o "${work_dir}/app.js"
           grep -q 'function renderMarketRead' "${work_dir}/app.js"
 
           trap - EXIT
