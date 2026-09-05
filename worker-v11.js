@@ -614,6 +614,10 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
     await runSearch(postalSearch);
     exactSizeQualified = qualifiedSoldComparableRows(subject, raw, 600).filter((candidate) => comparableIsLocal(candidate));
   }
+  if (!hasSufficientComparableEvidence(exactSizeQualified) && env.VOW_AUDIT_SALT) {
+    await enrichSparseComparableCoordinates(subject, raw, env);
+    exactSizeQualified = qualifiedSoldComparableRows(subject, raw, 600).filter((candidate) => comparableIsLocal(candidate));
+  }
   const sizeFallbackUsed = !hasSufficientComparableEvidence(exactSizeQualified);
   const qualified = sizeFallbackUsed ? qualifiedSoldComparableRows(subject, raw, 600, { requireCompatibleSize: false }).filter((candidate) => comparableIsLocal(candidate)) : exactSizeQualified;
   let windowDays = 100;
@@ -1002,6 +1006,52 @@ function comparableStreetAnchor(record) {
   return query && normalizedStreetIdentity(query).length >= 4 ? query : null;
 }
 __name(comparableStreetAnchor, "comparableStreetAnchor");
+async function comparableCoordinateCacheKey(address) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(cleanText(address).toLowerCase()));
+  return `https://comparable-coordinate-cache.torontohousemarket.com/${Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+__name(comparableCoordinateCacheKey, "comparableCoordinateCacheKey");
+async function resolveComparableCoordinates(record) {
+  const existing = propertyCoordinates(record);
+  if (existing.latitude != null && existing.longitude != null) return existing;
+  const address = record?.UnparsedAddress || buildAddress(record);
+  if (!address) return null;
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const cacheKey = cache ? new Request(await comparableCoordinateCacheKey(address)) : null;
+  if (cache && cacheKey) {
+    const cached = await cache.match(cacheKey);
+    const value = cached?.ok ? await cached.json().catch(() => null) : null;
+    if (validCoordinate(value?.latitude, value?.longitude)) return value;
+  }
+  const resolved = await resolveFreeCoordinates(address);
+  if (resolved && cache && cacheKey) await cache.put(cacheKey, new Response(JSON.stringify(resolved), { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=2592000" } })).catch(() => null);
+  return resolved;
+}
+__name(resolveComparableCoordinates, "resolveComparableCoordinates");
+async function enrichSparseComparableCoordinates(subject, records, env) {
+  const subjectCoordinates = await resolveComparableCoordinates(subject);
+  if (!subjectCoordinates) return;
+  subject.Latitude = subjectCoordinates.latitude;
+  subject.Longitude = subjectCoordinates.longitude;
+  const prefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
+  const candidates = dedupe(records || []).filter((row) => row.ListingKey !== subject.ListingKey).filter((row) => exactComparableType(subject, row)).filter((row) => isSoldWithinDays(row, 600, subject)).sort((a, b) => {
+    const aPrefix = String(a.PostalCode || "").replace(/\s+/g, "").slice(0, 3), bPrefix = String(b.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
+    const aLocal = aPrefix === prefix ? 1 : 0, bLocal = bPrefix === prefix ? 1 : 0;
+    if (aLocal !== bLocal) return bLocal - aLocal;
+    return dateMs(soldRecordDate(b)) - dateMs(soldRecordDate(a));
+  }).slice(0, 6);
+  const throttleMs = Math.max(0, numberOrNull(env.COMPARABLE_GEOCODE_THROTTLE_MS) ?? 1100);
+  for (let index = 0; index < candidates.length; index++) {
+    const row = candidates[index];
+    const coordinates = await resolveComparableCoordinates(row);
+    if (coordinates) {
+      row.Latitude = coordinates.latitude;
+      row.Longitude = coordinates.longitude;
+    }
+    if (throttleMs && index + 1 < candidates.length) await new Promise((resolve) => setTimeout(resolve, throttleMs));
+  }
+}
+__name(enrichSparseComparableCoordinates, "enrichSparseComparableCoordinates");
 function normalizeComparable(subject, r) {
   const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""}`;
   const soldLike = /closed|sold/i.test(status);
