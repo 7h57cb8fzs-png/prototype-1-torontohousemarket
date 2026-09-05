@@ -275,6 +275,44 @@ test("a 2000-2500 subject cannot reuse the Davos 1500-2000 comparables", async (
   }
 });
 
+test("engine removes the size restriction when fewer than three exact-size sales exist", async () => {
+  const subject = soldRow({
+    ListingKey: "SPARSE-SUBJECT",
+    PropertySubType: "Att/Row/Townhouse",
+    CityRegion: "Patterson",
+    PostalCode: "L6A 5A1",
+    LivingAreaRange: "2500-3000",
+    ListPrice: 1389000,
+    ClosePrice: null
+  });
+  const rows = [
+    soldRow({ ListingKey: "EXACT-1", PropertySubType: "Att/Row/Townhouse", CityRegion: "Patterson", PostalCode: "L6A 5A2", LivingAreaRange: "2500-3000", ClosePrice: 1325000 }),
+    soldRow({ ListingKey: "EXACT-2", PropertySubType: "Att/Row/Townhouse", CityRegion: "Patterson", PostalCode: "L6A 5A3", LivingAreaRange: "2500-3000", ClosePrice: 1375000 }),
+    soldRow({ ListingKey: "OTHER-SIZE-1", PropertySubType: "Att/Row/Townhouse", CityRegion: "Patterson", PostalCode: "L6A 4Z1", LivingAreaRange: "2000-2500", ClosePrice: 1300000 }),
+    soldRow({ ListingKey: "OTHER-SIZE-2", PropertySubType: "Att/Row/Townhouse", CityRegion: "Patterson", PostalCode: "L6A 4Z2", LivingAreaRange: "1500-2000", ClosePrice: 1350000 }),
+    soldRow({ ListingKey: "OTHER-SIZE-3", PropertySubType: "Att/Row/Townhouse", CityRegion: "Patterson", PostalCode: "L6A 4Z3", LivingAreaRange: "2000-2500", ClosePrice: 1400000 }),
+    soldRow({ ListingKey: "WRONG-TYPE", PropertySubType: "Semi-Detached", CityRegion: "Patterson", PostalCode: "L6A 4Z4", LivingAreaRange: "2500-3000", ClosePrice: 1350000 })
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.searchParams.get("$count") === "true") return new Response(JSON.stringify({ "@odata.count": rows.length, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ value: rows }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only" }, true, "size-fallback-test");
+    assert.equal(result.available, true);
+    assert.equal(result.policy.sizeFallbackUsed, true);
+    assert.equal(result.policy.exactLivingAreaBand, false);
+    assert.equal(result.policy.sizeRule, "same_type_only_fallback");
+    assert.ok(result.comparables.some((row) => row.livingAreaRange !== "2500-3000"));
+    assert.ok(result.comparables.every((row) => row.propertySubType === "Att/Row/Townhouse"));
+    assert.ok(!result.comparables.some((row) => row.listingKey === "WRONG-TYPE"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("engine expands time to 600 days before weakening property similarity", async () => {
   const subject = soldRow({ ListingKey: "SUBJECT", LivingAreaRange: "2000-2500", ClosePrice: null });
   const rows = ["OLDER-1", "OLDER-2", "OLDER-3"].map((key, index) => soldRow({

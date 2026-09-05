@@ -603,11 +603,13 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
   }, "runSearch");
   await runSearch(communitySearch || postalSearch);
-  let qualified = qualifiedSoldComparableRows(subject, raw, 600).filter((candidate) => comparableIsLocal(candidate));
-  if (communitySearch && postalSearch && !hasSufficientComparableEvidence(qualified)) {
+  let exactSizeQualified = qualifiedSoldComparableRows(subject, raw, 600).filter((candidate) => comparableIsLocal(candidate));
+  if (communitySearch && postalSearch && !hasSufficientComparableEvidence(exactSizeQualified)) {
     await runSearch(postalSearch);
-    qualified = qualifiedSoldComparableRows(subject, raw, 600).filter((candidate) => comparableIsLocal(candidate));
+    exactSizeQualified = qualifiedSoldComparableRows(subject, raw, 600).filter((candidate) => comparableIsLocal(candidate));
   }
+  const sizeFallbackUsed = !hasSufficientComparableEvidence(exactSizeQualified);
+  const qualified = sizeFallbackUsed ? qualifiedSoldComparableRows(subject, raw, 600, { requireCompatibleSize: false }).filter((candidate) => comparableIsLocal(candidate)) : exactSizeQualified;
   let windowDays = 100;
   let window = qualified.filter((candidate) => candidate.ageDays <= 100);
   if (window.length < 3) {
@@ -620,25 +622,27 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   }
   const beforePriceCluster = window.length;
   if (!window.length) {
-    logComparableDiagnostics(requestId, subject, raw, qualified, window, [], [], windowDays, 10, queryAudit, "insufficient_local_sold_evidence");
-    return unavailableComp("No same-community sale matching the subject's exact property subtype and living-area band was found within the 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !!livingAreaBounds(subject)?.banded, subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_or_verified_radius", localOnly: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
+    logComparableDiagnostics(requestId, subject, raw, qualified, window, [], [], windowDays, 10, queryAudit, "insufficient_local_sold_evidence", sizeFallbackUsed);
+    return unavailableComp("No same-community sale matching the subject's exact property subtype was found within the 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !sizeFallbackUsed && !!livingAreaBounds(subject)?.banded, sizeFallbackUsed, sizeRule: sizeFallbackUsed ? "same_type_only_fallback" : "exact_living_area_band", subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_or_verified_radius", localOnly: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
   }
   const clusterMedian = medianPrice(window.map((candidate) => candidate.price));
   const priceTolerancePct = 10;
   const candidates = filterPriceCluster(window, 0.1).matches;
   if (!candidates.length) {
-    logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, [], windowDays, priceTolerancePct, queryAudit, "price_cluster_empty");
-    return unavailableComp("No local exact-subtype sale remained after the required 10% median price filter.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !!livingAreaBounds(subject)?.banded, subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_or_verified_radius", localOnly: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0 });
+    logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, [], windowDays, priceTolerancePct, queryAudit, "price_cluster_empty", sizeFallbackUsed);
+    return unavailableComp("No local exact-subtype sale remained after the required 10% median price filter.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !sizeFallbackUsed && !!livingAreaBounds(subject)?.banded, sizeFallbackUsed, sizeRule: sizeFallbackUsed ? "same_type_only_fallback" : "exact_living_area_band", subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_or_verified_radius", localOnly: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0 });
   }
   const selected = candidates.sort(compareComparable).slice(0, 5);
   const valuationAvailable = selected.length >= 3;
-  logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, selected, windowDays, priceTolerancePct, queryAudit, valuationAvailable ? "selected" : "insufficient_qualified_comparables");
+  logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, selected, windowDays, priceTolerancePct, queryAudit, valuationAvailable ? "selected" : "insufficient_qualified_comparables", sizeFallbackUsed);
   const subjectArea = livingAreaBounds(subject);
   const policy = {
     windowDays,
     expandedWindow: windowDays > 100,
     exactSubtype: true,
-    exactLivingAreaBand: !!subjectArea?.banded,
+    exactLivingAreaBand: !sizeFallbackUsed && !!subjectArea?.banded,
+    sizeFallbackUsed,
+    sizeRule: sizeFallbackUsed ? "same_type_only_fallback" : "exact_living_area_band",
     subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal),
     geographyRule: "same_community_or_verified_radius",
     localOnly: true,
@@ -661,7 +665,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   const numericDistances = selected.map((x) => x.distanceKm).filter(Number.isFinite);
   const allDistancesKnown = numericDistances.length === selected.length;
   const farthest = numericDistances.length ? Math.max(...numericDistances) : null;
-  const confidence = allDistancesKnown && avgScore >= 78 && avgRecency >= 0.7 && selected.length >= 5 && farthest <= 2 ? "High" : allDistancesKnown && avgScore >= 64 && avgRecency >= 0.35 && farthest <= 5 ? "Medium" : "Low";
+  const confidence = sizeFallbackUsed ? "Low" : allDistancesKnown && avgScore >= 78 && avgRecency >= 0.7 && selected.length >= 5 && farthest <= 2 ? "High" : allDistancesKnown && avgScore >= 64 && avgRecency >= 0.35 && farthest <= 5 ? "Medium" : "Low";
   return {
     available: true,
     matchCount: selected.length,
@@ -688,7 +692,7 @@ function hasSufficientComparableEvidence(candidates) {
   return false;
 }
 __name(hasSufficientComparableEvidence, "hasSufficientComparableEvidence");
-function logComparableDiagnostics(requestId, subject, raw, qualified, window, clustered, selected, windowDays, priceTolerancePct, queryAudit, status) {
+function logComparableDiagnostics(requestId, subject, raw, qualified, window, clustered, selected, windowDays, priceTolerancePct, queryAudit, status, sizeFallbackUsed = false) {
   const unique = dedupe(raw || []);
   const notSubject = unique.filter((row) => row.ListingKey !== subject?.ListingKey);
   const exactSubtype = notSubject.filter((row) => exactComparableType(subject, row));
@@ -708,6 +712,7 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
       unique: unique.length,
       excluding_subject: notSubject.length,
       exact_subtype: exactSubtype.length,
+      size_compatible: sizeCompatible.length,
       sold_within_600_days: soldWithin600.length,
       similarity_qualified: (qualified || []).length,
       selected_window: (window || []).length,
@@ -726,6 +731,8 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
       rank_cutoff: Math.max(0, (clustered || []).length - (selected || []).length)
     },
     price_tolerance_pct: priceTolerancePct,
+    size_filter_applied: !sizeFallbackUsed,
+    size_fallback_used: sizeFallbackUsed,
     selected_comp_listing_keys: (selected || []).map((row) => row.record?.ListingKey).filter(Boolean),
     distance_calculation_status: {
       subject_coordinates: subjectCoordinates.latitude != null && subjectCoordinates.longitude != null,
@@ -861,8 +868,9 @@ var COMPARABLE_SELECT_FIELDS = [
   "LivingAreaRange", "BuildingAreaTotal", "LotWidth", "LotDepth", "ParkingTotal", "Basement",
   "Latitude", "Longitude", "GeoLocation"
 ];
-function qualifiedSoldComparableRows(subject, records, maxAgeDays) {
-  return dedupe(records || []).filter((record) => record.ListingKey !== subject.ListingKey).filter((record) => exactComparableType(subject, record)).filter((record) => comparableHasCompatibleSize(subject, record)).filter((record) => isSoldWithinDays(record, maxAgeDays, subject)).map((record) => {
+function qualifiedSoldComparableRows(subject, records, maxAgeDays, options = {}) {
+  const requireCompatibleSize = options.requireCompatibleSize !== false;
+  return dedupe(records || []).filter((record) => record.ListingKey !== subject.ListingKey).filter((record) => exactComparableType(subject, record)).filter((record) => !requireCompatibleSize || comparableHasCompatibleSize(subject, record)).filter((record) => isSoldWithinDays(record, maxAgeDays, subject)).map((record) => {
     const candidate = normalizeComparable(subject, record);
     const soldDate = soldRecordDate(record);
     return { ...candidate, ageDays: soldDate ? Math.max(0, (Date.now() - soldDate.getTime()) / 864e5) : Number.POSITIVE_INFINITY };
@@ -3827,10 +3835,11 @@ function groundReportNarrative(narrative, facts, valuation, comparables, policy 
   const range = valuation.available ? `${cad(valuation.low)} - ${cad(valuation.high)}` : "unavailable";
   const newest = valuation.newest_sold_date || "unknown";
   const geography = !comparables.length ? "Current exact-type sold evidence was not sufficient for an automated rating." : region ? regionMatches ? `${regionMatches} of ${comparables.length} supplied matches are in ${region}.` : `None of the ${comparables.length} supplied matches is in ${region}.` : "The supplied matches should be checked for neighbourhood fit.";
+  const sizeNote = policy.sizeFallbackUsed ? " Fewer than three exact-size sales were available, so the living-area restriction was removed and same-type local sales were ranked by the remaining property facts." : "";
   if (valuation.available) {
-    grounded.market_read = `The ${range} evidence band is based on ${comparables.length} supplied sold matches. ${geography} The newest sold record is dated ${newest}.${policy.expandedWindow ? " An expanded " + (policy.windowDays || 300) + "-day evidence window was required." : ""} ${valuation.confidence === "Low" ? "Treat this as a broad screening signal, not a current value conclusion." : "Use the closest match as the starting point, then adjust for condition and micro-location."}`;
+    grounded.market_read = `The ${range} evidence band is based on ${comparables.length} supplied sold matches. ${geography} The newest sold record is dated ${newest}.${policy.expandedWindow ? " An expanded " + (policy.windowDays || 300) + "-day evidence window was required." : ""}${sizeNote} ${valuation.confidence === "Low" ? "Treat this as a broad screening signal, not a current value conclusion." : "Use the closest match as the starting point, then adjust for condition and micro-location."}`;
   } else {
-    grounded.market_read = `No responsible sold-price band was produced from the supplied match set. ${geography}${policy.expandedWindow ? " The search was expanded to " + (policy.windowDays || 300) + " days." : ""} Ask for a manual local comparable review before discussing value.`;
+    grounded.market_read = `No responsible sold-price band was produced from the supplied match set. ${geography}${policy.expandedWindow ? " The search was expanded to " + (policy.windowDays || 300) + " days." : ""}${sizeNote} Ask for a manual local comparable review before discussing value.`;
   }
   if (valuation.confidence === "Low") {
     grounded.buyer_strategy = `Tour the property for fit, condition and any permit-related opportunity. Before discussing price, ask the assigned Realtor for at least three ${region || "nearby"} sold properties from the last 6-12 months and an explanation of the closest match.`;
