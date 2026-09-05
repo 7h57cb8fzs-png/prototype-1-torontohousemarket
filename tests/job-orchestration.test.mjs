@@ -20,3 +20,11 @@ test("scheduled automation delivers ready emails before expensive report generat
   assert.ok(body.includes("await processReportJobs(env, 1)"), "a cron invocation must claim only one expensive report");
   assert.ok(body.includes("await reconcileRecentEmailDeliveries(env, 5)"), "provider acceptance must be reconciled with Resend delivery status");
 });
+
+test("report generation reuses the captured public snapshot and skips address-history scans", () => {
+  const loadMatch = source.match(/async function loadPropertyForReport\(env, lead, requestId = null\) \{([\s\S]*?)\n\}/);
+  assert.ok(loadMatch);
+  assert.ok(loadMatch[1].includes('mergeCurrentIdxWithVow(capturedSnapshot, vowBody.property, "captured_idx_snapshot")'));
+  assert.ok(!loadMatch[1].includes("public_snapshot"), "report generation must not reload public IDX facts already captured on the lead");
+  assert.ok(source.includes("publicSnapshot || reportEvidence ? [subject] : await findSameAddressHistory(subject, env)"));
+});

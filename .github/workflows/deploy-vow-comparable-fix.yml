@@ -40,7 +40,7 @@ jobs:
           grep -q 'See the home.' index.html
           grep -q 'FULL BUYER REPORT' index.html
           grep -q 'function renderMarketRead' app.js
-          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "38a87f8656154c56f4d6e2e04237203ba1c9c21a2e3f306ca1053bf00e1e2c45"
+          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "69705dd84b5f932a69f12303ece55862b083b9825f8e088254cdd358036e2a74"
 
       - name: Deploy with source guard and automatic rollback
         env:
@@ -48,8 +48,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           WORKER_NAME: prototype-1-torontohousemarket
           PRODUCTION_URL: https://torontohousemarket.com
-          EXPECTED_BEFORE_SHAS: "88e9970a44343963778d8b015ddcaa4440fc79a22e0b5309a926fed71e7d8f5e"
-          EXPECTED_AFTER_SHA: 38a87f8656154c56f4d6e2e04237203ba1c9c21a2e3f306ca1053bf00e1e2c45
+          EXPECTED_BEFORE_SHAS: "38a87f8656154c56f4d6e2e04237203ba1c9c21a2e3f306ca1053bf00e1e2c45"
+          EXPECTED_AFTER_SHA: 69705dd84b5f932a69f12303ece55862b083b9825f8e088254cdd358036e2a74
         run: |
           set -euo pipefail
           work_dir="$(mktemp -d)"

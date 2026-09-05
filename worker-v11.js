@@ -83,7 +83,7 @@ async function handleProperty(request, env) {
   if (directKey) {
     subject = await fetchPropertyByKey(directKey, env);
     if (!subject) return json({ ok: false, error: "That MLS listing could not be found." }, 404);
-    history = publicSnapshot ? [subject] : await findSameAddressHistory(subject, env);
+    history = publicSnapshot || reportEvidence ? [subject] : await findSameAddressHistory(subject, env);
     resolution = input.type === "link" ? "link_mls" : "mls";
     validationLabel = input.type === "link" ? `Listing URL matched to MLS ${subject.ListingKey}` : `MLS ${subject.ListingKey} verified`;
   } else {
@@ -3604,25 +3604,16 @@ async function loadPropertyForReport(env, lead, requestId = null) {
   if (listingKey) url.searchParams.set("listingKey", listingKey);
   else url.searchParams.set("q", lead.resolved_address || lead.metadata?.property_input || "");
   if (!env.AMPRE_VOW_TOKEN) throw new Error("Protected report data is not configured.");
-  const publicUrl = new URL(url);
-  publicUrl.searchParams.set("mode", "public_snapshot");
   const protectedUrl = new URL("https://torontohousemarket.com/api/property");
   if (listingKey) protectedUrl.searchParams.set("listingKey", listingKey);
   else protectedUrl.searchParams.set("q", lead.resolved_address || lead.metadata?.resolved_address || capturedSnapshot?.address || lead.metadata?.property_input || "");
   protectedUrl.searchParams.set("mode", "report_evidence");
-  const [idxResponse, vowResponse] = await Promise.all([
-    worker_v10_default.fetch(new Request(publicUrl.toString(), { method: "GET", headers: { "X-THM-Request-Id": requestId || crypto.randomUUID() } }), env, { waitUntil() {
-    } }),
-    worker_v10_default.fetch(new Request(protectedUrl.toString(), { method: "GET", headers: { "X-THM-Request-Id": requestId || crypto.randomUUID() } }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
-    } })
-  ]);
-  const [idxBody, vowBody] = await Promise.all([idxResponse.json().catch(() => null), vowResponse.json().catch(() => null)]);
+  const vowResponse = await worker_v10_default.fetch(new Request(protectedUrl.toString(), { method: "GET", headers: { "X-THM-Request-Id": requestId || crypto.randomUUID() } }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
+  } });
+  const vowBody = await vowResponse.json().catch(() => null);
   if (!vowResponse.ok || !vowBody?.ok || !vowBody.property) throw new Error(vowBody?.error || "Protected VOW property evidence could not be resolved.");
-  if (!idxResponse.ok || !idxBody?.ok || !idxBody.property) {
-    if (Object.keys(capturedSnapshot || {}).length) return mergeCurrentIdxWithVow(capturedSnapshot, vowBody.property, "captured_idx_snapshot");
-    return { ...vowBody.property, reportDataPipeline: { subjectFacts: "vow_fallback", protectedEvidence: "vow_credential", merged: false } };
-  }
-  return mergeCurrentIdxWithVow(idxBody.property, vowBody.property);
+  if (Object.keys(capturedSnapshot || {}).length) return mergeCurrentIdxWithVow(capturedSnapshot, vowBody.property, "captured_idx_snapshot");
+  return { ...vowBody.property, reportDataPipeline: { subjectFacts: "vow_fallback", protectedEvidence: "vow_credential", merged: false } };
 }
 __name(loadPropertyForReport, "loadPropertyForReport");
 function mergeCurrentIdxWithVow(currentProperty, protectedProperty, subjectSource = "current_idx") {
