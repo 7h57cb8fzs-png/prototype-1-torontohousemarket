@@ -74,8 +74,19 @@ jobs:
           trap 'status=$?; if [ "${status}" -ne 0 ]; then rollback; fi; rm -rf "${work_dir}"' EXIT
 
           # Wrangler uploads the audited Worker and its static assets as one version.
-          # Existing plain-text variables and all configured secrets are preserved.
-          npx --yes wrangler@4.129.0 deploy --no-bundle --keep-vars
+          # Dashboard-only plain-text settings are passed without logging their values;
+          # configured secrets are preserved by Cloudflare and never read by this job.
+          wrangler_args=()
+          while IFS= read -r encoded; do
+            binding="$(printf '%s' "${encoded}" | base64 --decode)"
+            name="$(printf '%s' "${binding}" | jq -r '.name')"
+            value="$(printf '%s' "${binding}" | jq -r '.text')"
+            wrangler_args+=(--var "${name}:${value}")
+          done < <(jq -r '.result.bindings[] | select(.type == "plain_text") | {name,text} | @base64' "${work_dir}/settings-before.json")
+          if ! npx --yes wrangler@4.129.0 deploy --no-bundle "${wrangler_args[@]}" >"${work_dir}/wrangler.log" 2>&1; then
+            echo "Wrangler deployment failed; production will be rolled back."
+            exit 1
+          fi
 
           active_id="${rollback_id}"
           for attempt in 1 2 3 4 5; do
@@ -90,7 +101,6 @@ jobs:
           test "$(sha256sum "${work_dir}/worker-after.js" | cut -d' ' -f1)" = "${EXPECTED_AFTER_SHA}"
           jq -S '[.result.bindings[] | select(.name != "ASSETS") | {name, type}] | sort_by(.name)' "${work_dir}/version-before.json" > "${work_dir}/non-asset-bindings-before.json"
           jq -S '[.result.bindings[] | select(.name != "ASSETS") | {name, type}] | sort_by(.name)' "${work_dir}/version-after.json" > "${work_dir}/non-asset-bindings-after.json"
-          diff -u "${work_dir}/non-asset-bindings-before.json" "${work_dir}/non-asset-bindings-after.json" || true
           cmp "${work_dir}/non-asset-bindings-before.json" "${work_dir}/non-asset-bindings-after.json"
           jq -e '[.result.bindings[].name] | index("ASSETS") != null' "${work_dir}/version-after.json" >/dev/null
 
