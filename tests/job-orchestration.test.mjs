@@ -62,3 +62,15 @@ test("comparable diagnostics expose the facts needed for a realtor audit", () =>
     "similarity"
   ]) assert.ok(body.includes(field), `diagnostics must include ${field}`);
 });
+
+test("isolated listing sender cannot notify an unverified recipient or general queue", () => {
+  const senderMatch = source.match(/async function createAndSendListingTestEmail\(request, env\) \{([\s\S]*?)\n\}/);
+  assert.ok(senderMatch, "isolated listing sender must exist");
+  const body = senderMatch[1];
+  assert.ok(body.includes('recipient !== "ali.golestan.reza@gmail.com"'));
+  assert.ok(body.includes('email: null'), "lead must be inserted without email so the confirmation trigger cannot fire");
+  assert.ok(body.includes('source: "admin_test"'));
+  assert.ok(body.includes("await runTestReportEmail(request, env, leadId)"));
+  assert.ok(!body.includes("processAutomationJobs"));
+  assert.ok(source.includes('url.pathname === "/api/admin/reports/test-email-by-listing"'));
+});
