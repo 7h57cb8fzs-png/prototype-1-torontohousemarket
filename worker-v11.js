@@ -718,23 +718,77 @@ function comparableIsLocal(candidate, radiusKm = 5) {
   return !!candidate && (candidate.sameRegion || candidate.samePostalPrefix || Number.isFinite(candidate.distanceKm) && candidate.distanceKm <= radiusKm);
 }
 __name(comparableIsLocal, "comparableIsLocal");
+async function locateRecentHistoryStart(baseFilters, env, windowRows, pageSize, initialSkip = 1e3) {
+  const audit = [];
+  const maximumSkip = 1e5;
+  const probe = async (skip) => {
+    const result = await queryPropertiesDetailed(baseFilters, env, 1, "", skip);
+    audit.push({ queryScope: "local_history_tail_probe", requestedSkip: skip, ...result.meta });
+    if (result.meta.status !== 200) return null;
+    return result.rows.length > 0;
+  };
+  let low = 0;
+  let high = Math.max(pageSize, initialSkip);
+  const initialPresent = await probe(high);
+  if (initialPresent === null) return { startSkip: initialSkip, audit, reliable: false };
+  if (!initialPresent) return { startSkip: 0, audit, reliable: true };
+  low = high;
+  while (high < maximumSkip) {
+    const candidate = Math.min(maximumSkip, high * 2);
+    const present = await probe(candidate);
+    if (present === null) return { startSkip: initialSkip, audit, reliable: false };
+    if (!present) {
+      high = candidate;
+      break;
+    }
+    low = candidate;
+    high = candidate;
+    if (candidate === maximumSkip) break;
+  }
+  if (low < maximumSkip && high > low) {
+    while (high - low > pageSize) {
+      let middle = Math.floor((low + high) / (2 * pageSize)) * pageSize;
+      if (middle <= low) middle = low + pageSize;
+      const present = await probe(middle);
+      if (present === null) return { startSkip: initialSkip, audit, reliable: false };
+      if (present) low = middle;
+      else high = middle;
+    }
+  }
+  const pages = Math.max(1, Math.ceil(windowRows / pageSize));
+  return {
+    startSkip: Math.max(0, low - (pages - 1) * pageSize),
+    audit,
+    reliable: true,
+    tailSkip: low,
+    capped: low === maximumSkip
+  };
+}
+__name(locateRecentHistoryStart, "locateRecentHistoryStart");
 async function querySoldComparableRows(baseFilters, env, top, startSkip = 0) {
-  // This AMPRE VOW feed returns sold fields but rejects filters on them. Page
-  // through the permitted local history query so active inventory cannot fill
-  // the first result window, then qualify genuine sold rows locally.
+  // This AMPRE VOW feed returns sold fields but rejects filters and sorting on
+  // those fields. Locate the tail of each permitted local-history result set,
+  // then scan only its newest bounded window and qualify sold rows locally.
   const rows = [];
   const audit = [];
   let accepted = false;
   const pageSize = Math.min(100, top);
+  let effectiveStartSkip = startSkip;
+  if (startSkip > 0) {
+    const tail = await locateRecentHistoryStart(baseFilters, env, top, pageSize, startSkip);
+    effectiveStartSkip = tail.startSkip;
+    audit.push(...tail.audit);
+    audit.push({ queryScope: "local_history_tail_window", requestedSkip: startSkip, effectiveStartSkip, tailSkip: tail.tailSkip ?? null, reliable: tail.reliable, capped: tail.capped === true });
+  }
   let nextUrl = null;
   const maxPages = Math.max(1, Math.ceil(top / pageSize));
   for (let page = 0; page < maxPages && rows.length < top; page++) {
-    let result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "", startSkip);
-    if (page === 0 && startSkip > 0 && result.meta.status === 200 && !result.rows.length) {
+    let result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "", effectiveStartSkip);
+    if (page === 0 && effectiveStartSkip > 0 && result.meta.status === 200 && !result.rows.length) {
       result = await queryPropertiesDetailed(baseFilters, env, pageSize, "", 0);
-      audit.push({ queryScope: "local_history_skip_fallback", page, requestedSkip: startSkip, ...result.meta });
+      audit.push({ queryScope: "local_history_skip_fallback", page, requestedSkip: effectiveStartSkip, ...result.meta });
     }
-    audit.push({ queryScope: "local_exact_subtype_page", page, ...result.meta });
+    audit.push({ queryScope: "local_exact_subtype_page", page, requestedSkip: page === 0 ? effectiveStartSkip : null, ...result.meta });
     if (result.meta.status === 200) accepted = true;
     rows.push(...result.rows);
     nextUrl = result.nextLink || null;
@@ -4175,6 +4229,7 @@ export {
   filterPriceCluster,
   worker_v11_default as default,
   generateAiNarrative,
+  locateRecentHistoryStart,
   mergeCurrentIdxWithVow,
   numberOrNull,
   propertyReportEmail,
