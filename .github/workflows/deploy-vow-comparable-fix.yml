@@ -48,7 +48,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           WORKER_NAME: prototype-1-torontohousemarket
           PRODUCTION_URL: https://torontohousemarket.com
-          EXPECTED_BEFORE_SHAS: "5ce2020fd3a37df8098e20d8060143282bb9079623b96e64fe51ecc8050342a3"
+          EXPECTED_BEFORE_SHAS: "a29d84aaf3bcb86a0529e33bba500a889eabb75e85831ff8573900b9d66846f1"
           EXPECTED_AFTER_SHA: a77a07e869a4c44f253930fe606baab95a0a823458c55f231e5da6f071b8b24e
         run: |
           set -euo pipefail
