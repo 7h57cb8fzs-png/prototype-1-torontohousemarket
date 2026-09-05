@@ -84,7 +84,7 @@ test("valid local evidence remains visible when the price cluster cannot support
 });
 
 test("same-building sales are local and ranked before other community sales", async () => {
-  const subject = soldRow({ ListingKey: "PINE-SUBJECT", PropertySubType: "Condo Apartment", CityRegion: "East Woodbridge", PostalCode: "L4L 2X5", UnparsedAddress: "405 - 201 Pine Grove Road, Vaughan", ClosePrice: null });
+  const subject = soldRow({ ListingKey: "PINE-SUBJECT", PropertySubType: "Condo Apartment", CityRegion: "East Woodbridge", PostalCode: "L4L 2X5", UnparsedAddress: "201 Pine Grove Road 405, Vaughan", ClosePrice: null });
   const rows = [
     soldRow({ ListingKey: "COMMUNITY-1", PropertySubType: "Condo Apartment", CityRegion: "East Woodbridge", PostalCode: "L4L 1A1", UnparsedAddress: "10 Other Road, Vaughan", ClosePrice: 800000 }),
     soldRow({ ListingKey: "BUILDING-1", PropertySubType: "Condo Apartment", CityRegion: "Pine Valley Business Park", PostalCode: "L4L 2X5", UnparsedAddress: "103 - 201 Pine Grove Rd, Vaughan", ClosePrice: 805000 }),
