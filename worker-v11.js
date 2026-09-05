@@ -593,7 +593,10 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
   const postalPrefix = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
   const regionFilter = subject.CityRegion ? `contains(CityRegion,'${odataString(subject.CityRegion)}')` : null;
   const streetAnchor = comparableStreetAnchor(subject);
-  const streetSearch = streetAnchor ? { name: "same_street", filters: [`contains(UnparsedAddress,'${odataString(streetAnchor)}')`], rowLimit: 200, startSkip: 1e3 } : null;
+  const streetSearches = streetAnchor ? [
+    { name: "same_street_address", filters: [`contains(UnparsedAddress,'${odataString(streetAnchor)}')`], rowLimit: 200, startSkip: 1e3 },
+    { name: "same_street_structured", filters: [`contains(StreetName,'${odataString(streetAnchor)}')`], rowLimit: 200, startSkip: 1e3 }
+  ] : [];
   const communitySearch = regionFilter ? { name: "same_community", filters: [regionFilter], rowLimit: 300, startSkip: 1e3 } : null;
   const postalSearch = postalPrefix ? { name: "same_postal_prefix_fallback", filters: [`startswith(PostalCode,'${odataString(postalPrefix)}')`], rowLimit: 500, startSkip: 1e3 } : null;
   const queryAudit = [];
@@ -604,7 +607,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
     raw.push(...result.rows);
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
   }, "runSearch");
-  await runSearch(streetSearch);
+  for (const search of streetSearches) await runSearch(search);
   await runSearch(communitySearch || postalSearch);
   let exactSizeQualified = qualifiedSoldComparableRows(subject, raw, 600).filter((candidate) => comparableIsLocal(candidate));
   if (communitySearch && postalSearch && !hasSufficientComparableEvidence(exactSizeQualified)) {
