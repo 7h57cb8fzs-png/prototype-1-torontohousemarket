@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="Toronto House Market — request the fastest available showing and get an instant AI-assisted property read." />
-  <title>Toronto House Market</title>
+  <meta name="description" content="Check any GTA home, request the earliest available showing, and receive a buyer report with recent sold MLS comparables." />
+  <title>See the Home Faster | Toronto House Market</title>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-44826VKX1E"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=stage4-20260901" />
+  <link rel="stylesheet" href="/styles.css?v=copy-20260905" />
 </head>
 <body>
 <header class="site-header">
@@ -21,30 +21,30 @@
       <span class="brand-mark">THM</span>
       <span class="brand-name">Toronto House Market</span>
     </a>
-    <button class="nav-cta" type="button" data-scroll="#lookup">Request a showing</button>
+    <button class="nav-cta" type="button" data-scroll="#lookup">Check a home</button>
   </div>
 </header>
 
 <main id="top">
   <section class="hero" id="lookup">
     <div class="wrap hero-inner">
-      <div class="speed-chip"><span class="live-dot"></span> FAST SHOWING · TARGET 1–24 HOURS*</div>
-      <h1>See it fast.<br><span>Know it before you go.</span></h1>
-      <p class="hero-copy">Enter an MLS number, GTA street address, or listing URL. We check the live listing, show the useful property facts, and let you request the fastest available showing right away.</p>
+      <div class="speed-chip"><span class="live-dot"></span> SHOWING REQUESTS · 1–24 HOUR TARGET*</div>
+      <h1>See the home.<br><span>Decide faster.</span></h1>
+      <p class="hero-copy">Check any GTA home for free. See the live MLS facts, request the earliest available showing, and receive a private buyer report with recent sold comparables.</p>
 
       <form id="analysisForm" class="search-box" novalidate>
         <div class="search-input-wrap">
           <span class="search-icon" aria-hidden="true">⌕</span>
           <input id="propertyInput" name="property" autocomplete="off" placeholder="MLS #, street address, or listing URL" required />
         </div>
-        <button id="lookupButton" class="primary-btn hero-cta" type="submit">Check Home →</button>
+        <button id="lookupButton" class="primary-btn hero-cta" type="submit">Check this home →</button>
       </form>
-      <div id="inputStatus" class="input-status" aria-live="polite">Live MLS check · AI-assisted property read · No registration to check</div>
+      <div id="inputStatus" class="input-status" aria-live="polite">No sign-up to check · Live MLS facts</div>
 
       <div class="hero-proof">
-        <div><strong>LIVE</strong><span>MLS status + property facts</span></div>
-        <div><strong>FAST</strong><span>Showing request routed immediately</span></div>
-        <div><strong>AI</strong><span>Decision brief ready with the property</span></div>
+        <div><strong>01</strong><span>Check the live listing</span></div>
+        <div><strong>02</strong><span>Request a showing</span></div>
+        <div><strong>03</strong><span>Get the full buyer report</span></div>
       </div>
       <p class="speed-disclaimer">*Target only. Actual showing time depends on listing, seller and property-access availability.</p>
     </div>
@@ -54,7 +54,7 @@
     <div class="wrap">
       <div class="result-head">
         <div>
-          <div id="resultEyebrow" class="eyebrow">PROPERTY CHECK</div>
+          <div id="resultEyebrow" class="eyebrow">HOME SNAPSHOT</div>
           <h2 id="snapshotProperty">Selected property</h2>
           <p id="snapshotMeta">Checking live MLS…</p>
         </div>
@@ -85,22 +85,22 @@
           <div id="liveDetails" class="fact-line">—</div>
 
           <div id="activeActionBox" class="speed-action-box hidden">
-            <div class="speed-action-top"><span>⚡ FASTEST AVAILABLE SHOWING</span><small>1–24H TARGET*</small></div>
-            <strong>Want to see it?</strong>
-            <p>Send the request now. We assign it immediately and work toward the earliest available appointment.</p>
-            <button id="seeHomeButton" class="showing-btn" type="button">Request Showing Now →</button>
-            <small class="ai-after">Your AI decision brief is already below — no waiting for the report.</small>
+            <div class="speed-action-top"><span>SHOWING REQUEST</span><small>1–24 HOUR TARGET*</small></div>
+            <strong>See this home.</strong>
+            <p>Send one request. A Realtor responds quickly and confirms the earliest time available.</p>
+            <button id="seeHomeButton" class="showing-btn" type="button">Request earliest showing →</button>
+            <small class="ai-after">Your full buyer report with recent sold comparables is emailed after you submit.</small>
           </div>
 
           <div id="offMarketActionBox" class="offmarket-action-box hidden">
-            <span class="offmarket-label">NOT CURRENTLY LISTED</span>
-            <strong id="offMarketTitle">Still want to understand this home?</strong>
-            <p id="offMarketCopy">Request a deeper property report using available MLS history and local market context.</p>
-            <button id="deepReportButton" class="deep-report-btn" type="button">Get AI Deep Property Report →</button>
-            <button id="sellerReportButton" class="text-link-btn" type="button">I own this home — get the Seller AI Report</button>
+            <span class="offmarket-label">NOT FOR SALE ON MLS</span>
+            <strong id="offMarketTitle">Still interested in this home?</strong>
+            <p id="offMarketCopy">Request a deeper review using available MLS history and local market context.</p>
+            <button id="deepReportButton" class="deep-report-btn" type="button">Get Buyer Property Review →</button>
+            <button id="sellerReportButton" class="text-link-btn" type="button">I own it — request a Seller Value Review</button>
           </div>
 
-          <div class="cashback-note">Eligible buyers may receive <strong>up to $10,000 cashback</strong>, depending on the transaction.</div>
+          <div class="cashback-note">Buying with us? You may qualify for <strong>up to $10,000 cashback.</strong></div>
         </aside>
       </div>
 
@@ -116,8 +116,8 @@
       <div class="content-grid">
         <section class="intel-panel ai-panel">
           <div class="panel-head">
-            <div><span class="panel-kicker">AI DECISION BRIEF</span><h3>Useful before you step inside.</h3></div>
-            <span class="instant-pill">READY NOW</span>
+            <div><span class="panel-kicker">QUICK BUYER READ</span><h3>What matters before a showing.</h3></div>
+            <span class="instant-pill">ON SCREEN NOW</span>
           </div>
           <div class="ai-grid">
             <article><span>PRICE POSITION</span><strong id="priceSignal">Checking</strong><p id="priceSignalText">Building a property-specific market range.</p></article>
@@ -128,9 +128,9 @@
         </section>
 
         <section class="intel-panel market-panel">
-          <div class="panel-head compact"><div><span class="panel-kicker">RECENT SOLD MLS COMPARABLES</span><h3>Actual sales, weighted to this home.</h3></div></div>
+          <div class="panel-head compact"><div><span class="panel-kicker">FULL BUYER REPORT</span><h3>Sold comparables and value range.</h3><p class="panel-subcopy">Emailed after your request.</p></div></div>
           <div class="market-pulse-grid">
-            <div><span>THM RANGE</span><strong id="soldRangeValue">—</strong><small id="soldRangeNote">Checking match quality</small></div>
+            <div><span>ESTIMATED RANGE</span><strong id="soldRangeValue">—</strong><small id="soldRangeNote">Checking match quality</small></div>
             <div><span>MATCH STRENGTH</span><strong id="compCountValue">—</strong><small id="compCountNote">Property type, size, lot and recency weighted</small></div>
             <div><span>OFFER / STATUS</span><strong id="offerTimingValue">—</strong><small id="offerTimingNote">Checking public listing context</small></div>
             <div><span>MLS HISTORY</span><strong id="listingTempoValue">—</strong><small id="listingTempoNote">Checking property history</small></div>
@@ -140,7 +140,7 @@
       </div>
 
       <section class="details-panel">
-        <div class="panel-head compact"><div><span class="panel-kicker">PROPERTY DETAILS</span><h3>The house, without the clutter.</h3></div></div>
+        <div class="panel-head compact"><div><span class="panel-kicker">PROPERTY DETAILS</span><h3>Key facts, clearly shown.</h3></div></div>
         <div id="detailsGrid" class="details-grid"></div>
         <button id="remarksToggle" class="remarks-toggle hidden" type="button">Read listing remarks ↓</button>
         <p id="listingRemarks" class="listing-remarks hidden"></p>
@@ -153,14 +153,14 @@
   <section class="how">
     <div class="wrap">
       <div class="section-head">
-        <span class="section-label">THE DIFFERENCE</span>
-        <h2>From interest to action in one screen.</h2>
-        <p>Check the home, understand the important signals, and request access without bouncing between tools.</p>
+        <span class="section-label">HOW IT WORKS</span>
+        <h2>One request. Two useful outcomes.</h2>
+        <p>We help you see the home sooner and understand the price before you make a decision.</p>
       </div>
       <div class="steps">
-        <article><span>01</span><h3>Check the property</h3><p>MLS number, street address or listing URL.</p></article>
-        <article><span>02</span><h3>Request it now</h3><p>If it is active, send the fastest-available showing request immediately.</p></article>
-        <article><span>03</span><h3>Walk in informed</h3><p>Your property-specific AI decision brief is ready on the same screen.</p></article>
+        <article><span>01</span><h3>Check the home</h3><p>Enter an MLS number, street address, or listing URL.</p></article>
+        <article><span>02</span><h3>Request a showing</h3><p>Choose as soon as possible, today, or within 24 hours.</p></article>
+        <article><span>03</span><h3>Get the buyer report</h3><p>Receive recent sold comparables, a value range, and a clear next step by email.</p></article>
       </div>
     </div>
   </section>
@@ -177,9 +177,9 @@
   <div class="modal-card">
     <button class="close-btn" id="closeModal" type="button" aria-label="Close">×</button>
     <div id="leadFormPanel">
-      <div id="modalEyebrow" class="eyebrow">⚡ FAST SHOWING</div>
-      <h2 id="modalTitle">Request the fastest available showing.</h2>
-      <p id="modalCopy" class="modal-copy">Send the request now. We route it immediately and keep the property brief on screen.</p>
+      <div id="modalEyebrow" class="eyebrow">SHOWING REQUEST</div>
+      <h2 id="modalTitle">See this home as soon as available.</h2>
+      <p id="modalCopy" class="modal-copy">Share your details once. We route the showing request and email your full Buyer Decision Report.</p>
 
       <form id="leadForm" class="lead-form" novalidate>
         <input type="hidden" name="property_input" id="modalProperty" />
@@ -212,20 +212,20 @@
           </label>
         </div>
         <p id="leadError" class="form-error hidden" aria-live="polite"></p>
-        <button id="leadSubmit" class="primary-btn full" type="submit">Send Showing Request →</button>
-        <small id="serviceNote" class="service-note">Target showing window: 1–24 hours, subject to availability. Realtor response target: within 5 minutes during service hours.</small>
+        <button id="leadSubmit" class="primary-btn full" type="submit">Request showing →</button>
+        <small id="serviceNote" class="service-note">Realtor response target: within 5 minutes, 9 AM–9 PM. Showing target: 1–24 hours, subject to availability.</small>
       </form>
     </div>
 
     <div id="leadSuccessPanel" class="success-panel hidden">
       <div class="success-check">✓</div>
-      <h2 id="successTitle">Request received instantly.</h2>
-      <p id="successCopy">The request is saved and assigned. A Realtor still needs to confirm the actual appointment time.</p>
+      <h2 id="successTitle">Request sent.</h2>
+      <p id="successCopy">A Realtor will confirm the earliest available appointment. Your Buyer Decision Report is being prepared for email.</p>
       <div class="status-list">
         <div><span>⚡</span><p><strong id="successStepOne">Showing request routed</strong><small id="successStepOneNote">We are working toward the earliest available appointment.</small></p></div>
-        <div><span>AI</span><p><strong>Your decision brief is ready</strong><small>Close this window to keep reviewing the property.</small></p></div>
+        <div><span>AI</span><p><strong>Your report is being prepared</strong><small>It will be emailed when ready.</small></p></div>
       </div>
-      <button class="primary-btn full" type="button" id="doneButton">Back to Property Brief</button>
+      <button class="primary-btn full" type="button" id="doneButton">Continue reviewing this home</button>
     </div>
   </div>
 </div>
@@ -238,6 +238,6 @@
   <div id="galleryCounter" class="gallery-counter"></div>
 </div>
 
-<script src="/app.js?v=stage4-20260901" defer></script>
+<script src="/app.js?v=copy-20260905" defer></script>
 </body>
 </html>

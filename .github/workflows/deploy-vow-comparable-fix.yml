@@ -14,6 +14,7 @@ on:
       - wrangler.jsonc
       - worker-v11.js
       - tests/comparable-engine.test.mjs
+      - tests/email-copy.test.mjs
       - tests/job-orchestration.test.mjs
 
 permissions:
@@ -34,11 +35,12 @@ jobs:
           node --check worker-v11.js
           node --check app.js
           node --test tests/comparable-engine.test.mjs
+          node --test tests/email-copy.test.mjs
           node --test tests/job-orchestration.test.mjs
-          grep -q 'AI DECISION BRIEF' index.html
-          grep -q 'RECENT SOLD MLS COMPARABLES' index.html
+          grep -q 'See the home.' index.html
+          grep -q 'FULL BUYER REPORT' index.html
           grep -q 'function renderMarketRead' app.js
-          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "473131507e5f076eaca8158e057391bbf90dece3a6b162103c6a676bcfee95b1"
+          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "fc8b21f526a915afbf8b403dadec49fd4e2da6d5452385e2429f7d4a58a4574f"
 
       - name: Deploy with source guard and automatic rollback
         env:
@@ -46,8 +48,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           WORKER_NAME: prototype-1-torontohousemarket
           PRODUCTION_URL: https://torontohousemarket.com
-          EXPECTED_BEFORE_SHAS: "3ebd3d7a384949177857de973afb88634e0d56688d2d969bafb8796057a17753"
-          EXPECTED_AFTER_SHA: 473131507e5f076eaca8158e057391bbf90dece3a6b162103c6a676bcfee95b1
+          EXPECTED_BEFORE_SHAS: "473131507e5f076eaca8158e057391bbf90dece3a6b162103c6a676bcfee95b1"
+          EXPECTED_AFTER_SHA: fc8b21f526a915afbf8b403dadec49fd4e2da6d5452385e2429f7d4a58a4574f
         run: |
           set -euo pipefail
           work_dir="$(mktemp -d)"
@@ -118,9 +120,9 @@ jobs:
           curl -fsS "${PRODUCTION_URL}/api/version" | jq -e '.ok == true and .vowAccess == true' >/dev/null
           curl -fsS -H 'Cache-Control: no-cache' "${PRODUCTION_URL}/?restore=${GITHUB_SHA}" -o "${work_dir}/home.html"
           test "$(wc -c < "${work_dir}/home.html")" -gt 1000
-          grep -q 'AI DECISION BRIEF' "${work_dir}/home.html"
-          grep -q 'RECENT SOLD MLS COMPARABLES' "${work_dir}/home.html"
-          curl -fsS -H 'Cache-Control: no-cache' "${PRODUCTION_URL}/app.js?v=stage4-20260901&restore=${GITHUB_SHA}" -o "${work_dir}/app.js"
+          grep -q 'See the home.' "${work_dir}/home.html"
+          grep -q 'FULL BUYER REPORT' "${work_dir}/home.html"
+          curl -fsS -H 'Cache-Control: no-cache' "${PRODUCTION_URL}/app.js?v=copy-20260905&restore=${GITHUB_SHA}" -o "${work_dir}/app.js"
           grep -q 'function renderMarketRead' "${work_dir}/app.js"
 
           trap - EXIT

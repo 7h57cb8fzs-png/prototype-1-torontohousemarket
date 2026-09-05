@@ -174,10 +174,10 @@ function renderListing(listing) {
   if (!active) {
     if (hasMls) {
       offMarketTitle.textContent = "Not listed — but the property still has useful history.";
-      offMarketCopy.textContent = "Request a deeper property report using available MLS history and current local market context.";
+      offMarketCopy.textContent = "Request a deeper review using available MLS history and current local market context.";
     } else {
       offMarketTitle.textContent = "No current MLS listing found.";
-      offMarketCopy.textContent = "You can still request a deeper property report — or, if you own the home, a seller-focused value review.";
+      offMarketCopy.textContent = "Choose a buyer property review — or, if you own it, a seller value review.";
     }
   }
 
@@ -204,7 +204,7 @@ function buildSnapshotMeta(listing) {
     if (typeof listing.daysLive === "number") bits.push(listing.daysLive === 0 ? "listed today" : `${listing.daysLive} day${listing.daysLive === 1 ? "" : "s"} live`);
     return bits.join(" · ");
   }
-  if (listing.foundInMls === false) return "No active listing or matching MLS history found · deep report path available";
+  if (listing.foundInMls === false) return "Not for sale on MLS · buyer and seller review options available";
   const count = listing.historySummary?.appearanceCount || 0;
   return `Not currently listed${count ? ` · ${count} MLS appearance${count === 1 ? "" : "s"} found in 10 years` : ""}`;
 }
@@ -437,29 +437,29 @@ function openLeadModal(mode) {
   leadMode.value = mode;
 
   if (mode === "showing") {
-    modalEyebrow.textContent = "⚡ FAST SHOWING · 1–24H TARGET";
-    modalTitle.textContent = "Request the fastest available showing.";
-    modalCopy.textContent = "We save the request immediately. Our administrator assigns the right Realtor, who then confirms the appointment with the listing side.";
+    modalEyebrow.textContent = "SHOWING REQUEST · 1–24 HOUR TARGET";
+    modalTitle.textContent = "See this home as soon as available.";
+    modalCopy.textContent = "Share your details once. We route the showing request and email your full Buyer Decision Report.";
     nextStepLabel.textContent = "WHEN DO YOU WANT TO SEE IT?";
     showingTiming.innerHTML = `<option value="asap">As soon as possible</option><option value="today">Today, if available</option><option value="within_24h">Within 24 hours</option>`;
-    leadSubmit.textContent = "Send Showing Request →";
-    serviceNote.textContent = "Target showing window: 1–24 hours, subject to listing/seller availability. Realtor response target: within 5 minutes during service hours.";
+    leadSubmit.textContent = "Request showing →";
+    serviceNote.textContent = "Realtor response target: within 5 minutes, 9 AM–9 PM. Showing target: 1–24 hours, subject to availability.";
   } else if (mode === "seller") {
-    modalEyebrow.textContent = "SELLER AI REPORT";
-    modalTitle.textContent = "Own this home? See the seller side.";
-    modalCopy.textContent = "Request an AI-assisted value and market-position review without putting the property on the market.";
+    modalEyebrow.textContent = "SELLER VALUE REVIEW";
+    modalTitle.textContent = "Own this home? Understand its position.";
+    modalCopy.textContent = "Request a private, AI-assisted value and market review without listing the property.";
     nextStepLabel.textContent = "REPORT";
-    showingTiming.innerHTML = `<option value="seller_report">Seller AI Deep Report</option>`;
+    showingTiming.innerHTML = `<option value="seller_report">Seller Value Review</option>`;
     sellerTimelineWrap.classList.remove("hidden");
-    leadSubmit.textContent = "Request Seller AI Report →";
+    leadSubmit.textContent = "Request seller review →";
     serviceNote.textContent = "Preliminary decision support only. A Realtor review is required before relying on pricing or listing strategy.";
   } else {
-    modalEyebrow.textContent = "OFF-MARKET AI REPORT";
-    modalTitle.textContent = "Go deeper on this property.";
-    modalCopy.textContent = "No active listing was found. Request a deeper property-history and market-context review.";
+    modalEyebrow.textContent = "BUYER PROPERTY REVIEW";
+    modalTitle.textContent = "Interested even though it is not listed?";
+    modalCopy.textContent = "Request a deeper review of available MLS history and current local market context.";
     nextStepLabel.textContent = "NEXT STEP";
-    showingTiming.innerHTML = `<option value="buyer_offmarket_report">AI Deep Property Report</option><option value="buyer_offmarket_contact">Talk to a Realtor about this property</option>`;
-    leadSubmit.textContent = "Request AI Deep Property Report →";
+    showingTiming.innerHTML = `<option value="buyer_offmarket_report">Buyer Property Review</option><option value="buyer_offmarket_contact">Talk to a Realtor about this property</option>`;
+    leadSubmit.textContent = "Request property review →";
     serviceNote.textContent = "This property is not currently listed for sale. Any value range is preliminary and requires verification.";
   }
 
@@ -552,22 +552,22 @@ leadForm.addEventListener("submit", async (event) => {
 function renderLeadSuccess(result) {
   const afterHours = !!result.queued_after_hours;
   if (currentLeadMode === "showing") {
-    successTitle.textContent = "Showing request received instantly.";
+    successTitle.textContent = "Showing request sent.";
     successCopy.textContent = afterHours
-      ? "Your request is saved for administrator assignment in the next service window. The actual showing still needs confirmation from the listing side."
-      : "Your request is saved for administrator assignment. A Realtor will then confirm the actual appointment time with the listing side.";
-    successStepOne.textContent = "Showing request received";
-    successStepOneNote.textContent = "The response timer starts when an administrator assigns a Realtor.";
+      ? "Your request is saved for the next service window. A Realtor will confirm the earliest available appointment."
+      : "A Realtor will contact you to confirm the earliest appointment available from the listing side.";
+    successStepOne.textContent = "Showing request routed";
+    successStepOneNote.textContent = afterHours ? "We will respond in the next 9 AM–9 PM service window." : "Realtor response target: within 5 minutes.";
   } else if (currentLeadMode === "seller") {
-    successTitle.textContent = "Seller report request received.";
-    successCopy.textContent = "The property and your request are saved for the seller-side review.";
-    successStepOne.textContent = "Seller review assigned";
-    successStepOneNote.textContent = "A Realtor review follows the AI-assisted property read.";
+    successTitle.textContent = "Seller review requested.";
+    successCopy.textContent = "Your private property review is now being prepared.";
+    successStepOne.textContent = "Seller request routed";
+    successStepOneNote.textContent = "A Realtor reviews the AI-assisted property read before you rely on it.";
   } else {
-    successTitle.textContent = "Deep report request received.";
-    successCopy.textContent = "The off-market property request is saved for deeper review.";
-    successStepOne.textContent = "Property review assigned";
-    successStepOneNote.textContent = "We will use the available property and market context for the next layer.";
+    successTitle.textContent = "Property review requested.";
+    successCopy.textContent = "We will review the available MLS history and local market context.";
+    successStepOne.textContent = "Buyer request routed";
+    successStepOneNote.textContent = "A Realtor reviews the result before the next decision.";
   }
 }
 

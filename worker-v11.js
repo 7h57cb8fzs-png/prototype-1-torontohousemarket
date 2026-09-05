@@ -105,7 +105,7 @@ async function handleProperty(request, env) {
   const displayRestricted = activeForSale && !fullDisplayAllowed;
   const embeddedMedia = Array.isArray(subject.Media) ? subject.Media : [];
   const [comparableContext, mediaRecords] = await Promise.all([
-    publicSnapshot ? Promise.resolve({ available: false, matchCount: 0, confidence: "Available after request", basis: "Protected analysis is prepared after registration." }) : buildComparableContext(subject, env, activeForSale, requestId),
+    publicSnapshot ? Promise.resolve({ available: false, matchCount: 0, confidence: "Included in your report", basis: "Recent sold comparables and the value range are emailed after your request." }) : buildComparableContext(subject, env, activeForSale, requestId),
     activeForSale && fullDisplayAllowed && !reportEvidence ? embeddedMedia.length ? Promise.resolve(embeddedMedia) : fetchPropertyMedia(subject.ListingKey, env) : Promise.resolve([])
   ]);
   const historySummary = summarizeHistory(history, subject);
@@ -156,9 +156,9 @@ function buildNoMlsProperty(address, validationLabel) {
     inputValidation: { type: "address", label: validationLabel },
     historySummary: { years: 10, appearanceCount: 0, lastStatus: null, lastListPrice: null, lastSeenDate: null, latestSold: null },
     comparableContext: { available: false, matchCount: 0, confidence: "Unavailable", basis: "No matching MLS record was found for this address." },
-    priceOpinion: { available: false, label: "Deep report available", note: "A broader owner/property review can still be requested." },
+    priceOpinion: { available: false, label: "Property review available", note: "Request a buyer or seller review for the next step." },
     offerTiming: { type: "not_for_sale", label: "Not for sale", note: "No active for-sale listing was found." },
-    showingFocus: { title: "Off-market property", note: "Request a deeper property report or, if you own the home, a seller-focused value review." },
+    showingFocus: { title: "Not for sale on MLS", note: "Request a buyer property review or, if you own it, a seller value review." },
     details: {},
     displayRestricted: false,
     resolution: "no_mls_match"
@@ -2883,8 +2883,8 @@ async function publicProperty(request, env, ctx) {
   delete body.property.latitude;
   delete body.property.longitude;
   applyVerifiedPropTxHistory(body.property);
-  body.property.comparableContext = { available: false, matchCount: 0, confidence: "Available after request", basis: "Submit a showing or property-report request to receive the deeper AI-assisted analysis." };
-  body.property.priceOpinion = { available: false, label: "Included in requested report", note: "The deeper value analysis is prepared after your request." };
+  body.property.comparableContext = { available: false, matchCount: 0, confidence: "Included in your report", basis: "Recent sold comparables and the value range are emailed after your request." };
+  body.property.priceOpinion = { available: false, label: "Included in your report", note: "Your value range is prepared after your request." };
   const result = json7(body, response.status, { "Cache-Control": "public, max-age=60, s-maxage=300" });
   if (response.status === 200 && edgeCache) ctx.waitUntil(edgeCache.put(cacheKey, result.clone()));
   return result;
@@ -3903,9 +3903,9 @@ function buildEmail(job, lead) {
     rows = [["Buyer", lead.name], ["Mobile", lead.mobile], ["Email", lead.email], ["Requested time", timing]];
   } else if (reason === "buyer_request_confirmation") {
     subject = job.payload?.vow_action_link ? `Verify your email to start the report for ${address}` : `We received your request for ${address}`;
-    heading = job.payload?.vow_action_link ? "Verify your email to start your report" : "Your request is received";
-    intro = job.payload?.vow_action_link ? "Your property request is saved. Click the secure verification link below; your protected AI report will then start automatically." : "Thank you. An administrator will assign the right Realtor, who will contact you to confirm the next step.";
-    rows = [["Property", address], ["Requested time", timing]];
+    heading = job.payload?.vow_action_link ? "Verify your email to start your report" : "Your request is in";
+    intro = job.payload?.vow_action_link ? "Click the secure link below to start your private Buyer Decision Report." : "A Realtor will confirm the next step. Your full Buyer Decision Report is prepared separately and emailed when ready.";
+    rows = [["Property", address], ["Requested time", timing], ["Buyer report", job.payload?.vow_action_link ? "Starts after email verification" : "Preparing - sent in a separate email"]];
   } else if (reason === "admin_assignment" || job.job_type === "notify_agent" && reason !== "agent_sla_reminder") {
     subject = `New lead assigned: ${address}`;
     heading = "A lead has been assigned to you";
@@ -4018,9 +4018,35 @@ function propertyReportEmail(address, agentData, report) {
   const nextMoveMarker = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#10182d">';
   const disclaimerHtml = `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px;background:#f7f8fb;border-left:4px solid #3155f5"><tr><td style="padding:14px"><p style="margin:0 0 5px;color:#3155f5;font:800 9px Arial,sans-serif;letter-spacing:1px">AI-ASSISTED BUYER BRIEF</p><p style="margin:0;color:#687286;font:400 10px Arial,sans-serif;line-height:1.5">This email uses AI assistance and licensed MLS evidence for preliminary decision support. It is not an appraisal, legal advice, home inspection or guarantee of value. Verify sold data and all material facts with a registered real estate professional.</p></td></tr></table>`;
   const displayedRating = rating.available ? `${rating.score}/10 - ${rating.label}` : rating.label;
-  const finalHtmlBody = htmlBody.replace(decisionMarker, `${evidenceVisual}${decisionMarker}`).replace(soldEvidenceMarker, `${smartFacts}${soldEvidenceMarker}`).replace(nextMoveMarker, `${questionsHtml}${nextMoveMarker}`).replace("</td></tr></table></td></tr></table></body></html>", `${researchHtml}${disclaimerHtml}</td></tr></table></td></tr></table></body></html>`);
-  const text = ["THM BUYER INTELLIGENCE", address, context, `THM value rating: ${displayedRating}`, moveSignal, moveTitle, moveNote, `Asking: ${cad(facts.list_price) || "-"}`, `Evidence band: ${range}`, `Evidence: ${comps.length} match${comps.length === 1 ? "" : "es"} / ${policy.windowDays || 100} days`, policy.expandedWindow ? `Evidence note: search expanded from 100 to ${policy.windowDays || 300} days.` : null, "The 30-second read", n.executive_summary, `Market timing: ${facts.days_on_market != null ? `${facts.days_on_market} days live` : "Confirm DOM"}`, `Offer timing: ${offerLabel}`, `Closest school: ${facts.closest_school || "Confirm attendance school"}`, "Best sold evidence", ...topComps.map((c, i) => `${i + 1}. ${c.address} | ${cad(c.soldPrice)} | ${c.soldDate}${c.distanceKm != null ? ` | ${Number(c.distanceKm).toFixed(2)} km` : ""} | ${Math.round(Number(c.similarity) || 0)}% match`), "AI evidence read", n.market_read, "What helps", ...(n.strengths || []).slice(0, 3).map((x) => `- ${x}`), "What could change it", ...(n.risks || []).slice(0, 3).map((x) => `- ${x}`), "Your next move", n.buyer_strategy, ...(n.inspection_priorities || []).slice(0, 3).map((x) => `- ${x}`), `Ask ${agent}: ${agentMobile || agentEmail || "torontohousemarket.com"}`, "This report was generated with AI assistance from licensed MLS evidence. It is not an appraisal, legal advice or a guarantee of value. Verify material facts with a registered real estate professional."].filter(Boolean).join("\n\n");
-  return { subject: `THM Value Rating: ${rating.available ? `${rating.score}/10` : "Realtor review"} | ${address}`, html: finalHtmlBody, text };
+  const assembledHtmlBody = htmlBody.replace(decisionMarker, `${evidenceVisual}${decisionMarker}`).replace(soldEvidenceMarker, `${smartFacts}${soldEvidenceMarker}`).replace(nextMoveMarker, `${questionsHtml}${nextMoveMarker}`).replace("</td></tr></table></td></tr></table></body></html>", `${researchHtml}${disclaimerHtml}</td></tr></table></td></tr></table></body></html>`);
+  const originalCompSummary = `Top ${topComps.length} of ${comps.length} licensed matches used. Newest record: ${html(v.newest_sold_date || "unknown")}. ${comps.length > 3 ? `${comps.length - 3} additional matches were analysed.` : ""}`;
+  const clearCompSummary = `${topComps.length} qualifying recent sale${topComps.length === 1 ? "" : "s"} shown. Latest sale: ${html(v.newest_sold_date || "unknown")}.`;
+  const technicalLine = `Analysis uses licensed AMPRE / PropTx listing and sold evidence after the property request. AI provider: ${html(report.ai_generation?.provider || "deterministic fallback")}.`;
+  const finalHtmlBody = assembledHtmlBody
+    .replace("THM BUYER INTELLIGENCE", "YOUR BUYER DECISION REPORT")
+    .replace("RECOMMENDED NEXT MOVE", "BOTTOM LINE")
+    .replace(html(moveTitle), html(verdict))
+    .replace(html(moveNote), html(verdictReason))
+    .replace(">ASKING</p>", ">ASKING PRICE</p>")
+    .replace(">EVIDENCE BAND</p>", ">SOLD RANGE</p>")
+    .replace(">EVIDENCE</p>", ">COMPARABLES</p>")
+    .replace("THE 30-SECOND READ", "QUICK READ")
+    .replace("Best sold evidence", "Recent comparable sales")
+    .replace(originalCompSummary, clearCompSummary)
+    .replace("AI EVIDENCE READ", "WHAT THE NUMBERS SAY")
+    .replace("WHAT HELPS", "STRENGTHS")
+    .replace("WHAT COULD CHANGE IT", "WATCH")
+    .replace("3 QUESTIONS THAT COULD CHANGE THE DECISION", "QUESTIONS FOR YOUR REALTOR")
+    .replace("YOUR NEXT MOVE", "READY TO SEE IT?")
+    .replace("Use the showing to answer the value questions.", "Request the earliest available showing.")
+    .replace(`Ask ${html(agent)} for the local price check`, `Request a showing with ${html(agent)}`)
+    .replace(technicalLine, "Licensed MLS evidence is used for preliminary buyer decision support.")
+    .replace("LIVE PUBLIC RESEARCH", "SOURCES")
+    .replace("AI-ASSISTED BUYER BRIEF", "IMPORTANT")
+    .replaceAll("PRICE POSITION", "SOLD PRICE RANGE")
+    .replace(">MID ", ">MIDPOINT ");
+  const text = ["YOUR BUYER DECISION REPORT", address, context, `Value rating: ${displayedRating}`, "BOTTOM LINE", verdict, verdictReason, `Asking price: ${cad(facts.list_price) || "-"}`, `Recent sold range: ${range}`, `Comparables: ${comps.length} / ${policy.windowDays || 100} days`, policy.expandedWindow ? `Evidence note: search expanded from 100 to ${policy.windowDays || 300} days.` : null, "QUICK READ", n.executive_summary, "RECENT COMPARABLE SALES", ...topComps.map((c, i) => `${i + 1}. ${c.address} | ${cad(c.soldPrice)} | ${c.soldDate}${c.distanceKm != null ? ` | ${Number(c.distanceKm).toFixed(2)} km` : ""} | ${Math.round(Number(c.similarity) || 0)}% match`), "WHAT THE NUMBERS SAY", n.market_read, "STRENGTHS", ...(n.strengths || []).slice(0, 3).map((x) => `- ${x}`), "WATCH", ...(n.risks || []).slice(0, 3).map((x) => `- ${x}`), "READY TO SEE IT?", n.buyer_strategy, ...(n.inspection_priorities || []).slice(0, 3).map((x) => `- ${x}`), `Request a showing with ${agent}: ${agentMobile || agentEmail || "torontohousemarket.com"}`, "AI-assisted preliminary decision support using licensed MLS evidence. Not an appraisal, legal advice, inspection, or guarantee of value. Verify material facts with a registered real estate professional."].filter(Boolean).join("\n\n");
+  return { subject: `Buyer Report: ${address} | ${rating.available ? `Value Rating ${rating.score}/10` : "Realtor Review"}`, html: finalHtmlBody, text };
 }
 __name(propertyReportEmail, "propertyReportEmail");
 function propertyReportPdf(address, agentData, report) {
