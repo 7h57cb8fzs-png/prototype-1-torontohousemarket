@@ -662,7 +662,8 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
   const unique = dedupe(raw || []);
   const notSubject = unique.filter((row) => row.ListingKey !== subject?.ListingKey);
   const exactSubtype = notSubject.filter((row) => exactComparableType(subject, row));
-  const soldWithin300 = exactSubtype.filter((row) => isSoldWithinDays(row, 300, subject));
+  const sizeCompatible = exactSubtype.filter((row) => comparableHasCompatibleSize(subject, row));
+  const soldWithin300 = sizeCompatible.filter((row) => isSoldWithinDays(row, 300, subject));
   const selectedWithDistance = (selected || []).filter((row) => Number.isFinite(row.distanceKm));
   const subjectCoordinates = propertyCoordinates(subject);
   diagnosticLog("log", "comparable_selection_diagnostic", {
@@ -687,7 +688,8 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
       duplicate: Math.max(0, (raw || []).length - unique.length),
       subject_listing: Math.max(0, unique.length - notSubject.length),
       subtype_mismatch: Math.max(0, notSubject.length - exactSubtype.length),
-      not_sold_within_300_days: Math.max(0, exactSubtype.length - soldWithin300.length),
+      size_mismatch: Math.max(0, exactSubtype.length - sizeCompatible.length),
+      not_sold_within_300_days: Math.max(0, sizeCompatible.length - soldWithin300.length),
       non_local_or_similarity_below_threshold: Math.max(0, soldWithin300.length - (qualified || []).length),
       outside_selected_window: Math.max(0, (qualified || []).length - (window || []).length),
       price_cluster: Math.max(0, (window || []).length - (clustered || []).length),
@@ -822,13 +824,30 @@ async function querySoldComparableRows(baseFilters, env, top, startSkip = 0) {
 }
 __name(querySoldComparableRows, "querySoldComparableRows");
 function qualifiedSoldComparableRows(subject, records, maxAgeDays) {
-  return dedupe(records || []).filter((record) => record.ListingKey !== subject.ListingKey).filter((record) => exactComparableType(subject, record)).filter((record) => isSoldWithinDays(record, maxAgeDays, subject)).map((record) => {
+  return dedupe(records || []).filter((record) => record.ListingKey !== subject.ListingKey).filter((record) => exactComparableType(subject, record)).filter((record) => comparableHasCompatibleSize(subject, record)).filter((record) => isSoldWithinDays(record, maxAgeDays, subject)).map((record) => {
     const candidate = normalizeComparable(subject, record);
     const soldDate = soldRecordDate(record);
     return { ...candidate, ageDays: soldDate ? Math.max(0, (Date.now() - soldDate.getTime()) / 864e5) : Number.POSITIVE_INFINITY };
   }).filter((candidate) => candidate.price && candidate.closeDate && candidate.similarity >= 35).sort(compareComparable);
 }
 __name(qualifiedSoldComparableRows, "qualifiedSoldComparableRows");
+function livingAreaBounds(record) {
+  const numbers = String(record?.LivingAreaRange || "").match(/\d[\d,]*/g)?.map((number) => Number(number.replace(/,/g, ""))).filter((number) => Number.isFinite(number) && number > 0) || [];
+  if (numbers.length >= 2) return { low: Math.min(numbers[0], numbers[1]), high: Math.max(numbers[0], numbers[1]) };
+  const exact = numbers[0] || numberOrNull(record?.BuildingAreaTotal);
+  return exact ? { low: exact, high: exact } : null;
+}
+__name(livingAreaBounds, "livingAreaBounds");
+function comparableHasCompatibleSize(subject, record) {
+  const subjectArea = livingAreaBounds(subject);
+  const comparableArea = livingAreaBounds(record);
+  if (!subjectArea || !comparableArea) return true;
+  if (Math.min(subjectArea.high, comparableArea.high) >= Math.max(subjectArea.low, comparableArea.low)) return true;
+  const subjectMid = (subjectArea.low + subjectArea.high) / 2;
+  const comparableMid = (comparableArea.low + comparableArea.high) / 2;
+  return Math.abs(subjectMid - comparableMid) / subjectMid <= 0.22;
+}
+__name(comparableHasCompatibleSize, "comparableHasCompatibleSize");
 function medianPrice(values) {
   const prices = (values || []).map(Number).filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
   if (!prices.length) return null;
@@ -4276,6 +4295,7 @@ function json7(body, status = 200, headers = {}) {
 __name(json7, "json");
 export {
   buildComparableContext,
+  comparableHasCompatibleSize,
   comparableIsLocal,
   distanceBetweenProperties,
   exactComparableType,

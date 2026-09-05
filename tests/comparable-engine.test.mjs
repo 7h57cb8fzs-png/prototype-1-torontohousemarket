@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildComparableContext,
+  comparableHasCompatibleSize,
   comparableIsLocal,
   distanceBetweenProperties,
   exactComparableType,
@@ -56,6 +57,14 @@ test("property subtype matching is exact", () => {
   assert.equal(exactComparableType({ PropertySubType: "Detached" }, { PropertySubType: "Detached" }), true);
   assert.equal(exactComparableType({ PropertySubType: "Detached" }, { PropertySubType: "Semi-Detached" }), false);
   assert.equal(exactComparableType({ PropertySubType: "Att/Row/Townhouse" }, { PropertySubType: "Condo Townhouse" }), false);
+});
+
+test("known living-area bands must overlap or be genuinely adjacent", () => {
+  const subject = { LivingAreaRange: "2500-3000" };
+  assert.equal(comparableHasCompatibleSize(subject, { LivingAreaRange: "2500-3000" }), true);
+  assert.equal(comparableHasCompatibleSize(subject, { LivingAreaRange: "2000-2500" }), true);
+  assert.equal(comparableHasCompatibleSize(subject, { LivingAreaRange: "1500-2000" }), false);
+  assert.equal(comparableHasCompatibleSize(subject, { LivingAreaRange: null }), true);
 });
 
 test("closed rental listings cannot become sold comparables", () => {
@@ -159,6 +168,43 @@ test("engine excludes unrelated communities before applying the price screen", a
     assert.ok(decodedCalls.some((url) => url.includes("$count=true") && url.includes("$top=0")));
     assert.ok(calls.every((url) => new URL(url).searchParams.get("$top") !== "1"));
     assert.ok(decodedCalls.every((url) => !url.includes("$orderby=")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("engine does not reuse small-home sales for a materially larger townhouse", async () => {
+  const subject = soldRow({
+    ListingKey: "DONNACONA",
+    PropertySubType: "Att/Row/Townhouse",
+    CityRegion: "Vellore Village",
+    PostalCode: "L4H 0Y6",
+    LivingAreaRange: "2500-3000",
+    ListPrice: 1325990,
+    ClosePrice: null
+  });
+  const rows = [
+    soldRow({ ListingKey: "DAVOS-COMP-1", PropertySubType: "Att/Row/Townhouse", CityRegion: "Vellore Village", PostalCode: "L4H 2M8", LivingAreaRange: "1500-2000", ClosePrice: 885000 }),
+    soldRow({ ListingKey: "DAVOS-COMP-2", PropertySubType: "Att/Row/Townhouse", CityRegion: "Vellore Village", PostalCode: "L4H 3J5", LivingAreaRange: "1500-2000", ClosePrice: 930000 }),
+    soldRow({ ListingKey: "DAVOS-COMP-3", PropertySubType: "Att/Row/Townhouse", CityRegion: "Vellore Village", PostalCode: "L4H 1T3", LivingAreaRange: "1500-2000", ClosePrice: 935000 }),
+    soldRow({ ListingKey: "LARGE-1", PropertySubType: "Att/Row/Townhouse", CityRegion: "Vellore Village", PostalCode: "L4H 0Y1", LivingAreaRange: "2500-3000", ClosePrice: 1160000 }),
+    soldRow({ ListingKey: "LARGE-2", PropertySubType: "Att/Row/Townhouse", CityRegion: "Vellore Village", PostalCode: "L4H 0Y2", LivingAreaRange: "2500-3000", ClosePrice: 1190000 }),
+    soldRow({ ListingKey: "LARGE-3", PropertySubType: "Att/Row/Townhouse", CityRegion: "Vellore Village", PostalCode: "L4H 0Y3", LivingAreaRange: "2000-2500", ClosePrice: 1210000 }),
+    soldRow({ ListingKey: "LARGE-4", PropertySubType: "Att/Row/Townhouse", CityRegion: "Vellore Village", PostalCode: "L4H 0Y4", LivingAreaRange: "2500-3000", ClosePrice: 1230000 })
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.searchParams.get("$count") === "true") {
+      return new Response(JSON.stringify({ "@odata.count": rows.length, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ value: rows }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only" }, true, "size-gate-test");
+    assert.equal(result.available, true);
+    assert.deepEqual(result.comparables.map((row) => row.listingKey).sort(), ["LARGE-1", "LARGE-2", "LARGE-3", "LARGE-4"]);
+    assert.ok(result.comparables.every((row) => row.livingAreaRange !== "1500-2000"));
   } finally {
     globalThis.fetch = originalFetch;
   }
