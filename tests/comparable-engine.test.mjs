@@ -49,10 +49,60 @@ test("distance is calculated only from real coordinates", () => {
 
 test("locality accepts only the same community or a verified radius", () => {
   assert.equal(comparableIsLocal({ sameRegion: true, samePostalPrefix: false, distanceKm: null }), true);
+  assert.equal(comparableIsLocal({ sameRegion: false, sameBuilding: true, distanceKm: null }), true);
+  assert.equal(comparableIsLocal({ sameRegion: false, sameStreetPostal: true, distanceKm: null }), true);
   assert.equal(comparableIsLocal({ sameRegion: false, samePostalPrefix: true, distanceKm: null }), false);
   assert.equal(comparableIsLocal({ sameRegion: false, samePostalPrefix: false, distanceKm: 4.9 }), true);
   assert.equal(comparableIsLocal({ sameRegion: false, samePostalPrefix: false, distanceKm: 5.1 }), false);
   assert.equal(comparableIsLocal({ sameRegion: false, samePostalPrefix: false, distanceKm: null }), false);
+});
+
+test("valid local evidence remains visible when the price cluster cannot support valuation", async () => {
+  const subject = soldRow({ ListingKey: "JONES-SUBJECT", UnparsedAddress: "491 Jones Avenue, Toronto", ClosePrice: null });
+  const rows = [
+    soldRow({ ListingKey: "LOW-1", ClosePrice: 700000 }),
+    soldRow({ ListingKey: "LOW-2", ClosePrice: 760000 }),
+    soldRow({ ListingKey: "HIGH-1", ClosePrice: 1150000 }),
+    soldRow({ ListingKey: "HIGH-2", ClosePrice: 1250000 })
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.searchParams.get("$count") === "true") return new Response(JSON.stringify({ "@odata.count": rows.length, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ value: rows }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only" }, true, "price-gap-test");
+    assert.equal(result.available, false);
+    assert.equal(result.matchCount, 4);
+    assert.equal(result.policy.evidenceOnly, true);
+    assert.deepEqual(result.comparables.map((row) => row.listingKey).sort(), ["HIGH-1", "HIGH-2", "LOW-1", "LOW-2"]);
+    assert.match(result.basis, /no valuation range was produced/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("same-building sales are local and ranked before other community sales", async () => {
+  const subject = soldRow({ ListingKey: "PINE-SUBJECT", PropertySubType: "Condo Apartment", CityRegion: "East Woodbridge", PostalCode: "L4L 2X5", UnparsedAddress: "405 - 201 Pine Grove Road, Vaughan", ClosePrice: null });
+  const rows = [
+    soldRow({ ListingKey: "COMMUNITY-1", PropertySubType: "Condo Apartment", CityRegion: "East Woodbridge", PostalCode: "L4L 1A1", UnparsedAddress: "10 Other Road, Vaughan", ClosePrice: 800000 }),
+    soldRow({ ListingKey: "BUILDING-1", PropertySubType: "Condo Apartment", CityRegion: "Pine Valley Business Park", PostalCode: "L4L 2X5", UnparsedAddress: "103 - 201 Pine Grove Rd, Vaughan", ClosePrice: 805000 }),
+    soldRow({ ListingKey: "BUILDING-2", PropertySubType: "Condo Apartment", CityRegion: "Pine Valley Business Park", PostalCode: "L4L 2X5", UnparsedAddress: "Unit 210-201 Pine Grove Road, Vaughan", ClosePrice: 810000 })
+  ];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.searchParams.get("$count") === "true") return new Response(JSON.stringify({ "@odata.count": rows.length, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ value: rows }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only" }, true, "same-building-test");
+    assert.equal(result.available, true);
+    assert.deepEqual(result.comparables.slice(0, 2).map((row) => row.listingKey), ["BUILDING-1", "BUILDING-2"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("property subtype matching is exact", () => {
