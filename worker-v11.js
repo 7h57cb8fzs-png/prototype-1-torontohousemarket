@@ -3406,8 +3406,10 @@ async function runScheduledNotifications(env) {
 }
 __name(runScheduledNotifications, "runScheduledNotifications");
 async function processAutomationJobs(env) {
-  const reports = await processReportJobs(env, 3);
+  // Deliver already-ready emails before expensive VOW report generation.
+  // A report completed in this run is delivered by the next minute's fresh invocation.
   const emails = await processEmailJobs(env, 20);
+  const reports = await processReportJobs(env, 3);
   return { reports, emails };
 }
 __name(processAutomationJobs, "processAutomationJobs");
