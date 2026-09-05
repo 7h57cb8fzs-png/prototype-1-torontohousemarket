@@ -2924,6 +2924,7 @@ var worker_v11_default = {
     if (url.pathname === "/api/admin/settings" && request.method === "GET") return adminSettings(request, env);
     if (url.pathname === "/api/admin/settings" && request.method === "PATCH") return updateSettings(request, env);
     if (url.pathname === "/api/admin/vow/diagnostics" && request.method === "GET") return vowDiagnostics(request, env);
+    if (url.pathname === "/api/admin/vow/active-sample" && request.method === "GET") return vowActiveSample(request, env);
     if (url.pathname === "/api/admin/vow/diagnostic-console" && request.method === "GET") return adminDiagnosticConsole();
     if (url.pathname === "/api/admin/vow/query-diagnostics" && request.method === "GET") return vowQueryDiagnostics(request, env);
     if (url.pathname === "/api/admin/media/diagnostics" && request.method === "GET") return mediaDiagnostics(request, env);
@@ -3354,6 +3355,63 @@ async function vowDiagnostics(request, env) {
   }, response.ok ? 200 : 502, { "Cache-Control": "private, no-store" });
 }
 __name(vowDiagnostics, "vowDiagnostics");
+async function vowActiveSample(request, env) {
+  if (!authorized(request, env)) return json7({ ok: false, error: "Unauthorized" }, 401);
+  if (!env.AMPRE_VOW_TOKEN) return json7({ ok: false, configured: false, error: "AMPRE_VOW_TOKEN is not configured." }, 503);
+  const excluded = new Set(String(new URL(request.url).searchParams.get("exclude") || "").toUpperCase().match(/[A-Z]\d{7,9}/g) || []);
+  const postalPrefixes = ["M1M", "M2N", "M3J", "M4J", "M5V", "L4C", "L4E", "L4H", "L4J", "L4L", "L6A", "L5B"];
+  const audit = [];
+  const rows = [];
+  for (const prefix of postalPrefixes) {
+    const filters = [`startswith(PostalCode,'${prefix}')`];
+    const counted = await queryPropertyCount(filters, env);
+    const startSkip = counted.count == null ? 0 : Math.max(0, counted.count - 100);
+    const result = await queryPropertiesDetailed(filters, env, 100, "", startSkip);
+    audit.push({ prefix, totalCount: counted.count, startSkip, status: result.meta.status, returned: result.rows.length });
+    rows.push(...result.rows);
+  }
+  const eligible = dedupe(rows).filter((row) => !excluded.has(String(row?.ListingKey || "").toUpperCase())).filter(isActiveForSale).filter((row) => /^[A-Z]\d{7,9}$/.test(String(row?.ListingKey || "").toUpperCase())).filter((row) => cleanText(row?.PropertySubType) && cleanText(row?.CityRegion) && cleanText(row?.PostalCode));
+  const buckets = /* @__PURE__ */ new Map();
+  for (const row of eligible) {
+    const bucket = cleanText(row.PropertySubType);
+    if (!buckets.has(bucket)) buckets.set(bucket, []);
+    buckets.get(bucket).push(row);
+  }
+  const preferredTypes = ["Detached", "Semi-Detached", "Att/Row/Townhouse", "Condo Townhouse", "Condo Apartment"];
+  const selected = [];
+  let cursor = 0;
+  while (selected.length < 20 && cursor < 20) {
+    let added = false;
+    for (const type of preferredTypes) {
+      const row = (buckets.get(type) || [])[cursor];
+      if (!row) continue;
+      selected.push(row);
+      added = true;
+      if (selected.length >= 20) break;
+    }
+    if (!added) break;
+    cursor++;
+  }
+  return json7({
+    ok: true,
+    source: "AMPRE VOW current active inventory",
+    sampleSize: selected.length,
+    listings: selected.map((row) => ({
+      listingKey: row.ListingKey,
+      address: row.UnparsedAddress || buildAddress(row),
+      listPrice: numberOrNull(row.ListPrice),
+      propertySubType: cleanText(row.PropertySubType),
+      community: cleanText(row.CityRegion),
+      postalCode: cleanText(row.PostalCode),
+      livingAreaRange: cleanText(row.LivingAreaRange),
+      beds: numberOrNull(row.BedroomsTotal),
+      baths: numberOrNull(row.BathroomsTotalInteger),
+      status: cleanText(row.StandardStatus || row.MlsStatus || row.ContractStatus)
+    })),
+    audit
+  }, 200, { "Cache-Control": "private, no-store" });
+}
+__name(vowActiveSample, "vowActiveSample");
 async function vowQueryDiagnostics(request, env) {
   if (!authorizedDiagnostic(request, env)) return json7({ ok: false, error: "Unauthorized" }, 401);
   if (!env.AMPRE_VOW_TOKEN) return json7({ ok: false, error: "AMPRE_VOW_TOKEN is not configured." }, 503);
@@ -3546,7 +3604,7 @@ async function createAndSendListingTestEmail(request, env) {
 }
 __name(createAndSendListingTestEmail, "createAndSendListingTestEmail");
 function adminDiagnosticConsole() {
-  const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>THM VOW Diagnostics</title><style>body{font:16px system-ui;max-width:920px;margin:40px auto;padding:0 18px;color:#111827}input,textarea,button,select{font:inherit;padding:11px;margin:5px 0}input,textarea{width:min(720px,90%)}textarea{min-height:120px}button{cursor:pointer;background:#3155f5;color:#fff;border:0;border-radius:8px}button.danger{background:#9f1239}pre{white-space:pre-wrap;background:#f3f4f6;padding:16px;border-radius:10px}small{color:#64748b}</style></head><body><h1>Protected comparable diagnostics</h1><p>Read-only diagnostics use the licensed VOW feed. Batch diagnostics create no leads, reports, jobs or emails.</p><label>Admin API key<br><input id="key" type="password" autocomplete="current-password"></label><label><br>MLS numbers, one per line<br><textarea id="batch" spellcheck="false" placeholder="N13547902&#10;E13563626"></textarea></label><p><button id="runBatch">Run read-only batch</button> <button class="danger" id="sendBatch">Send audited reports to Ali</button></p><hr><p><button id="load">Load 494 Donlands test lead</button></p><select id="lead"><option value="">Load a matching lead first</option></select><p><button id="diagnose">Run Donlands diagnostic</button> <button class="danger" id="send">Generate + send one test report</button></p><small>The send actions do not run the general automation queue.</small><pre id="out">Ready.</pre><script>const key=document.getElementById('key'),out=document.getElementById('out'),lead=document.getElementById('lead'),batch=document.getElementById('batch');let lastBatch=[];async function api(path,options={}){const response=await fetch(path,{...options,headers:{Authorization:'Bearer '+key.value.trim(),'Content-Type':'application/json',...(options.headers||{})},cache:'no-store'});const body=await response.json().catch(()=>null);if(!response.ok)throw new Error(body?.error||'Request failed');return body}document.getElementById('runBatch').onclick=async()=>{const keys=[...new Set(batch.value.toUpperCase().match(/[A-Z]\\d{7,9}/g)||[])].slice(0,10);if(!keys.length){out.textContent='Enter at least one MLS number.';return}out.textContent='Running '+keys.length+' read-only diagnostics…';const results=[];for(const listingKey of keys){try{results.push(await api('/api/admin/vow/diagnostics?listingKey='+encodeURIComponent(listingKey)))}catch(e){results.push({ok:false,subject:{listingKey},error:e.message})}out.textContent=JSON.stringify(results,null,2)}lastBatch=results};document.getElementById('sendBatch').onclick=async()=>{const subjects=lastBatch.filter(x=>x.ok&&x.subject?.listingKey).slice(0,10);if(!subjects.length){out.textContent='Run the read-only batch first.';return}const sends=[];for(const result of subjects){out.textContent='Sending '+(sends.length+1)+' of '+subjects.length+'…';try{sends.push(await api('/api/admin/reports/test-email-by-listing',{method:'POST',body:JSON.stringify({listingKey:result.subject.listingKey,recipient:'ali.golestan.reza@gmail.com',subject:result.subject})}))}catch(e){sends.push({ok:false,listingKey:result.subject.listingKey,error:e.message})}out.textContent=JSON.stringify(sends,null,2)}};document.getElementById('load').onclick=async()=>{try{const body=await api('/api/admin/leads?property=494%20Donlands');const matches=body.leads||[];lead.replaceChildren();for(const x of matches){const option=document.createElement('option');option.value=x.id;option.textContent='494 Donlands · '+String(x.email||'no email')+' · '+x.id.slice(0,8);lead.append(option)}if(!matches.length){const option=document.createElement('option');option.textContent='No matching lead';lead.append(option)}out.textContent=JSON.stringify({matchingLeads:matches.length},null,2)}catch(e){out.textContent=e.message}};document.getElementById('diagnose').onclick=async()=>{try{out.textContent=JSON.stringify(await api('/api/admin/vow/diagnostics?listingKey=E13689546'),null,2)}catch(e){out.textContent=e.message}};document.getElementById('send').onclick=async()=>{if(!lead.value){out.textContent='Load and select a lead first.';return}try{out.textContent='Generating…';out.textContent=JSON.stringify(await api('/api/admin/reports/'+lead.value+'/test-email',{method:'POST',body:'{}'}),null,2)}catch(e){out.textContent=e.message}};</script></body></html>`;
+  const body = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>THM VOW Diagnostics</title><style>body{font:16px system-ui;max-width:920px;margin:40px auto;padding:0 18px;color:#111827}input,textarea,button,select{font:inherit;padding:11px;margin:5px 0}input,textarea{width:min(720px,90%)}textarea{min-height:120px}button{cursor:pointer;background:#3155f5;color:#fff;border:0;border-radius:8px}button.danger{background:#9f1239}pre{white-space:pre-wrap;background:#f3f4f6;padding:16px;border-radius:10px}small{color:#64748b}</style></head><body><h1>Protected comparable diagnostics</h1><p>Read-only diagnostics use the licensed VOW feed. Batch diagnostics create no leads, reports, jobs or emails.</p><label>Admin API key<br><input id="key" type="password" autocomplete="current-password"></label><p><button id="sample">Load 20 current active listings</button></p><label>MLS numbers, one per line<br><textarea id="batch" spellcheck="false" placeholder="N13547902&#10;E13563626"></textarea></label><p><button id="runBatch">Run read-only batch</button> <button class="danger" id="sendBatch">Send audited reports to Ali</button></p><hr><p><button id="load">Load 494 Donlands test lead</button></p><select id="lead"><option value="">Load a matching lead first</option></select><p><button id="diagnose">Run Donlands diagnostic</button> <button class="danger" id="send">Generate + send one test report</button></p><small>The send actions do not run the general automation queue.</small><pre id="out">Ready.</pre><script>const key=document.getElementById('key'),out=document.getElementById('out'),lead=document.getElementById('lead'),batch=document.getElementById('batch');let lastBatch=[];async function api(path,options={}){const response=await fetch(path,{...options,headers:{Authorization:'Bearer '+key.value.trim(),'Content-Type':'application/json',...(options.headers||{})},cache:'no-store'});const body=await response.json().catch(()=>null);if(!response.ok)throw new Error(body?.error||'Request failed');return body}document.getElementById('sample').onclick=async()=>{try{out.textContent='Loading current active inventory…';const body=await api('/api/admin/vow/active-sample');batch.value=(body.listings||[]).map(x=>x.listingKey).join('\\n');out.textContent=JSON.stringify(body,null,2)}catch(e){out.textContent=e.message}};document.getElementById('runBatch').onclick=async()=>{const keys=[...new Set(batch.value.toUpperCase().match(/[A-Z]\\d{7,9}/g)||[])].slice(0,30);if(!keys.length){out.textContent='Enter at least one MLS number.';return}out.textContent='Running '+keys.length+' read-only diagnostics…';const results=[];for(const listingKey of keys){try{results.push(await api('/api/admin/vow/diagnostics?listingKey='+encodeURIComponent(listingKey)))}catch(e){results.push({ok:false,subject:{listingKey},error:e.message})}out.textContent=JSON.stringify(results,null,2)}lastBatch=results};document.getElementById('sendBatch').onclick=async()=>{const subjects=lastBatch.filter(x=>x.ok&&x.subject?.listingKey).slice(0,10);if(!subjects.length){out.textContent='Run the read-only batch first.';return}const sends=[];for(const result of subjects){out.textContent='Sending '+(sends.length+1)+' of '+subjects.length+'…';try{sends.push(await api('/api/admin/reports/test-email-by-listing',{method:'POST',body:JSON.stringify({listingKey:result.subject.listingKey,recipient:'ali.golestan.reza@gmail.com',subject:result.subject})}))}catch(e){sends.push({ok:false,listingKey:result.subject.listingKey,error:e.message})}out.textContent=JSON.stringify(sends,null,2)}};document.getElementById('load').onclick=async()=>{try{const body=await api('/api/admin/leads?property=494%20Donlands');const matches=body.leads||[];lead.replaceChildren();for(const x of matches){const option=document.createElement('option');option.value=x.id;option.textContent='494 Donlands · '+String(x.email||'no email')+' · '+x.id.slice(0,8);lead.append(option)}if(!matches.length){const option=document.createElement('option');option.textContent='No matching lead';lead.append(option)}out.textContent=JSON.stringify({matchingLeads:matches.length},null,2)}catch(e){out.textContent=e.message}};document.getElementById('diagnose').onclick=async()=>{try{out.textContent=JSON.stringify(await api('/api/admin/vow/diagnostics?listingKey=E13689546'),null,2)}catch(e){out.textContent=e.message}};document.getElementById('send').onclick=async()=>{if(!lead.value){out.textContent='Load and select a lead first.';return}try{out.textContent='Generating…';out.textContent=JSON.stringify(await api('/api/admin/reports/'+lead.value+'/test-email',{method:'POST',body:'{}'}),null,2)}catch(e){out.textContent=e.message}};</script></body></html>`;
   return new Response(body, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; frame-ancestors 'none'" } });
 }
 __name(adminDiagnosticConsole, "adminDiagnosticConsole");
