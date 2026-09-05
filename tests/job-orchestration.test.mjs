@@ -28,3 +28,9 @@ test("report generation reuses the captured public snapshot and skips address-hi
   assert.ok(!loadMatch[1].includes("public_snapshot"), "report generation must not reload public IDX facts already captured on the lead");
   assert.ok(source.includes("publicSnapshot || reportEvidence ? [subject] : await findSameAddressHistory(subject, env)"));
 });
+
+test("delivery reconciliation reads the Resend ID from the existing JSON payload", () => {
+  assert.ok(source.includes("job.payload?.provider_id"));
+  assert.ok(source.includes("encodeURIComponent(job.payload.provider_id)"));
+  assert.ok(!source.includes('select = "id,provider_id,payload"'));
+});

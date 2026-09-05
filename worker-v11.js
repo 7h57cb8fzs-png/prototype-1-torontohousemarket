@@ -3937,15 +3937,15 @@ async function processEmailJobs(env, limit = 10) {
 __name(processEmailJobs, "processEmailJobs");
 async function reconcileRecentEmailDeliveries(env, limit = 5) {
   if (!env.RESEND_API_KEY || !env.SUPABASE_SERVICE_ROLE_KEY) return { checked: 0, updated: 0 };
-  const select = "id,provider_id,payload";
-  const response = await supabase(env, `/rest/v1/automation_jobs?job_type=eq.email_buyer&status=eq.sent&provider_id=not.is.null&select=${encodeURIComponent(select)}&order=completed_at.desc&limit=20`);
+  const select = "id,payload";
+  const response = await supabase(env, `/rest/v1/automation_jobs?job_type=eq.email_buyer&status=eq.sent&select=${encodeURIComponent(select)}&order=completed_at.desc&limit=20`);
   const jobs = await response.json().catch(() => []);
   if (!response.ok || !Array.isArray(jobs)) return { checked: 0, updated: 0 };
-  const pending = jobs.filter((job) => !["delivered", "bounced", "failed", "suppressed", "complained"].includes(String(job.payload?.delivery_event || "").toLowerCase())).slice(0, limit);
+  const pending = jobs.filter((job) => job.payload?.provider_id && !["delivered", "bounced", "failed", "suppressed", "complained"].includes(String(job.payload?.delivery_event || "").toLowerCase())).slice(0, limit);
   let updated = 0;
   for (const job of pending) {
     try {
-      const deliveryResponse = await fetch(`https://api.resend.com/emails/${encodeURIComponent(job.provider_id)}`, { headers: { Authorization: `Bearer ${env.RESEND_API_KEY}` } });
+      const deliveryResponse = await fetch(`https://api.resend.com/emails/${encodeURIComponent(job.payload.provider_id)}`, { headers: { Authorization: `Bearer ${env.RESEND_API_KEY}` } });
       const delivery = await deliveryResponse.json().catch(() => ({}));
       if (!deliveryResponse.ok || !delivery?.last_event) continue;
       const event = String(delivery.last_event).toLowerCase();
