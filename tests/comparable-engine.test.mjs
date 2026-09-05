@@ -43,6 +43,8 @@ test("distance is calculated only from real coordinates", () => {
   assert.equal(distanceBetweenProperties({ Latitude: null, Longitude: null }, { Latitude: 43.7, Longitude: -79.3 }), null);
   const km = distanceBetweenProperties({ Latitude: 43.6901, Longitude: -79.3415 }, { Latitude: 43.678, Longitude: -79.349 });
   assert.ok(km > 1 && km < 2);
+  const mapKm = distanceBetweenProperties({ MapLatitude: 43.6901, MapLongitude: -79.3415 }, { MapLatitude: 43.678, MapLongitude: -79.349 });
+  assert.ok(mapKm > 1 && mapKm < 2);
 });
 
 test("locality accepts only the same community or a verified radius", () => {
