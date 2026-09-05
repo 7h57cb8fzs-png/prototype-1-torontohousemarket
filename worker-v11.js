@@ -1014,7 +1014,11 @@ __name(comparableCoordinateCacheKey, "comparableCoordinateCacheKey");
 async function resolveComparableCoordinates(record) {
   const existing = propertyCoordinates(record);
   if (existing.latitude != null && existing.longitude != null) return existing;
-  const address = record?.UnparsedAddress || buildAddress(record);
+  const parts = comparableAddressParts(record);
+  const rawAddress = record?.UnparsedAddress || buildAddress(record);
+  const rawCity = (cleanText(record?.City || record?.Municipality) || cleanText(rawAddress).split(",")[1] || "").trim();
+  const civicStreet = cleanText(parts.street).replace(/^\s*[NSEW]\s+/i, "").replace(/\s+[NSEW]\s*$/i, "").trim();
+  const address = parts.number && civicStreet ? `${parts.number} ${civicStreet}${rawCity ? `, ${rawCity}` : ""}${record?.PostalCode ? `, ON ${cleanText(record.PostalCode)}` : ""}` : rawAddress;
   if (!address) return null;
   const cache = typeof caches !== "undefined" ? caches.default : null;
   const cacheKey = cache ? new Request(await comparableCoordinateCacheKey(address)) : null;
