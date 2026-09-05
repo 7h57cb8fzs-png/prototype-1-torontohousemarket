@@ -90,8 +90,10 @@ test("same-building sales are local and ranked before other community sales", as
     soldRow({ ListingKey: "BUILDING-1", PropertySubType: "Condo Apartment", CityRegion: "Pine Valley Business Park", PostalCode: "L4L 2X5", UnparsedAddress: "103 - 201 Pine Grove Rd, Vaughan", ClosePrice: 805000 }),
     soldRow({ ListingKey: "BUILDING-2", PropertySubType: "Condo Apartment", CityRegion: "Pine Valley Business Park", PostalCode: "L4L 2X5", UnparsedAddress: "Unit 210-201 Pine Grove Road, Vaughan", ClosePrice: 810000 })
   ];
+  const calls = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
+    calls.push(String(url));
     const parsed = new URL(String(url));
     if (parsed.searchParams.get("$count") === "true") return new Response(JSON.stringify({ "@odata.count": rows.length, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
     return new Response(JSON.stringify({ value: rows }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -100,6 +102,7 @@ test("same-building sales are local and ranked before other community sales", as
     const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only" }, true, "same-building-test");
     assert.equal(result.available, true);
     assert.deepEqual(result.comparables.slice(0, 2).map((row) => row.listingKey), ["BUILDING-1", "BUILDING-2"]);
+    assert.ok(calls.map((url) => decodeURIComponent(url.replaceAll("+", " "))).some((url) => url.includes("contains(StreetName,'Pine Grove')")));
   } finally {
     globalThis.fetch = originalFetch;
   }
