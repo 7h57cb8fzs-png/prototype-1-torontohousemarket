@@ -603,10 +603,10 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
   }, "runSearch");
   await runSearch(communitySearch || postalSearch);
-  let qualified = qualifiedSoldComparableRows(subject, raw, 300).filter((candidate) => comparableIsLocal(candidate));
+  let qualified = qualifiedSoldComparableRows(subject, raw, 600).filter((candidate) => comparableIsLocal(candidate));
   if (communitySearch && postalSearch && !hasSufficientComparableEvidence(qualified)) {
     await runSearch(postalSearch);
-    qualified = qualifiedSoldComparableRows(subject, raw, 300).filter((candidate) => comparableIsLocal(candidate));
+    qualified = qualifiedSoldComparableRows(subject, raw, 600).filter((candidate) => comparableIsLocal(candidate));
   }
   let windowDays = 100;
   let window = qualified.filter((candidate) => candidate.ageDays <= 100);
@@ -614,17 +614,21 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
     windowDays = 300;
     window = qualified.filter((candidate) => candidate.ageDays <= 300);
   }
+  if (window.length < 3) {
+    windowDays = 600;
+    window = qualified.filter((candidate) => candidate.ageDays <= 600);
+  }
   const beforePriceCluster = window.length;
   if (!window.length) {
     logComparableDiagnostics(requestId, subject, raw, qualified, window, [], [], windowDays, 10, queryAudit, "insufficient_local_sold_evidence");
-    return unavailableComp("No local exact-subtype sold comparables were found within the 300-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, localOnly: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
+    return unavailableComp("No same-community sale matching the subject's exact property subtype and living-area band was found within the 600-day VOW evidence window.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !!livingAreaBounds(subject)?.banded, subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_or_verified_radius", localOnly: true, priceTolerancePct: 10, beforePriceCluster, afterPriceCluster: 0 });
   }
   const clusterMedian = medianPrice(window.map((candidate) => candidate.price));
   const priceTolerancePct = 10;
   const candidates = filterPriceCluster(window, 0.1).matches;
   if (!candidates.length) {
     logComparableDiagnostics(requestId, subject, raw, qualified, window, candidates, [], windowDays, priceTolerancePct, queryAudit, "price_cluster_empty");
-    return unavailableComp("No local exact-subtype sale remained after the required 10% median price filter.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, localOnly: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0 });
+    return unavailableComp("No local exact-subtype sale remained after the required 10% median price filter.", 0, { ...comparableDiagnostics(raw, subject), queryAudit }, { windowDays, expandedWindow: windowDays > 100, exactSubtype: true, exactLivingAreaBand: !!livingAreaBounds(subject)?.banded, subjectLivingArea: cleanText(subject.LivingAreaRange) || numberOrNull(subject.BuildingAreaTotal), geographyRule: "same_community_or_verified_radius", localOnly: true, priceTolerancePct, beforePriceCluster, afterPriceCluster: 0 });
   }
   const selected = candidates.sort(compareComparable).slice(0, 5);
   const valuationAvailable = selected.length >= 3;
@@ -677,7 +681,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
 }
 __name(buildComparableContext, "buildComparableContext");
 function hasSufficientComparableEvidence(candidates) {
-  for (const windowDays of [100, 300]) {
+  for (const windowDays of [100, 300, 600]) {
     const window = (candidates || []).filter((candidate) => candidate.ageDays <= windowDays);
     if (filterPriceCluster(window, 0.1).matches.length >= 3) return true;
   }
@@ -689,7 +693,7 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
   const notSubject = unique.filter((row) => row.ListingKey !== subject?.ListingKey);
   const exactSubtype = notSubject.filter((row) => exactComparableType(subject, row));
   const sizeCompatible = exactSubtype.filter((row) => comparableHasCompatibleSize(subject, row));
-  const soldWithin300 = sizeCompatible.filter((row) => isSoldWithinDays(row, 300, subject));
+  const soldWithin600 = sizeCompatible.filter((row) => isSoldWithinDays(row, 600, subject));
   const selectedWithDistance = (selected || []).filter((row) => Number.isFinite(row.distanceKm));
   const subjectCoordinates = propertyCoordinates(subject);
   diagnosticLog("log", "comparable_selection_diagnostic", {
@@ -704,7 +708,7 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
       unique: unique.length,
       excluding_subject: notSubject.length,
       exact_subtype: exactSubtype.length,
-      sold_within_300_days: soldWithin300.length,
+      sold_within_600_days: soldWithin600.length,
       similarity_qualified: (qualified || []).length,
       selected_window: (window || []).length,
       after_price_cluster: (clustered || []).length,
@@ -715,8 +719,8 @@ function logComparableDiagnostics(requestId, subject, raw, qualified, window, cl
       subject_listing: Math.max(0, unique.length - notSubject.length),
       subtype_mismatch: Math.max(0, notSubject.length - exactSubtype.length),
       size_mismatch: Math.max(0, exactSubtype.length - sizeCompatible.length),
-      not_sold_within_300_days: Math.max(0, sizeCompatible.length - soldWithin300.length),
-      non_local_or_similarity_below_threshold: Math.max(0, soldWithin300.length - (qualified || []).length),
+      not_sold_within_600_days: Math.max(0, sizeCompatible.length - soldWithin600.length),
+      non_local_or_similarity_below_threshold: Math.max(0, soldWithin600.length - (qualified || []).length),
       outside_selected_window: Math.max(0, (qualified || []).length - (window || []).length),
       price_cluster: Math.max(0, (window || []).length - (clustered || []).length),
       rank_cutoff: Math.max(0, (clustered || []).length - (selected || []).length)

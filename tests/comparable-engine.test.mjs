@@ -274,3 +274,27 @@ test("a 2000-2500 subject cannot reuse the Davos 1500-2000 comparables", async (
     globalThis.fetch = originalFetch;
   }
 });
+
+test("engine expands time to 600 days before weakening property similarity", async () => {
+  const subject = soldRow({ ListingKey: "SUBJECT", LivingAreaRange: "2000-2500", ClosePrice: null });
+  const rows = ["OLDER-1", "OLDER-2", "OLDER-3"].map((key, index) => soldRow({
+    ListingKey: key,
+    LivingAreaRange: "2000-2500",
+    PurchaseContractDate: new Date(Date.now() - (400 + index) * 864e5).toISOString(),
+    ClosePrice: 1000000 + index * 10000
+  }));
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.searchParams.get("$count") === "true") return new Response(JSON.stringify({ "@odata.count": rows.length, value: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ value: rows }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  try {
+    const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only" }, true, "time-expansion-test");
+    assert.equal(result.available, true);
+    assert.equal(result.policy.windowDays, 600);
+    assert.ok(result.comparables.every((row) => row.livingAreaRange === "2000-2500"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
