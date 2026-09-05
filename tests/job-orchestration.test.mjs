@@ -46,6 +46,8 @@ test("admin diagnostics can audit twenty MLS listings without creating report jo
   assert.ok(body.includes("/[A-Z]\\\\d{7,9}/g"), "rendered console must preserve the MLS digit matcher");
   assert.ok(body.includes("Run read-only batch"));
   assert.ok(body.includes("/api/admin/vow/diagnostics?listingKey="));
+  assert.ok(body.includes("auditPause"), "batch diagnostics must throttle requests");
+  assert.ok(body.includes("HTTP '+response.status"), "batch errors must expose the HTTP status");
 });
 
 test("comparable diagnostics expose the facts needed for a realtor audit", () => {
