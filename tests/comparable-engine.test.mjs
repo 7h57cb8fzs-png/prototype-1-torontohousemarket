@@ -116,10 +116,10 @@ test("sparse same-type evidence uses verified coordinates instead of postal prox
     soldRow({ ListingKey: "NEAR-3", PropertySubType: "Condo Townhouse", CityRegion: "West Woodbridge", PostalCode: "L4L 0C5", UnparsedAddress: "27 Powseland Crescent, Vaughan", LivingAreaRange: "1000-1199", ClosePrice: 720000 })
   ];
   const points = new Map([
-    ["201 Pine Grove Road 405, Vaughan", [43.79, -79.58]],
-    ["26 Bruce Street E08, Vaughan", [43.79, -79.57]],
-    ["32 Coles Avenue 103, Vaughan", [43.8, -79.59]],
-    ["27 Powseland Crescent, Vaughan", [43.81, -79.6]]
+    ["201 Pine Grove Road, Vaughan, ON L4L 0H8", [43.79, -79.58]],
+    ["26 Bruce Street, Vaughan, ON L4L 1J4", [43.79, -79.57]],
+    ["32 Coles Avenue, Vaughan, ON L4L 0J1", [43.8, -79.59]],
+    ["27 Powseland Crescent, Vaughan, ON L4L 0C5", [43.81, -79.6]]
   ]);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
