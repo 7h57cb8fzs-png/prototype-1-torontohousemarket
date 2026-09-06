@@ -94,6 +94,10 @@ try {
   const ai = await fetch(`${origin}/api/home-assistant`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ listingKey, topic: "costs" }) });
   const answer = await ai.json();
   check(ai.ok && answer.mode === "ai" && answer.facts?.length, "Live AI assistant verification failed");
+  const priceResponse = await fetch(`${origin}/api/price-check?listingKey=N13748512`);
+  const price = await priceResponse.json();
+  check(priceResponse.ok && price.ok && price.listingKey === "N13748512" && price.available && price.count >= 3 && price.medianAsk > 0, "Live Price Check verification failed");
+  console.log(JSON.stringify({ priceCheck: { listingKey: price.listingKey, signal: price.signal, matches: price.count, differencePct: price.differencePct } }));
   console.log(JSON.stringify({ deployedVersion: candidate, previousVersion: previous, sourceSha256: hash(source(next)), aiMode: answer.mode }));
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Deployed verified version ${candidate}.\n\nSource, bindings, cron, assets, public IDX, and AI checks passed. No lead/report/email test requests were made.\n`);
 } catch (error) {
