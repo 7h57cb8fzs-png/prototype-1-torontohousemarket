@@ -3027,7 +3027,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "community-market-pulse-v107-20260906";
+var VERSION4 = "unified-buyer-brief-v108-20260906";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3280,7 +3280,7 @@ async function publicPriceCheck(request, env, ctx) {
   } catch { return json7({ ok: false, error: "We could not verify the comparison data just now. No price label has been assigned. Try again shortly." }, 502); }
 }
 
-const HOME_AI_VERSION = "home-snapshot-v106-20260906";
+const HOME_AI_VERSION = "home-brief-v108-20260906";
 const homeAiBudget = new Map();
 function homeBriefCandidates(p, topic) {
   const money = value => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 }).format(value);
@@ -3288,11 +3288,11 @@ function homeBriefCandidates(p, topic) {
   const add = (id, title, text) => facts.push({ id, title, text });
   if (p.listPrice > 0) add("asking", "Asking price", `${money(p.listPrice)}. This is the seller’s asking price, not a market valuation.`);
   if (p.beds != null && p.baths != null) add("rooms", "Room count", `${p.beds} bedrooms and ${p.baths} bathrooms reported by MLS. Confirm the layout at your visit.`);
-  if (p.livingAreaRange) add("size", "Listed size", `${p.livingAreaRange} sq ft is the MLS size range, not a measured floor plan.`);
+  if (p.livingAreaRange) add("size", "Listed size", `${p.livingAreaRange} sq ft reported. Check the room dimensions to see how much space is usable.`);
   if (p.parkingTotal != null) add("parking", "Parking", `${p.parkingTotal} parking spaces reported. Confirm which spaces are included and usable.`);
   if (p.lotWidth > 0 && p.lotDepth > 0) add("lot", "Lot dimensions", `${p.lotWidth} × ${p.lotDepth}${p.publicListing?.lotUnits ? ` ${p.publicListing.lotUnits}` : ' (units not reported)'}. Confirm the survey, usable yard and access.`);
-  if (p.propertySubType && p.cityRegion) add("setting", "Home & neighbourhood", `${p.propertySubType} in ${p.cityRegion}. Compare the same home type locally before interpreting the asking price.`);
-  if (Number.isFinite(p.daysLive)) add("timing", "Listing age", `${p.daysLive} days on this MLS listing. This does not establish total time on market across relistings.`);
+  if (p.propertySubType && p.cityRegion) add("setting", "Home & neighbourhood", `${p.propertySubType} in ${p.cityRegion}. Price comparisons stay within this community.`);
+  if (Number.isFinite(p.daysLive)) add("timing", "Listing age", `${p.daysLive} days on this listing. Ask about earlier listings and the seller’s timing.`);
   if (p.details?.annualTax != null) add("tax", "Property tax", `${money(p.details.annualTax)} per year${p.details.taxYear ? ` (${p.details.taxYear})` : " as reported"}. Confirm the current tax bill.`);
   const fee = p.maintenanceFee;
   if (Number.isFinite(fee?.amount)) add("fee", "Maintenance fee", `${money(fee.amount)} per ${fee.frequency || "reported period"}.${fee.included?.length ? ` Listed inclusions: ${fee.included.join(", ")}.` : " Inclusions are not reported."}`);
@@ -3301,15 +3301,16 @@ function homeBriefCandidates(p, topic) {
     add("reduction", "Asking-price change", `${money(change.amount)} below this listing’s original ${money(change.original)} asking price. A reduction alone does not establish good value.`);
   }
   const checks = [
-    { id: "condition", title: "Condition", text: "What is the condition and age of the roof, heating, cooling and plumbing? Ask about moisture or past repairs." },
+    { id: "condition", title: "Condition", text: "Ask about the age of the roof and heating, and any history of leaks." },
     { id: "availability", title: "Showing & offers", text: "What is the earliest confirmed showing time, and is there an offer deadline?" },
     { id: "costs", title: "Ownership costs", text: "Confirm current taxes, all maintenance or common-element fees, and which utilities or rentals cost extra. These are not total ownership costs." },
     { id: "layout", title: "Layout & measurements", text: "Do the room dimensions, natural light, storage and parking work for your needs? Verify them in person." }
   ];
-  if (p.isCondominium) checks.unshift({ id: "condo", title: "Condo documents", text: "Ask about planned building work, extra charges and a professional review of the status certificate." });
-  if (p.kitchensTotal > 1 || /separate entrance|apartment|legal|permit/i.test(p.remarks || "")) checks.unshift({ id: "legal", title: "Additional unit", text: "Ask a qualified professional to verify any additional unit’s permits, permitted use and safety. A listing mention is not proof of legality." });
+  if (p.isCondominium) checks.unshift({ id: "condo", title: "Condo documents", text: "Check planned building work, extra charges and the status certificate with your lawyer." });
+  if (p.kitchensTotal > 1 || /separate entrance|apartment|legal|permit/i.test(p.remarks || "")) checks.unshift({ id: "legal", title: "Additional unit", text: "An extra kitchen or entrance does not confirm a legal unit. Ask your Realtor to verify permits and permitted use." });
   if (p.parkingTotal >= 6) checks.unshift({ id: "parking_count", title: "Verify the parking count", text: `MLS reports ${p.parkingTotal} parking spaces. Confirm usable spaces and access at the showing.` });
-  const priority = topic === "costs" ? ["fee", "tax", "reduction", "asking"] : topic === "visit" ? ["rooms", "size", "parking", "timing"] : ["setting", "reduction", "lot", "size", "rooms", "asking", "parking"];
+  if (/separate entrance/i.test([...(Array.isArray(p.basement) ? p.basement : []), p.remarks || ""].join(" "))) add("flexibility", "Separate entrance", "A separate entrance is reported. Check the layout and approvals before planning an additional unit.");
+  const priority = topic === "costs" ? ["fee", "tax", "reduction", "asking"] : topic === "visit" ? ["rooms", "size", "parking", "timing"] : ["flexibility", "reduction", "lot", "fee", "size", "setting", "rooms", "asking"];
   const defaults = priority.filter(id => facts.some(f => f.id === id)).slice(0, 3);
   return { facts, checks, defaults: { facts: defaults.length ? defaults : facts.slice(0, 3).map(f => f.id), checks: topic === "costs" ? ["costs", ...(p.isCondominium ? ["condo"] : ["condition"])] : checks.slice(0, 2).map(c => c.id) } };
 }
@@ -3334,6 +3335,8 @@ async function generateHomeBrief(env, candidates, topic) {
     const selectIds = (items, list, max) => Array.isArray(items) ? [...new Set(items.map(item => typeof item === 'string' ? item : item?.id).filter(id => typeof id === 'string' && list.some(row => row.id === id)))].slice(0, max) : [];
     const facts = selectIds(value?.facts, factOptions, 3);
     const checks = selectIds(value?.checks, candidates.checks, 2);
+    const critical = candidates.checks.find(c => ["legal", "condo"].includes(c.id));
+    if (critical && topic !== "costs") { checks.unshift(critical.id); checks.splice(0, checks.length, ...[...new Set(checks)].slice(0, 2)); }
     if (!facts.length || !checks.length) throw new Error("Unsupported AI selection");
     return { facts, checks, ai: true };
   } catch (error) { return { ...fallback, ai: false, failure: error.message === 'Unsupported AI selection' ? 'invalid_selection' : error.message === 'AI timeout' ? 'timeout' : error instanceof SyntaxError ? 'invalid_json' : 'provider_error' }; }
@@ -4849,6 +4852,29 @@ function reportWithoutUnsupportedRating(input) {
   }
   return report;
 }
+function reportPriceGraphic(report) {
+  const v = report.valuation || {}, f = report.facts || {}, policy = report.comparable_policy || {};
+  const comps = report.comparables || [];
+  const valid = v.available && comps.length >= 3 && [v.low, v.high].every(n => Number.isFinite(Number(n)) && Number(n) > 0) && Number(v.high) >= Number(v.low);
+  const ask = f.for_sale !== false && Number(f.list_price) > 0 ? Number(f.list_price) : null;
+  const confidence = !valid ? 'Not established' : policy.expandedWindow || policy.sizeFallbackUsed ? 'Low' : /^(low|medium|high)$/i.test(v.confidence || '') ? v.confidence : 'Not established';
+  const level = {low:1,medium:2,high:3}[confidence.toLowerCase()] || 0;
+  const explanation = !valid ? 'More reliable sales are needed before suggesting a price window.' : level === 1 ? 'A starting point only. Older sales, missing details or differences between homes limit confidence.' : level === 2 ? 'Useful price guidance. Check condition, upgrades and the closest sales with your Realtor.' : level === 3 ? 'The selected sales are a closer match. Condition and offer strategy can still change the price.' : 'The price window is available, but its confidence has not been established.';
+  const label = valid ? 'Price window to discuss' : 'Price window: needs review';
+  const range = valid ? `${cad(v.low)} – ${cad(v.high)}` : 'Not enough reliable sold evidence';
+  let bar = '';
+  if (valid) {
+    const min = Math.min(Number(v.low), ask || Number(v.low)), max = Math.max(Number(v.high), ask || Number(v.high));
+    const pos = n => max === min ? 20 : Math.round(2 + 35 * (n - min) / (max - min));
+    const left = pos(Number(v.low)), right = pos(Number(v.high)), marker = ask ? pos(ask) : -1;
+    const cells = Array.from({length:40}, (_,i) => `<td width="2.5%" height="16" bgcolor="${i === marker ? '#183330' : i >= left && i <= right ? '#4a9b82' : '#dfebe3'}" style="height:16px;font-size:0;line-height:0">&nbsp;</td>`).join('');
+    bar = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;margin:18px 0 10px"><tr>${cells}</tr></table><p style="font-size:12px;color:#4c6459;margin:0 0 16px">Green: modelled range from sold homes${ask ? ' · Dark marker: current asking price' : ''}</p>`;
+  }
+  const confidenceBar = Array.from({length:3}, (_,i) => `<td width="33%" height="6" bgcolor="${i < level ? '#196b60' : '#dce5df'}" style="height:6px;border-right:4px solid #edf5ef;font-size:0;line-height:0">&nbsp;</td>`).join('');
+  const position = valid && ask ? ask > Number(v.high) ? `Asking ${cad(ask - Number(v.high))} above this window.` : ask < Number(v.low) ? `Asking ${cad(Number(v.low) - ask)} below this window. Check offer instructions and condition.` : 'The asking price falls inside this window.' : '';
+  const text = [label,range,ask ? `Current asking price: ${cad(ask)}` : 'No verified current asking price.',position,`Confidence: ${confidence}. ${explanation}`,valid ? 'A modelled range from selected sold homes, not a forecast, guaranteed sale price or recommended opening offer.' : 'No automated price recommendation.'].filter(Boolean).join('\n');
+  return {confidence,text,html:`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#edf5ef;border-radius:12px;margin:18px 0"><tr><td style="padding:20px"><p style="font-size:12px;font-weight:bold;color:#196b60;margin:0 0 8px">${html(label.toUpperCase())}</p><p style="font-size:25px;line-height:1.3;letter-spacing:-.5px;font-weight:bold;color:#183330;margin:0 0 8px">${html(range)}</p>${ask ? `<p style="font-size:14px;color:#374f45;margin:0">This home is asking <strong>${html(cad(ask))}</strong></p>` : ''}${bar}${position ? `<p style="font-size:14px;color:#183330;line-height:1.5;margin:0 0 16px">${html(position)}</p>` : ''}<p style="font-size:13px;font-weight:bold;color:#183330;margin:0 0 8px">${html(confidence)} confidence</p><table role="presentation" width="96" cellpadding="0" cellspacing="0"><tr>${confidenceBar}</tr></table><p style="font-size:13px;line-height:1.55;color:#4c6459;margin:10px 0">${html(explanation)}</p><p style="font-size:11px;line-height:1.5;color:#5b6c68;margin:0">${valid ? 'Modelled from selected sold homes. Not a forecast or an opening-offer recommendation.' : 'No automated price recommendation.'}</p></td></tr></table>`};
+}
 function propertyReportEmail(address, agentData, input) {
   const report = reportWithoutUnsupportedRating(input);
   const f = report.facts, v = report.valuation, comps = report.comparables, policy = report.comparable_policy || {};
@@ -4856,7 +4882,7 @@ function propertyReportEmail(address, agentData, input) {
   const agent = reportAgentName(agentData);
   const active = f.for_sale !== false && Number(f.list_price) > 0;
   const generated = report.generated_at ? new Date(report.generated_at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'See your request date';
-  const confidence = v.confidence || "Not established";
+  const confidence = reportPriceGraphic(report).confidence;
   const range = v.available ? `${cad(v.low)} – ${cad(v.high)}` : "Needs Realtor review";
   const lowConfidence = /low|unavailable/i.test(confidence) || policy.expandedWindow || policy.sizeFallbackUsed;
   let verdict = "Price needs a local evidence check";
@@ -4864,9 +4890,9 @@ function propertyReportEmail(address, agentData, input) {
   if (v.available) {
     if (!active) { verdict = "Property review — no current asking-price comparison"; reason = "This sold-evidence range is preliminary. It does not establish that this property is available to buy."; }
     else if (lowConfidence) { verdict = "Treat this range as a starting point"; reason = "The evidence needs Realtor review before deciding on price. Age, size differences and condition can materially change the result."; }
-    else if (Number(f.list_price) > Number(v.high)) { verdict = "Asking price is above the evidence band"; reason = `The ask is ${cad(Number(f.list_price) - Number(v.high))} above the modelled high end. Ask which condition or location differences support that premium.`; }
-    else if (Number(f.list_price) < Number(v.low)) { verdict = "Asking price is below the evidence band"; reason = "Check offer instructions and condition before treating a low asking price as a bargain."; }
-    else { verdict = "Asking price sits inside the evidence band"; reason = "Compare condition and the closest sold homes before choosing an offer price."; }
+    else if (Number(f.list_price) > Number(v.high)) { verdict = "Asking price is above the sold-price range"; reason = `The ask is ${cad(Number(f.list_price) - Number(v.high))} above the modelled high end. Ask which condition or location differences support that premium.`; }
+    else if (Number(f.list_price) < Number(v.low)) { verdict = "Asking price is below the sold-price range"; reason = "Check offer instructions and condition before treating a low asking price as a bargain."; }
+    else { verdict = "Asking price sits inside the sold-price range"; reason = "Compare condition and the closest sold homes before choosing an offer price."; }
   }
   const bedroomLabel = f.bedroom_layout ? `${f.bedroom_layout} reported bedrooms` : f.beds != null ? `${f.beds} reported bedrooms` : null;
   const context = [f.property_type, bedroomLabel, f.baths != null ? `${f.baths} baths` : null, f.living_area ? `${f.living_area} sq ft` : null, f.neighbourhood].filter(Boolean).join(" · ");
@@ -4903,14 +4929,15 @@ function propertyReportEmail(address, agentData, input) {
   propertyUrl.hash = 'lookup';
   const actionNote = active ? "Target: as soon as 1 hour to 24 hours, subject to seller and listing availability. Your Realtor must confirm the appointment." : "This report does not imply availability or authorize a showing. Ask for a current status and value review.";
   const title = active ? "YOUR BUYER DECISION REPORT" : "YOUR PROPERTY REVIEW";
-  const label = t => `<p style="margin:0 0 8px;color:#75612d;font-size:12px;font-weight:700;letter-spacing:1px">${html(t)}</p>`;
+  const label = t => `<p style="margin:0 0 8px;color:#196b60;font-size:12px;font-weight:700;letter-spacing:1px">${html(t)}</p>`;
   const paragraph = t => `<p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#374151">${html(t)}</p>`;
   const bullets = values => `<ul style="margin:0;padding-left:20px;color:#374151;font-size:16px;line-height:1.65">${values.map(x => `<li style="margin-bottom:8px">${html(x)}</li>`).join('')}</ul>`;
   const section = (name, body) => `<tr><td style="padding:22px 26px;border-bottom:1px solid #e5e7eb">${label(name)}${body}</td></tr>`;
   const compRows = comps.map((c,i) => `<tr><td style="padding:12px 0;border-bottom:1px solid #e5e7eb">${paragraph(`${i+1}. ${c.address || "MLS comparable"}`)}<p style="margin:0;font-size:14px;line-height:1.6">${html([cad(c.soldPrice), c.soldDate, c.propertySubType, c.beds != null ? `${c.beds} bd` : null, c.baths != null ? `${c.baths} ba` : null, c.livingAreaRange, c.cityRegion, c.distanceKm != null ? `${Number(c.distanceKm).toFixed(2)} km` : 'Distance unavailable'].filter(Boolean).join(' · '))}</p></td></tr>`).join('');
   const disclaimer = "Preliminary decision support, not an appraisal or guarantee of value. Confirm listing status, measurements, taxes, legal use and sold evidence with your Realtor before relying on them.";
-  const textParts = [title,address,status,context,`Prepared ${generated}`,"BOTTOM LINE",verdict,reason,`Modelled sold-evidence range: ${range}`,`Evidence confidence: ${confidence}`,rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : `Value rating unavailable. ${rating.reason || "More reliable evidence is needed."}`,"QUICK READ",factsRead,"Recent comparable sales",evidence,`Observed sold prices: ${observedRange}. This may differ from the modelled range.`,locality,size,...comps.map((c,i)=>`${i+1}. ${c.address} · ${cad(c.soldPrice)} · ${c.soldDate} · ${c.distanceKm != null ? `${c.distanceKm} km` : 'Distance unavailable'}`),"WHAT THE NUMBERS SAY",v.basis,"KNOWN MONTHLY COSTS",...costs,"CHECK BEFORE AN OFFER",...checks,...questions,actionTitle,action,propertyUrl.toString(),actionNote,generatedMode,disclaimer];
-  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${html(title)}</title></head><body style="margin:0;background:#f1f3f5;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} · ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 10px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden"><tr><td style="padding:28px 26px;background:#101827;color:#fff">${label(title)}<h1 style="font-size:26px;line-height:1.25;margin:8px 0 12px">${html(address)}</h1><p style="font-size:16px;line-height:1.5;margin:0;color:#e5e7eb">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section('BOTTOM LINE',`<h2 style="font-size:23px;line-height:1.3;margin:0 0 12px">${html(verdict)}</h2>${paragraph(reason)}${paragraph(`Modelled sold-evidence range: ${range}`)}${paragraph(`Evidence confidence: ${confidence}`)}${paragraph(rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : `Value rating unavailable. ${rating.reason || 'More reliable evidence is needed.'}`)}`)}${section('QUICK READ',paragraph(factsRead))}${section('Recent comparable sales',paragraph(evidence)+paragraph(`Observed sold prices: ${observedRange}. The modelled range may differ because it weights the selected sales.`)+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>`+paragraph([locality,size].filter(Boolean).join(' ')))}${section('WHAT THE NUMBERS SAY',paragraph(v.basis || reason))}${section('KNOWN MONTHLY COSTS',bullets(costs))}${section('CHECK BEFORE AN OFFER',bullets(checks)+(questions.length ? label('QUESTIONS FOR YOUR REALTOR')+bullets(questions) : ''))}${section(actionTitle,`<p style="margin:0 0 16px"><a href="${html(propertyUrl.toString())}" style="display:inline-block;padding:15px 18px;background:#101827;color:#fff;text-decoration:none;border-radius:9px;font-size:16px;font-weight:700">${html(action)}</a></p>${paragraph(actionNote)}`)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6">${html(generatedMode)}<br><br>${html(disclaimer)}<br><br>Toronto House Market · ${html(agent)}</td></tr></table></td></tr></table></body></html>`;
+  const priceGraphic = reportPriceGraphic(report);
+  const textParts = [title,address,status,context,priceGraphic.text,`Prepared ${generated}`,"BOTTOM LINE",verdict,reason,`Modelled sold-evidence range: ${range}`,`Evidence confidence: ${confidence}`,rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : `Value rating unavailable. ${rating.reason || "More reliable evidence is needed."}`,"QUICK READ",factsRead,"Recent comparable sales",evidence,`Observed sold prices: ${observedRange}. This may differ from the modelled range.`,locality,size,...comps.map((c,i)=>`${i+1}. ${c.address} · ${cad(c.soldPrice)} · ${c.soldDate} · ${c.distanceKm != null ? `${c.distanceKm} km` : 'Distance unavailable'}`),"WHAT THE NUMBERS SAY",v.basis,"KNOWN MONTHLY COSTS",...costs,"CHECK BEFORE AN OFFER",...checks,...questions,actionTitle,action,propertyUrl.toString(),actionNote,generatedMode,disclaimer];
+  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${html(title)}</title></head><body style="margin:0;background:#f7f7f2;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} · ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 10px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden"><tr><td style="padding:28px 26px;background:#183330;color:#fff"><p style="color:#b9dccc;font-size:12px;letter-spacing:1px;margin:0 0 8px">${html(title)}</p><h1 style="font-size:26px;line-height:1.25;margin:8px 0 12px">${html(address)}</h1><p style="font-size:16px;line-height:1.5;margin:0;color:#e5e7eb">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section('BOTTOM LINE',`<h2 style="font-size:23px;line-height:1.3;margin:0 0 12px">${html(verdict)}</h2>${paragraph(reason)}${priceGraphic.html}${paragraph(rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : `Value rating unavailable. ${rating.reason || 'More reliable evidence is needed.'}`)}`)}${section('QUICK READ',paragraph(factsRead))}${section('Recent comparable sales',paragraph(evidence)+paragraph(`Observed sold prices: ${observedRange}. The modelled range may differ because it weights the selected sales.`)+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>`+paragraph([locality,size].filter(Boolean).join(' ')))}${section('WHAT THE NUMBERS SAY',paragraph(v.basis || reason))}${section('KNOWN MONTHLY COSTS',bullets(costs))}${section('CHECK BEFORE AN OFFER',bullets(checks)+(questions.length ? label('QUESTIONS FOR YOUR REALTOR')+bullets(questions) : ''))}${section(actionTitle,`<p style="margin:0 0 16px"><a href="${html(propertyUrl.toString())}" style="display:inline-block;padding:15px 18px;background:#183330;color:#fff;text-decoration:none;border-radius:9px;font-size:16px;font-weight:700">${html(action)}</a></p>${paragraph(actionNote)}`)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6">${html(generatedMode)}<br><br>${html(disclaimer)}<br><br>Toronto House Market · ${html(agent)}</td></tr></table></td></tr></table></body></html>`;
   return {subject:`AI Property Report Ready: ${address} | ${rating.available ? `Value Rating ${rating.score}/10` : active ? 'Realtor Review' : 'Property Review'}`,html:htmlBody,text:textParts.filter(Boolean).join('\n\n')};
 }
 __name(propertyReportEmail, "propertyReportEmail");
@@ -5171,6 +5198,7 @@ export {
   reportWithoutUnsupportedRating,
   reportBuyerChecks,
   propertyReportEmail,
+  reportPriceGraphic,
   propertyReportPdf,
   publicListingFacts,
   discoveryOptions,

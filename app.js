@@ -133,7 +133,7 @@ analysisForm.addEventListener("submit", async (event) => {
 function setLoading(value) {
   loading = value;
   lookupButton.disabled = value;
-  lookupButton.textContent = value ? "Checking…" : "Check Home →";
+  lookupButton.textContent = value ? "Finding property…" : "View property →";
   analysisForm.classList.toggle("is-loading", value);
 }
 
@@ -143,6 +143,8 @@ function setInputStatus(type, text) {
 }
 
 function hideResult() {
+  $("mobileShowing").classList.add("hidden");
+  $("mobileAsking").textContent = "";
   resetHomeAssistant();
   resetPriceCheck();
   snapshotSection.classList.add("hidden");
@@ -195,6 +197,8 @@ function renderListing(listing) {
   renderAiBrief(listing);
   renderMarketRead(listing);
   renderDetails(listing);
+  $("mobileShowing").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
+  $("mobileAsking").textContent = listing.forSale && listing.listPrice > 0 ? money(listing.listPrice) : "";
   $("homeAiPanel").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
   $("priceCheckPanel").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
   $("priceCheckJump").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
@@ -402,6 +406,7 @@ remarksToggle.addEventListener("click", () => {
 });
 
 seeHomeButton.addEventListener("click", () => openLeadModal("showing"));
+for (const id of ["briefShowingButton", "mobileShowingButton"]) $(id).addEventListener("click", () => openLeadModal("showing"));
 deepReportButton.addEventListener("click", () => openLeadModal("buyer_offmarket"));
 sellerReportButton.addEventListener("click", () => openLeadModal("seller"));
 
@@ -663,33 +668,34 @@ function resetPriceCheck() {
   $("priceCheckBadge").className = "price-check-badge";
   $("priceCheckBadge").textContent = "Checking similar asking prices…";
   syncPriceCheckQuickStatus();
-  $("priceCheckSummary").textContent = "We compare this home with similar active listings in its neighbourhood.";
+  $("priceCheckSummary").textContent = "Looking for similar homes in this exact community…";
   $("priceCheckDetails").open = false;
   $("priceCheckDetails").classList.add("hidden");
   $("priceCheckRetry").classList.add("hidden");
-  for (const id of ["priceCheckNumbers", "priceCheckRange", "priceCheckCriteria", "priceCheckMatches", "priceCheckCoverage"]) $(id).innerHTML = "";
+  for (const id of ["priceCheckNumbers", "priceCheckRange", "priceEvidence", "priceCheckCriteria", "priceCheckMatches", "priceCheckCoverage"]) $(id).innerHTML = "";
 }
 function renderAskingRange(data) {
   const range = data.observedAsking, target = $("priceCheckRange");
   if (!range || !(range.low > 0) || !(range.high >= range.low) || !(data.asking > 0)) { target.innerHTML = ""; return; }
   const low = Math.min(range.low, data.asking), high = Math.max(range.high, data.asking);
-  const x = value => high === low ? 50 : 8 + 84 * (value - low) / (high - low);
-  target.innerHTML = `<div class="asking-range-label"><strong>Same-community asking prices</strong><span>● This home</span></div><svg viewBox="0 0 100 14" role="img" aria-label="${escapeHtml(`${data.count} matched listings: ${money(range.low)} to ${money(range.high)}. This home: ${money(data.asking)}. Asking prices, not sold values.`)}"><line x1="8" y1="7" x2="92" y2="7" stroke="#d9e6e1" stroke-width="2"/><line x1="${x(range.low)}" y1="7" x2="${x(range.high)}" y2="7" stroke="#41ae91" stroke-width="4" stroke-linecap="round"/><circle cx="${x(data.asking)}" cy="7" r="2.5" fill="#132f3b" stroke="white" stroke-width="1"/></svg><div class="asking-range-label"><span>${money(low)}</span><span>${money(high)}</span></div>`;
+  const x = value => high === low ? 50 : 5 + 90 * (value - low) / (high - low);
+  target.innerHTML = `<div class="range-head"><div><span>SIMILAR HOMES ARE ASKING</span><strong>${money(range.low)}${range.high !== range.low ? `–${money(range.high)}` : ''}</strong></div><div><span>THIS HOME</span><strong>${money(data.asking)}</strong></div></div><div class="range-track" role="img" aria-label="${escapeHtml(`${data.count} matched listings ask ${money(range.low)} to ${money(range.high)}. This home asks ${money(data.asking)}. Not a sold-price estimate.`)}"><span class="range-base"></span><span class="range-band" style="left:${x(range.low)}%;width:${Math.max(0.5,x(range.high)-x(range.low))}%"></span><span class="range-dot" style="left:${x(data.asking)}%"></span></div><div class="range-legend"><span><i></i>Similar homes</span><span>● This home’s asking price</span></div>`;
 }
 function renderPriceCheck(data) {
   const recognized = ["below", "inline", "above", "review"].includes(data.signal);
   const available = data.available && recognized && data.count >= 3 && Number.isFinite(data.medianAsk) && data.medianAsk > 0 && Number.isFinite(data.differencePct);
   $("priceCheckBadge").className = `price-check-badge${available ? ` is-${data.signal}` : ""}`;
-  $("priceCheckBadge").textContent = `${available && data.signal === "below" ? "✓ " : ""}${available ? data.label : data.count ? `${data.count} community matches` : data.relatedMatches?.length ? `${data.relatedMatches.length} related homes found` : "More evidence needed"}`;
+  $("priceCheckBadge").textContent = `${available && data.signal === "below" ? "✓ " : ""}${available ? data.label : data.count ? `${data.count} similar homes` : data.relatedMatches?.length ? `${data.relatedMatches.length} related homes found` : "More evidence needed"}`;
   syncPriceCheckQuickStatus();
   const gap = Math.abs(data.differencePct);
   $("priceCheckSummary").textContent = available
     ? `${gap === 0 ? "At" : `${formatNumber(gap)}% ${data.differencePct < 0 ? "below" : "above"}`} the median asking price of ${data.count} matching active listings. ${data.signal === "review" ? data.reason : ""}`.trim()
-    : data.count ? `${data.count} similar active homes in ${data.community || "this community"}. Compare their asking prices below; more evidence is needed for a price rating.` : data.relatedMatches?.length ? `${data.relatedMatches.length} same-community homes with different bedroom layouts. Shown for context; excluded from the price rating.` : data.reason || "There is not enough verified comparison data to assign a price label.";
-  $("priceCheckNumbers").innerHTML = available ? `<div><span>THIS ASKING PRICE</span><strong>${money(data.asking)}</strong></div><div><span>MATCHED MEDIAN ASK</span><strong>${money(data.medianAsk)}</strong></div><div><span>ACTIVE MATCHES</span><strong>${data.count}</strong></div>` : data.observedAsking ? `<div><span>THIS ASKING PRICE</span><strong>${money(data.asking)}</strong></div><div><span>COMMUNITY ASKING RANGE</span><strong>${money(data.observedAsking.low)}–${money(data.observedAsking.high)}</strong></div><div><span>ACTIVE MATCHES</span><strong>${data.count}</strong></div>` : "";
+    : data.count ? data.observedAsking && data.asking > data.observedAsking.high ? `This home asks ${money(data.asking - data.observedAsking.high)} more than the highest of these ${data.count} similar homes. Check whether its lot, condition or upgrades explain the difference.` : `${data.count} similar homes found in ${data.community || "this community"}. Their asking prices give you a starting point for comparison.` : data.relatedMatches?.length ? `${data.relatedMatches.length} same-community homes with different bedroom layouts. Shown for context; excluded from the price rating.` : data.reason || "There is not enough verified comparison data to assign a price label.";
+  $("priceCheckNumbers").innerHTML = available ? `<div><span>MEDIAN ASKING PRICE</span><strong>${money(data.medianAsk)}</strong></div><div><span>SIMILAR HOMES</span><strong>${data.count}</strong></div>` : "";
   renderAskingRange(data);
-  $("priceCheckCriteria").textContent = data.criteria ? `Same community · ${data.criteria}` : "";
-  $("priceCheckMatches").innerHTML = (data.matches || []).map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.bedroomLayout || home.beds)} bed · ${escapeHtml(home.baths ?? "—")} bath${home.differences?.length ? ` · ${escapeHtml(home.differences.join(" · "))}` : ""} · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
+  $("priceEvidence").textContent = data.count ? `${available && data.count >= 5 && !data.coverage?.partial ? "Broader asking-price sample" : "Limited asking-price sample"} · ${data.count} homes${data.community ? ` · ${data.community}` : ""}. ${available ? "This compares asking prices, not sale values." : "Too little consistent evidence for a price rating."}` : "No price rating yet. The listing highlights and showing checks are still useful.";
+  $("priceCheckCriteria").textContent = data.criteria ? data.criteria : "";
+  $("priceCheckMatches").innerHTML = (data.matches || []).map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.bedroomLayout || home.beds)} bed · ${home.differences?.length ? escapeHtml(home.differences.join(" · ")) : `${escapeHtml(home.baths ?? "—")} bath`} · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
   if (data.relatedMatches?.length) $("priceCheckMatches").innerHTML += `<h4>Related homes worth comparing</h4><p>Same community and home type, similar size. Different bedroom layouts; excluded from the price signal.</p>${data.relatedMatches.map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.beds)} bed · ${escapeHtml(home.baths)} bath<br>${escapeHtml(home.difference)}<br>MLS ${escapeHtml(home.listingKey)} · ${escapeHtml(home.listingOffice || 'Listing office not reported')}</small></span><b>${money(home.asking)}</b></a>`).join('')}`;
   $("priceCheckCoverage").textContent = `${data.note || "Public IDX asking prices; not the entire market."}${data.coverage?.partial ? " The search reached its scan limit." : ""}${data.checkedAt ? ` Checked ${formatDate(data.checkedAt)}; may be cached for up to 5 minutes.` : ""}`;
   $("priceCheckDetails").classList.toggle("hidden", !data.criteria);
@@ -709,7 +715,7 @@ async function loadPriceCheck(listing) {
     if (sequence !== priceCheckSequence || liveListing?.listingKey !== listingKey) return;
     if (!response.ok || !data.ok || data.listingKey !== listingKey) throw new Error(data.error || "Price Check could not verify the comparison data.");
     // Never attach a comparison based on a changed asking price to an old snapshot.
-    if (data.available && data.asking !== listing.listPrice) throw new Error("The asking price has changed. Check this home again to refresh its snapshot.");
+    if (data.asking > 0 && data.asking !== listing.listPrice) throw new Error("The asking price has changed. Check this home again to refresh its snapshot.");
     renderPriceCheck(data);
   } catch (error) {
     if (sequence !== priceCheckSequence) return;
@@ -739,18 +745,18 @@ async function loadHomeAssistant(topic, button = null) {
     const timer = window.setTimeout(() => controller.abort(), 25000);
     button?.setAttribute("aria-pressed", "true");
     for (const question of document.querySelectorAll("[data-home-topic]")) question.disabled = true;
-    $("homeAiStatus").textContent = "Preparing your buyer snapshot from this listing…";
+    $("homeAiStatus").textContent = "Preparing your property highlights…";
     const p = liveListing;
-    $("homeAiAnswer").innerHTML = `<div><h4>Your first look</h4><p>${escapeHtml([p.propertySubType, p.livingAreaRange ? `${p.livingAreaRange} sq ft` : null, p.cityRegion].filter(Boolean).join(' · '))}</p><p>${p.listPrice > 0 ? `${money(p.listPrice)} asking. ` : ''}Comparisons and property-specific checks are loading.</p></div><div><h4>Before an offer</h4><p>Check the asking-price evidence below. Asking prices are not achieved sale prices; condition and legal use still need verification.</p></div>`;
+    $("homeAiAnswer").innerHTML = `<div><h4>The property</h4><p>${escapeHtml([p.propertySubType, p.livingAreaRange ? `${p.livingAreaRange} sq ft` : null, p.cityRegion].filter(Boolean).join(' · '))}</p></div><div><h4>At the showing</h4><p>We’re preparing the questions that matter for this listing.</p></div>`;
     $("homeAiAnswer").classList.remove("hidden");
     try {
       const response = await fetch("/api/home-assistant", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ listingKey, topic }), signal: controller.signal });
       const data = await response.json();
       if (sequence !== homeAiSequence || liveListing?.listingKey !== listingKey) return;
       if (!response.ok || !data.ok || data.listingKey !== listingKey) throw new Error(data.error || "The assistant is temporarily unavailable. Your listing facts are still below.");
-      $("homeAiStatus").textContent = data.label;
-      const rows = (items) => (items || []).map(item => `<li><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.text)}</span></li>`).join("");
-      $("homeAiAnswer").innerHTML = `${data.summary ? `<div class="home-ai-summary"><h4>The quick read</h4><p>${escapeHtml(data.summary)}</p></div>` : ''}<div><h4>What stands out</h4><ul>${rows(data.facts)}</ul></div><div><h4>What could change your decision</h4><ul>${rows(data.checks)}</ul></div><p>${escapeHtml(data.note)}</p>`;
+      $("homeAiStatus").textContent = data.mode === "ai" ? "AI highlights · grounded in this listing" : "Listing highlights · AI unavailable";
+      const rows = (items) => (items || []).slice(0, 2).map(item => `<li><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.text)}</span></li>`).join("");
+      $("homeAiAnswer").innerHTML = `<div><h4>${topic === 'costs' ? 'Costs to plan for' : 'What matters here'}</h4><ul>${rows(data.facts)}</ul></div><div><h4>Ask at the showing</h4><ul>${rows(data.checks)}</ul></div>`;
       $("homeAiAnswer").classList.remove("hidden");
     } catch (error) {
       if (sequence !== homeAiSequence) return;
@@ -830,7 +836,7 @@ discoveryForm.addEventListener("submit", async (event) => {
     $("discoveryResults").innerHTML = data.listings.map((home) => {
       const badge = discoveryMode === "luxury" ? "Asking $2M+" : home.daysLive != null ? `${home.daysLive} days on this listing` : "Active listing";
       const facts = [home.propertySubType, home.beds != null ? `${home.bedroomLayout || home.beds} bed` : null, home.baths != null ? `${home.baths} bath` : null].filter(Boolean).join(" · ");
-      return `<article class="discovery-home"><span class="home-badge">${escapeHtml(badge)}</span><strong class="home-price">${money(home.listPrice)}</strong><h4>${escapeHtml(home.address)}</h4><p>${escapeHtml(facts)}</p><small>${escapeHtml(home.listingOffice || "Listing office not reported")} · MLS ${escapeHtml(home.listingKey)}</small><a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">Check this home →</a></article>`;
+      return `<article class="discovery-home"><span class="home-badge">${escapeHtml(badge)}</span><strong class="home-price">${money(home.listPrice)}</strong><h4>${escapeHtml(home.address)}</h4><p>${escapeHtml(facts)}</p><small>${escapeHtml(home.listingOffice || "Listing office not reported")} · MLS ${escapeHtml(home.listingKey)}</small><a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">View property →</a></article>`;
     }).join("");
     $("discoveryCoverage").textContent = `${data.note || "Results are a selection, not the full market."} ${data.coverage?.partial ? "The search reached its scan limit. " : ""}${data.coverage?.moreMatches ? "Showing the first 12 matches. Narrow your filters for more focused results. " : ""}${data.checkedAt ? `Checked ${formatDate(data.checkedAt)}; results may be cached for up to 5 minutes.` : ""}`;
   } catch (error) {

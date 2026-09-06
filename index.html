@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=community-first-20260906" />
+  <link rel="stylesheet" href="/styles.css?v=buyer-brief-20260906" />
 </head>
 <body>
 <header class="site-header">
@@ -21,7 +21,7 @@
       <span class="brand-mark">THM</span>
       <span class="brand-name">Toronto House Market</span>
     </a>
-    <div class="nav-actions"><a href="#explore">Explore homes</a><button class="nav-cta" type="button" data-scroll="#lookup">Check a home</button></div>
+    <div class="nav-actions"><a href="#explore">Explore homes</a><button class="nav-cta" type="button" data-scroll="#lookup">Find a property</button></div>
   </div>
 </header>
 
@@ -30,20 +30,20 @@
     <div class="wrap hero-inner">
       <div class="speed-chip"><span class="live-dot"></span> SHOWING REQUESTS · 1–24 HOUR TARGET*</div>
       <h1>See the home sooner.<br><span>Know what to ask.</span></h1>
-      <p class="hero-copy">Check any GTA home for free. Request the earliest available showing and get a private AI buyer report with sold evidence, known costs and the questions that matter.</p>
+      <p class="hero-copy">Found a home you like? See the key facts now. Request a fast showing and get your AI buyer report with recent sold comparisons.</p>
 
       <form id="analysisForm" class="search-box" novalidate>
         <div class="search-input-wrap">
           <span class="search-icon" aria-hidden="true">⌕</span>
           <input id="propertyInput" name="property" autocomplete="off" aria-label="MLS number, street address, or listing URL" placeholder="MLS #, street address, or listing URL" required />
         </div>
-        <button id="lookupButton" class="primary-btn hero-cta" type="submit">Check this home →</button>
+        <button id="lookupButton" class="primary-btn hero-cta" type="submit">View property →</button>
       </form>
-      <div id="inputStatus" class="input-status" aria-live="polite">No sign-up to check · Live MLS facts</div>
-      <p class="hero-ai-note">Your showing request and report start together. A value range appears only when the evidence supports it.</p>
+      <div id="inputStatus" class="input-status" aria-live="polite">Free property preview · No sign-up</div>
+      <p class="hero-ai-note">One request starts your showing and your private buyer report.</p>
 
       <div class="hero-proof">
-        <div><strong>01</strong><span>Check the live listing</span></div>
+        <div><strong>01</strong><span>Preview the property</span></div>
         <div><strong>02</strong><span>Request a showing</span></div>
         <div><strong>03</strong><span>Get the full buyer report</span></div>
       </div>
@@ -85,17 +85,17 @@
           <div id="livePrice" class="listing-price">—</div>
           <div id="liveDetails" class="fact-line">—</div>
           <a id="priceCheckJump" class="price-check-jump hidden" href="#priceCheckPanel">
-            <span>PRICE CHECK</span>
+            <span>YOUR BUYER BRIEF</span>
             <strong id="priceCheckQuickStatus" class="price-check-badge">Checking similar asking prices…</strong>
-            <small>Active asking prices · not a sold valuation ↓</small>
+            <small>Price context + what to check ↓</small>
           </a>
 
           <div id="activeActionBox" class="speed-action-box hidden">
             <div class="speed-action-top"><span>SHOWING REQUEST</span><small>1–24 HOUR TARGET*</small></div>
             <strong>See this home.</strong>
-            <p>Send one request. A Realtor responds quickly and confirms the earliest time available.</p>
+            <p>Your Realtor confirms the earliest available time.</p>
             <button id="seeHomeButton" class="showing-btn" type="button">Request earliest showing →</button>
-            <small class="ai-after">Your private AI report starts with your request: sold comparables, known costs and what to check before an offer.</small>
+            <small class="ai-after">Includes your AI report: recent sales, price guidance and key questions.</small>
           </div>
 
           <div id="offMarketActionBox" class="offmarket-action-box hidden">
@@ -120,26 +120,17 @@
       </div>
 
       <section id="homeAiPanel" class="home-ai-panel hidden" aria-labelledby="homeAiTitle">
-        <div class="home-ai-head"><div><span class="home-ai-kicker">YOUR BUYER SNAPSHOT</span><h3 id="homeAiTitle">Worth a closer look?</h3><p>What stands out, what to question, and the evidence behind the asking price. No sign-up needed.</p></div><span class="home-ai-mark" aria-hidden="true">✦</span></div>
-        <p id="homeAiStatus" class="home-ai-status" role="status" aria-live="polite">Your snapshot loads automatically when you check a home.</p>
-        <div id="homeAiAnswer" class="home-ai-answer hidden"></div>
-        <div class="home-ai-questions" aria-label="Questions about the selected home">
-          <button type="button" data-home-topic="overview">What stands out?</button>
-          <button type="button" data-home-topic="visit">What should I check?</button>
-          <button type="button" data-home-topic="costs">What costs are listed?</button>
-        </div>
-        <p class="home-ai-note">AI prioritizes verified listing facts and questions. The Price Check below shows active asking-price evidence; it does not predict the eventual sale price.</p>
-      </section>
-
+        <div class="home-ai-head"><div><span class="home-ai-kicker">PRICE · PROPERTY · NEXT STEP</span><h3 id="homeAiTitle">Your buyer brief.</h3><p>A clearer view before you book a showing.</p></div><span class="home-ai-mark" aria-hidden="true">✦</span></div>
       <section id="priceCheckPanel" class="price-check hidden" aria-labelledby="priceCheckTitle" tabindex="-1">
         <div class="price-check-head">
-          <div><span class="panel-kicker">BEFORE THE FULL REPORT</span><h3 id="priceCheckTitle">Price Check</h3></div>
+          <div><span class="panel-kicker">THE ASKING PRICE</span><h3 id="priceCheckTitle">How does it compare?</h3></div>
           <span id="priceCheckBadge" class="price-check-badge" role="status" aria-live="polite">Checking similar asking prices…</span>
         </div>
-        <p id="priceCheckSummary">We compare this home with similar active listings in its neighbourhood.</p>
+        <p id="priceCheckSummary">Looking for similar homes in this exact community…</p>
         <div id="priceCheckRange" class="asking-range"></div>
+        <p id="priceEvidence" class="price-evidence"></p>
         <details id="priceCheckDetails" class="hidden" open>
-          <summary>See the comparison</summary>
+          <summary>See the homes behind the numbers</summary>
           <div id="priceCheckNumbers" class="price-check-numbers"></div>
           <p id="priceCheckCriteria"></p>
           <div id="priceCheckMatches" class="price-check-matches"></div>
@@ -147,9 +138,22 @@
           <p id="priceCheckCoverage"></p></details>
         </details>
         <button id="priceCheckRetry" class="text-link-btn hidden" type="button">Retry Price Check</button>
-        <p class="price-check-note">An asking-price signal, not a market valuation. The full report checks recent sold evidence.</p>
+        <p class="price-check-note">These are sellers’ asking prices. Your private report checks what similar homes actually sold for.</p>
       </section>
 
+        <div class="brief-insights">
+          <p id="homeAiStatus" class="home-ai-status" role="status" aria-live="polite">Reading the listing…</p>
+          <div id="homeAiAnswer" class="home-ai-answer hidden"></div>
+          <div class="home-ai-questions" aria-label="Questions about the selected home">
+            <button type="button" data-home-topic="overview">Highlights</button>
+            <button type="button" data-home-topic="visit">At the showing</button>
+            <button type="button" data-home-topic="costs">Running costs</button>
+          </div>
+        </div>
+        <div class="brief-next"><div><strong>Like what you see?</strong><span>See the home. Get the sold-price analysis.</span></div><button id="briefShowingButton" class="primary-btn" type="button">Request a showing →</button></div>
+      </section>
+
+      <details class="extra-facts"><summary>More listing details &amp; costs</summary>
       <div class="content-grid">
         <section class="intel-panel ai-panel">
           <div class="panel-head">
@@ -183,6 +187,7 @@
         <p id="listingRemarks" class="listing-remarks hidden"></p>
       </section>
 
+      </details>
       <p id="snapshotFreshness" class="snapshot-freshness"></p>
       <p class="disclaimer">Public listing facts, not an appraisal or a value rating. Measurements, fees, taxes, condition, legal use and availability require verification. Private sold evidence is not displayed here.</p>
     </div>
@@ -191,14 +196,14 @@
   <section class="discovery-section" id="explore" aria-labelledby="exploreTitle">
     <div class="wrap">
       <div class="section-head discovery-heading">
-        <span class="section-label">YOUR NEXT HOME</span>
-        <h2 id="exploreTitle">A simpler place to start.</h2>
-        <p>Find a home. Check the facts. Request a showing.</p>
+        <span class="section-label">BROWSE THE MARKET</span>
+        <h2 id="exploreTitle">Explore GTA listings.</h2>
+        <p>Choose a starting point. Find something worth seeing.</p>
       </div>
       <nav class="discovery-shortcuts" aria-label="Ways to explore homes">
-        <a class="discovery-tile" href="#browse-new" data-discovery="new"><span class="tile-icon" aria-hidden="true">✦</span><strong>Just Listed</strong><span>Listed in the past 7 days</span><span class="tile-action">See recent listings →</span></a>
-        <a class="discovery-tile" href="#browse-luxury" data-discovery="luxury"><span class="tile-icon" aria-hidden="true">◇</span><strong>Luxury Homes</strong><span>Explore homes asking $2M+</span><span class="tile-action">See luxury listings →</span></a>
-        <a class="discovery-tile" href="#browse-budget" data-discovery="budget"><span class="tile-icon" aria-hidden="true">$</span><strong>Search by Budget</strong><span>Your price cap. Your home type.</span><span class="tile-action">Set your search →</span></a>
+        <a class="discovery-tile" href="#browse-new" data-discovery="new"><span class="tile-icon" aria-hidden="true">✦</span><strong>Just Listed</strong><span>Listed in the past 7 days</span></a>
+        <a class="discovery-tile" href="#browse-luxury" data-discovery="luxury"><span class="tile-icon" aria-hidden="true">◇</span><strong>Luxury Homes</strong><span>Explore homes asking $2M+</span></a>
+        <a class="discovery-tile" href="#browse-budget" data-discovery="budget"><span class="tile-icon" aria-hidden="true">$</span><strong>Search by Budget</strong><span>Your price cap. Your home type.</span></a>
       </nav>
       <section id="discoveryPanel" class="discovery-panel hidden" aria-labelledby="discoveryTitle">
         <h3 id="discoveryTitle" tabindex="-1">Just Listed</h3>
@@ -305,6 +310,7 @@
   <div id="galleryCounter" class="gallery-counter"></div>
 </div>
 
-<script src="/app.js?v=community-first-20260906" defer></script>
+<div id="mobileShowing" class="mobile-showing hidden"><div><small>SHOWING + AI REPORT</small><strong id="mobileAsking"></strong></div><button id="mobileShowingButton" class="primary-btn" type="button">Request showing →</button></div>
+<script src="/app.js?v=buyer-brief-20260906" defer></script>
 </body>
 </html>

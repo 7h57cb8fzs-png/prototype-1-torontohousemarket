@@ -17,7 +17,7 @@ test('low confidence, relaxed size and stale windows cannot produce a value rati
 test('email shows every sale behind the range and distinguishes modelled from observed prices',()=>{
  const f=fixture(), e=propertyReportEmail('Test',{},f);
  for(const c of f.comparables) {assert.ok(e.html.includes(c.address));assert.ok(e.text.includes(c.address));}
- assert.match(e.html,/5 qualifying sales shown/);assert.match(e.html,/Observed sold prices/);assert.match(e.html,/Modelled sold-evidence range/);assert.match(e.html,/Distance unavailable/);
+ assert.match(e.html,/5 qualifying sales shown/);assert.match(e.html,/Observed sold prices/);assert.match(e.html,/PRICE WINDOW TO DISCUSS/);assert.match(e.html,/Distance unavailable/);
  assert.ok(e.html.length<70000,'Avoid Gmail clipping');
 });
 test('cost subtotal includes only known tax and fees and stays explicit about omissions',()=>{

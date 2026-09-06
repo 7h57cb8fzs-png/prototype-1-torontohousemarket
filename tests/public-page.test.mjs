@@ -31,7 +31,7 @@ test('related homes are visible immediately and not described as zero evidence',
   assert.match(elements.get('priceCheckBadge').textContent,/1 related homes found/);
   assert.match(elements.get('priceCheckMatches').innerHTML,/53 Foxrun/);
 });
-test('buyer snapshot loads without a question click and renders a quick read', async () => {
+test('buyer snapshot loads automatically inside the combined brief without repeating its summary', async () => {
   let calls = 0;
   const {elements,context} = page(async (url, init) => {
     calls++; assert.equal(url, '/api/home-assistant'); assert.equal(JSON.parse(init.body).topic, 'overview');
@@ -39,7 +39,7 @@ test('buyer snapshot loads without a question click and renders a quick read', a
   });
   vm.runInContext("liveListing = {listingKey:'W13676100',forSale:true,listPrice:929900};",context);
   await vm.runInContext("loadHomeAssistant('overview')",context);
-  assert.equal(calls,1); assert.match(elements.get('homeAiAnswer').innerHTML,/Verified snapshot/);
+  assert.equal(calls,1); assert.match(elements.get('homeAiAnswer').innerHTML,/30 × 140 Feet/); assert.ok(!elements.get('homeAiAnswer').innerHTML.includes('Verified snapshot'));
   assert.match(script,/loadPriceCheck\(liveListing\);\s*loadHomeAssistant\('overview'\)/);
   assert.ok(html.indexOf('id="homeAiPanel"') < html.indexOf('id="priceCheckPanel"'));
 });
@@ -120,4 +120,15 @@ test('late Price Check response cannot overwrite a different property snapshot',
   await pending;
   assert.ok(!elements.get('priceCheckBadge').textContent.includes('OLD RESULT'));
   assert.ok(!elements.get('priceCheckQuickStatus').textContent.includes('OLD RESULT'));
+});
+
+test('asking infographic explains a sparse sample without suggesting a sale value', () => {
+ const {elements,context}=page();
+ context.fixture={count:2,asking:929900,community:'Downsview-Roding-CFB',criteria:'Downsview-Roding-CFB',observedAsking:{low:789000,high:874900},matches:[]};
+ vm.runInContext('renderPriceCheck(fixture)',context);
+ assert.match(elements.get('priceCheckSummary').textContent,/55,000 more/);
+ assert.match(elements.get('priceEvidence').textContent,/Limited asking-price sample/);
+ assert.match(elements.get('priceCheckRange').innerHTML,/874,900/);
+ vm.runInContext('resetPriceCheck()',context);
+ assert.equal(elements.get('priceCheckRange').innerHTML,'');assert.equal(elements.get('priceEvidence').innerHTML,'');
 });
