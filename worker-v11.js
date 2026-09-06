@@ -2555,7 +2555,10 @@ var worker_v10_default = {
         if (!env.AMPRE_TOKEN) return json6({ ok: false, error: "IDX connection is not configured." }, 503);
         const parsed = parseAddress5(addressQuery);
         if (parsed.number && parsed.name) {
-          const match = await resolveAddress3(parsed, env);
+          const addressDiagnostics = [];
+          const debugAddress = url.hostname.endsWith('.workers.dev') && url.searchParams.get('address_debug') === '1';
+          const match = await resolveAddress3(parsed, debugAddress ? { ...env, addressDiagnostics } : env);
+          if (debugAddress) return json6({ ok: true, parsed, match, addressDiagnostics });
           if (match?.ListingKey) {
             const direct = new URL(url.origin + "/api/property");
             forwardPublicSnapshot(url, direct);
@@ -2735,8 +2738,12 @@ async function runQuery2(filter, env, top, orderby = "") {
     const response = await fetch(`${AMPRE4}/Property?${params.toString()}`, {
       headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }
     });
-    if (!response.ok) return [];
+    if (!response.ok) {
+      if (env.addressDiagnostics) env.addressDiagnostics.push({ filter, status: response.status, error: (await response.text()).slice(0, 500) });
+      return [];
+    }
     const body = await response.json();
+    if (env.addressDiagnostics) env.addressDiagnostics.push({ filter, status: response.status, rows: (body.value || []).filter(r => String(r.StreetNumber) === '981').slice(0, 10) });
     return Array.isArray(body.value) ? body.value : [];
   } catch {
     return [];
