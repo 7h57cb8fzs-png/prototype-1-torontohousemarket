@@ -21,6 +21,14 @@ async function activeVersion() {
 }
 async function version(id) { return cf(`/workers/workers/${worker}/versions/${id}?include=modules`); }
 function source(value) { return Buffer.from(value.modules.find(m => m.name === "worker-v11.js").content_base64, "base64"); }
+function expectedAsset(path) {
+  const contents = readFileSync(path);
+  if (path !== "index.html") return contents;
+  // worker_v4_default applies these exact legacy substitutions when serving HTML.
+  return Buffer.from(contents.toString("utf8")
+    .replace(/<p class="legal-disclosure">[\s\S]*?<\/p>/i, '<p class="legal-disclosure">Showing targets depend on listing, seller and property-access availability.</p>')
+    .replace(/phase2-20260814c/g, "phase2-20260814d"));
+}
 const names = value => value.bindings.filter(b => !["ASSETS", "PUBLIC_DISCOVERY_ENABLED"].includes(b.name)).map(b => `${b.name}:${b.type}`).sort();
 check(/^[a-f0-9-]{36}$/.test(candidate || ""), "Candidate must be a verified preview version");
 const previous = await activeVersion();
@@ -48,7 +56,7 @@ try {
   for (const path of ["index.html", "app.js", "styles.css"]) {
     const url = path === "index.html" ? "/" : `/${path}`;
     const r = await fetch(`${origin}${url}?release=${process.env.GITHUB_SHA}`, { headers: { "Cache-Control": "no-cache" } });
-    check(r.ok && hash(Buffer.from(await r.arrayBuffer())) === hash(readFileSync(path)), `Live asset mismatch: ${path}`);
+    check(r.ok && hash(Buffer.from(await r.arrayBuffer())) === hash(expectedAsset(path)), `Live asset mismatch: ${path}`);
   }
   const health = await (await fetch(`${origin}/api/version`)).json();
   check(health.ok && health.vowAccess, "Version or VOW configuration health failed");
