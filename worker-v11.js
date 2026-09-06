@@ -3305,6 +3305,7 @@ async function publicDiscovery(request, env, ctx) {
   const rows = [];
   const started = Date.now();
   let pages = 0;
+  let skipped = 0;
   try {
     while (next && pages < 5 && Date.now() - started < 12000) {
       const u = new URL(next, AMPRE_BASE);
@@ -3312,6 +3313,26 @@ async function publicDiscovery(request, env, ctx) {
       visited.add(u.href);
       // Use only the existing IDX credential. Never substitute AMPRE_VOW_TOKEN.
       const response = await amplifyFetch(u.href, { AMPRE_TOKEN: env.AMPRE_TOKEN });
+      if (response.status === 400 && pages === 0 && u.searchParams.has("$orderby")) {
+        // This feed can reject OData sorting. Locate its bounded tail from the
+        // current count; do not use fixed historical offsets or call it a full
+        // market search. Dates and active status are always checked locally.
+        const countUrl = new URL(u);
+        countUrl.searchParams.delete("$orderby");
+        countUrl.searchParams.set("$count", "true");
+        countUrl.searchParams.set("$top", "1");
+        const countResponse = await amplifyFetch(countUrl.href, { AMPRE_TOKEN: env.AMPRE_TOKEN });
+        if (!countResponse.ok) throw new Error("IDX count unavailable");
+        const countBody = await countResponse.json();
+        const total = countBody["@odata.count"];
+        if (!Number.isSafeInteger(total) || total < 0 || total > 100500) throw new Error("Cannot locate a bounded inventory window");
+        skipped = Math.max(0, total - 500);
+        countUrl.searchParams.delete("$count");
+        countUrl.searchParams.set("$top", "100");
+        if (skipped) countUrl.searchParams.set("$skip", String(skipped));
+        next = countUrl.href;
+        continue;
+      }
       if (!response.ok) throw new Error("IDX request failed");
       const body = await response.json();
       if (!Array.isArray(body.value)) throw new Error("Invalid IDX response");
@@ -3322,13 +3343,12 @@ async function publicDiscovery(request, env, ctx) {
     }
     const matches = discoverySelection(rows, options);
     const result = json7({ ok: true, listings: matches.slice(0, 12), checkedAt: new Date().toISOString(),
-      coverage: { scanned: rows.length, partial: !!next, moreMatches: matches.length > 12 },
+      coverage: { scanned: rows.length, partial: !!next || skipped > 0, moreMatches: matches.length > 12 },
       note: "A selection from public IDX listings, not the entire market. Availability and asking prices can change. Open a home to recheck its listing." }, 200, { "Cache-Control": "public, max-age=60, s-maxage=300" });
     if (edgeCache && ctx?.waitUntil) ctx.waitUntil(edgeCache.put(cacheKey, result.clone()));
     return result;
   } catch {
-    // Rejected queries are not evidence of zero homes; never silently retry an
-    // unordered historical slice and call it the newest market inventory.
+    // Query failures are errors, not evidence that there are zero homes.
     return json7({ ok: false, error: "We could not verify listing results just now. Try again or check a known address or MLS number above." }, 502);
   }
 }

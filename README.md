@@ -80,10 +80,12 @@ comparable selection, valuation, or the normal emailed report.
 - Read at most five 100-record pages, following trusted AMPRE next links, with a
   12-second scan budget and five-second request timeouts. Deduplicate by listing
   key. Display up to 12 matches and disclose incomplete coverage/cache age.
-- Require a successful ordered query. An upstream failure, rejected sort or
-  invalid pagination produces an error, never a false zero or an arbitrary
-  historical scan labeled "newest". Results are a selection, not a full-market
-  inventory. No scheduled scraping or emails.
+- Prefer newest-first order. If the feed rejects sorting, get a fresh count and
+  scan a bounded tail of up to 500 rows with no fixed historical offsets; all
+  actual dates, active statuses and city matches are checked locally. An invalid
+  count, failed query or invalid pagination is an error, never a false zero.
+  Results are explicitly a selection, not a full-market inventory. No scheduled
+  scraping or emails.
 
 Query implementation references: [AMPRE Property](https://developer.ampre.ca/docs/resources/property)
 and [query/pagination options](https://developer.ampre.ca/docs/query-options).

@@ -130,3 +130,18 @@ test("restricted single-property snapshots cannot leak details through older han
   assert.equal(data.property.listPrice, undefined);
   assert.ok(!JSON.stringify(data).includes("PRIVATE ADDRESS DETAIL"));
 });
+
+test("unsupported sorting uses the current count, never a fixed historical offset", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async input => {
+    const u = new URL(input); calls.push(u);
+    if (u.searchParams.has("$orderby")) return new Response("unsupported sort", { status: 400 });
+    if (u.searchParams.has("$count")) return Response.json({ "@odata.count": 873, value: [] });
+    assert.equal(u.searchParams.get("$skip"), "373");
+    return Response.json({ value: [home("N1000001")] });
+  });
+  const response = await worker.fetch(new Request("https://example.com/api/discovery?city=Vaughan&mode=drops"), { PUBLIC_DISCOVERY_ENABLED: "true", AMPRE_TOKEN: "idx-fixture" }, {});
+  const data = await response.json();
+  assert.equal(response.status, 200); assert.equal(data.listings.length, 1);
+  assert.equal(data.coverage.partial, true); assert.equal(calls.length, 3);
+});
