@@ -35,12 +35,13 @@ const release={active,candidate,preview,beforeSha:hash(source),candidateSha:hash
 writeFileSync('audit-output/release.json',JSON.stringify(release,null,2));
 console.log(JSON.stringify(release));
 const seed=randomBytes(16).toString('hex'),results=[],pools=[];
-for(const city of ['Toronto','Vaughan','Mississauga','Oakville','Whitby']) {
- const url=new URL('/api/discovery',preview);url.search=new URLSearchParams({mode:'budget',city,maxPrice:'2500000'});
+console.log(JSON.stringify({randomSeed:seed,method:'One random home per city and property-type stratum, from the returned current IDX pool'}));
+for(const [city,types] of Object.entries({Toronto:['condo','semi'],Vaughan:['detached','freehold_town'],Mississauga:['condo_town','semi'],Oakville:['condo','detached'],Whitby:['detached','freehold_town']})) for(const type of types) {
+ const url=new URL('/api/discovery',preview);url.search=new URLSearchParams({mode:'new',city,type});
  const pool=(await get(url)).data;
- assert.ok(pool.ok&&pool.listings?.length>=2,`${city} needs at least two current homes`);
- const chosen=[...pool.listings].sort((a,b)=>hash(seed+a.listingKey).localeCompare(hash(seed+b.listingKey))).slice(0,2);
- pools.push({city,poolSize:pool.listings.length,listingKeys:pool.listings.map(p=>p.listingKey),coverage:pool.coverage});
+ assert.ok(pool.ok&&pool.listings?.length>=1,`${city} needs a current home for this type`);
+ const chosen=[...pool.listings].sort((a,b)=>hash(seed+a.listingKey).localeCompare(hash(seed+b.listingKey))).slice(0,1);
+ pools.push({city,type,poolSize:pool.listings.length,listingKeys:pool.listings.map(p=>p.listingKey),coverage:pool.coverage});
  for(const row of chosen) {
   const publicResult=await get(new URL(`/api/property?listingKey=${row.listingKey}`,preview));
   const p=publicResult.data.property;
@@ -59,7 +60,7 @@ for(const city of ['Toronto','Vaughan','Mississauga','Oakville','Whitby']) {
   const result={city,listingKey:p.listingKey,address:p.address,publicMs:publicResult.elapsedMs,priceMs:priceResult.elapsedMs,priceCheck:price,photo,property:p};
   results.push(result);
   writeFileSync('audit-output/properties.json',JSON.stringify({seed,pools,results},null,2));
-  console.log(JSON.stringify({city,listingKey:p.listingKey,address:p.address,snapshot:'passed',priceSignal:price.signal,photoStatus:photo?.status,publicMs:publicResult.elapsedMs}));
+  console.log(JSON.stringify({city,listingKey:p.listingKey,address:p.address,propertyType:p.propertySubType,snapshot:'passed',priceSignal:price.signal,photoStatus:photo?.status,publicMs:publicResult.elapsedMs}));
  }
 }
 assert.equal(results.length,10);

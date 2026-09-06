@@ -3400,6 +3400,7 @@ function discoverySelection(records, options, now = Date.now()) {
     // Explicit allowlist: never return the raw IDX row, history, contacts or VOW evidence.
     listings.push({ listingKey: key, address: cleanText(p.UnparsedAddress || buildAddress(p)), city,
       listPrice: price, beds: numberOrNull(p.BedroomsTotal), baths: numberOrNull(p.BathroomsTotalInteger),
+      bedroomLayout: facts.bedroomsAboveGrade != null && facts.bedroomsBelowGrade > 0 ? `${facts.bedroomsAboveGrade}+${facts.bedroomsBelowGrade}` : null,
       propertySubType: subtype, livingAreaRange: cleanText(p.LivingAreaRange),
       listingOffice: cleanText(p.ListOfficeName), listedAt: facts.listedAt, daysLive: ageDays,
       priceChange: facts.priceChange });
@@ -4291,8 +4292,18 @@ async function loadPropertyForReport(env, lead, requestId = null) {
   } });
   const vowBody = await vowResponse.json().catch(() => null);
   if (!vowResponse.ok || !vowBody?.ok || !vowBody.property) throw new Error(vowBody?.error || "Protected VOW property evidence could not be resolved.");
-  if (Object.keys(capturedSnapshot || {}).length) return mergeCurrentIdxWithVow(capturedSnapshot, vowBody.property, "captured_idx_snapshot");
-  return { ...vowBody.property, reportDataPipeline: { subjectFacts: "vow_fallback", protectedEvidence: "vow_credential", merged: false } };
+  // Recheck public facts server-side. Browser-submitted prices and status must
+  // never override verified listing evidence in an emailed value assessment.
+  try {
+    const currentResponse = await publicProperty(new Request(url.toString()), env, { waitUntil() {} });
+    const currentBody = await currentResponse.json();
+    if (currentResponse.ok && currentBody?.property && !currentBody.property.displayRestricted) {
+      return mergeCurrentIdxWithVow(currentBody.property, vowBody.property, "rechecked_current_idx");
+    }
+  } catch { /* Keep protected evidence, but do not claim a verified live ask. */ }
+  return { ...vowBody.property, forSale: false, listPrice: null,
+    marketStatus: "Current availability unverified",
+    reportDataPipeline: { subjectFacts: "vow_fallback_current_idx_unavailable", protectedEvidence: "vow_credential", merged: false } };
 }
 __name(loadPropertyForReport, "loadPropertyForReport");
 function mergeCurrentIdxWithVow(currentProperty, protectedProperty, subjectSource = "current_idx") {

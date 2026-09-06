@@ -23,6 +23,14 @@ function page(fetchImpl = async () => { throw new Error("Unexpected network call
   return { elements, context };
 }
 test("public page initializes without fetching a report or missing an element", () => { page(); });
+test("1+1 condos retain the reported layout without asserting a basement bedroom", () => {
+  const { elements, context } = page();
+  context.condoFixture = { forSale:true,isCondominium:true,beds:2,baths:2,publicListing:{bedroomsAboveGrade:1,bedroomsBelowGrade:1},remarks:'Luxury apartment',basement:['None'] };
+  vm.runInContext('renderQuickFacts(condoFixture); renderAiBrief(condoFixture)',context);
+  assert.equal(elements.get('factBeds').textContent,'1+1');
+  assert.ok(!elements.get('flagSignalText').textContent.includes('below grade'));
+  assert.equal(elements.get('showingSignal').textContent,'Review fees & building records');
+});
 test("snapshot renders facts and costs, never a supplied sold range or score", () => {
   const { elements, context } = page();
   context.listingFixture = { forSale: true, address: "Fixture home", listingKey: "N1000001", listPrice: 1000000, beds: 3, baths: 2, daysLive: 2, livingAreaRange: "1500-2000", parkingTotal: 2, photos: [], details: { annualTax: 4800, taxYear: 2026, possession: "Flexible" }, maintenanceFee: { amount: 400, frequency: "month", included: ["Water"] }, publicListing: { priceChange: { original: 1100000, amount: 100000, percent: 9.1 }, updatedAt: "2026-09-05" }, priceOpinion: { available: true, low: 888888, high: 999999 }, comparableContext: { available: true, comparables: [{ address: "PRIVATE SOLD ADDRESS", soldPrice: 888888 }] } };

@@ -233,7 +233,7 @@ function buildFactLine(listing, restricted) {
   if (restricted) return "Listing identified · full internet display is restricted by the listing feed";
   const facts = [
     listing.propertySubType || listing.propertyType,
-    listing.beds != null ? `${listing.beds} bed` : null,
+    listing.beds != null ? `${bedroomLabel(listing)} bed` : null,
     listing.baths != null ? `${listing.baths} bath` : null,
     listing.livingAreaRange ? `${listing.livingAreaRange} sq ft` : null,
   ].filter(Boolean);
@@ -309,9 +309,15 @@ function usePhotoFallback(image,index) {
 
 photoMainButton.addEventListener("click", () => openGallery(0));
 
+function bedroomLabel(listing) {
+  const primary = listing.publicListing?.bedroomsAboveGrade;
+  const extra = listing.publicListing?.bedroomsBelowGrade;
+  return primary != null && extra > 0 ? `${primary}+${extra}` : listing.beds ?? "—";
+}
+
 function renderQuickFacts(listing) {
   if (!listing.forSale || listing.displayRestricted) listing = {};
-  $("factBeds").textContent = listing.beds ?? "—";
+  $("factBeds").textContent = bedroomLabel(listing);
   $("factBaths").textContent = listing.baths ?? "—";
   $("factType").textContent = listing.propertySubType || listing.propertyType || "—";
   $("factLot").textContent = listing.lotWidth && listing.lotDepth ? `${formatNumber(listing.lotWidth)} × ${formatNumber(listing.lotDepth)} ${listing.publicListing?.lotUnits || "(units not reported)"}` : "—";
@@ -331,11 +337,11 @@ function renderAiBrief(listing) {
   setSignal("marketSignal", Number.isFinite(days) ? days === 0 ? "Listed today" : `${days} days on this listing` : "Active listing",
     listing.offerTiming?.note || "Confirm showing access and whether there is an offer deadline.");
   const layout = [];
-  if (listing.publicListing?.bedroomsBelowGrade > 0) layout.push(`${listing.publicListing.bedroomsBelowGrade} bedroom(s) below grade`);
+  if (listing.publicListing?.bedroomsBelowGrade > 0) layout.push(listing.isCondominium ? `${bedroomLabel(listing)} reported bedroom layout; confirm the additional room's use` : `${listing.publicListing.bedroomsBelowGrade} bedroom(s) below grade`);
   if (Array.isArray(listing.basement) && listing.basement.length) layout.push(`${listing.basement.join(", ")} basement`);
   if (listing.parkingTotal != null) layout.push(`${listing.parkingTotal} parking space(s)`);
   setSignal("flagSignal", listing.livingAreaRange ? `${listing.livingAreaRange} sq ft (MLS range)` : "Size not reported", layout.join(" · ") || "Confirm room dimensions, usable space and parking at your showing.");
-  const extraUnit = listing.kitchensTotal > 1 || /separate entrance|apartment|legal|permit/i.test(listing.remarks || "");
+  const extraUnit = !listing.isCondominium && (listing.kitchensTotal > 1 || /separate entrance|basement apartment|secondary unit/i.test(listing.remarks || ""));
   setSignal("showingSignal", extraUnit ? "Verify any additional unit" : listing.isCondominium ? "Review fees & building records" : "Check condition & major systems",
     extraUnit ? "Listing mentions are not proof of legal use. Verify permits, occupancy and fire safety with qualified professionals." : listing.isCondominium ? "Ask what fees cover, about planned work, and for a professional review of the status certificate." : "Check the roof, heating, cooling and signs of moisture. Photos cannot confirm condition.");
 }
@@ -808,7 +814,7 @@ discoveryForm.addEventListener("submit", async (event) => {
     $("discoveryStatus").textContent = data.listings.length ? `${data.listings.length} home${data.listings.length === 1 ? "" : "s"} to explore. Open a home to recheck its facts.` : "No matches in the listings checked. This is not a full-market search. Try another type or budget, or check an address directly.";
     $("discoveryResults").innerHTML = data.listings.map((home) => {
       const badge = discoveryMode === "luxury" ? "Asking $2M+" : home.daysLive != null ? `${home.daysLive} days on this listing` : "Active listing";
-      const facts = [home.propertySubType, home.beds != null ? `${home.beds} bed` : null, home.baths != null ? `${home.baths} bath` : null].filter(Boolean).join(" · ");
+      const facts = [home.propertySubType, home.beds != null ? `${home.bedroomLayout || home.beds} bed` : null, home.baths != null ? `${home.baths} bath` : null].filter(Boolean).join(" · ");
       return `<article class="discovery-home"><span class="home-badge">${escapeHtml(badge)}</span><strong class="home-price">${money(home.listPrice)}</strong><h4>${escapeHtml(home.address)}</h4><p>${escapeHtml(facts)}</p><small>${escapeHtml(home.listingOffice || "Listing office not reported")} · MLS ${escapeHtml(home.listingKey)}</small><a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">Check this home →</a></article>`;
     }).join("");
     $("discoveryCoverage").textContent = `${data.note || "Results are a selection, not the full market."} ${data.coverage?.partial ? "The search reached its scan limit. " : ""}${data.coverage?.moreMatches ? "Showing the first 12 matches. Narrow your filters for more focused results. " : ""}${data.checkedAt ? `Checked ${formatDate(data.checkedAt)}; results may be cached for up to 5 minutes.` : ""}`;
@@ -837,3 +843,7 @@ window.addEventListener("popstate", restoreDiscoveryHash);
 restoreDiscoveryHash();
 const linkedMls = new URLSearchParams(window.location.search).get("listingKey");
 if (linkedMls && /^[A-Z]\d{7,9}$/.test(linkedMls)) { propertyInput.value = linkedMls; analysisForm.requestSubmit(); }
+else {
+  const linkedQuery = new URLSearchParams(window.location.search).get("q");
+  if (linkedQuery && linkedQuery.length <= 500) { propertyInput.value = linkedQuery; analysisForm.requestSubmit(); }
+}
