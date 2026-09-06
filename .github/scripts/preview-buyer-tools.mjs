@@ -59,6 +59,9 @@ assert.equal(response.status, 200); assert.equal(answer.mode, "ai");
 assert.ok(checks.every(c => c.status === 200 && c.count > 0), "Live IDX discovery needs correction; production unchanged");
 console.log("Preview verified. Production deployment has not changed. No lead, report or email endpoint invoked.");
 
+const davos = await (await fetch(new URL('/api/property?q=331%20Davos%20Road%2C%20Vaughan', preview))).json();
+assert.ok(davos.property?.forSale && davos.property?.listingKey, 'Familiar freehold fixture must resolve');
+priceKeys.add(davos.property.listingKey);
 const priceChecks = [];
 for (const listingKey of priceKeys) {
   const r = await fetch(new URL(`/api/price-check?listingKey=${listingKey}`, preview));

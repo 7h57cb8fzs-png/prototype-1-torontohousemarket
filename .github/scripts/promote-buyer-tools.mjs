@@ -52,6 +52,16 @@ for (const path of ["index.html", "app.js", "styles.css"]) {
   }
   check(response.ok && hash(actual) === hash(expected), `Preview asset mismatch before promotion: ${path}`);
 }
+async function checkBedroomPricing(base) {
+  const r = await fetch(`${base}/api/price-check?listingKey=N13748512`);
+  const p = await r.json();
+  check(r.ok && p.ok && p.matches.every(row => row.bedroomLayout === "1+1"), "Bedroom layout comparison failed");
+  if (p.count < 3) check(!p.available && p.medianAsk === null, "Sparse bedroom layout received a price label");
+  console.log(JSON.stringify({ bedroomLayoutCheck: { listingKey: p.listingKey, matches: p.count, signal: p.signal } }));
+}
+await checkBedroomPricing(previewOrigin);
+const positivePreview = await (await fetch(`${previewOrigin}/api/price-check?listingKey=N13519308`)).json();
+check(positivePreview.ok && positivePreview.available && positivePreview.count >= 3, "Preview freehold Price Check failed");
 const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
 let attempted = false;
 try {
@@ -94,9 +104,10 @@ try {
   const ai = await fetch(`${origin}/api/home-assistant`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ listingKey, topic: "costs" }) });
   const answer = await ai.json();
   check(ai.ok && answer.mode === "ai" && answer.facts?.length, "Live AI assistant verification failed");
-  const priceResponse = await fetch(`${origin}/api/price-check?listingKey=N13748512`);
+  await checkBedroomPricing(origin);
+  const priceResponse = await fetch(`${origin}/api/price-check?listingKey=N13519308`);
   const price = await priceResponse.json();
-  check(priceResponse.ok && price.ok && price.listingKey === "N13748512" && price.available && price.count >= 3 && price.medianAsk > 0, "Live Price Check verification failed");
+  check(priceResponse.ok && price.ok && price.listingKey === "N13519308" && price.available && price.count >= 3 && price.medianAsk > 0, "Live Price Check verification failed");
   console.log(JSON.stringify({ priceCheck: { listingKey: price.listingKey, signal: price.signal, matches: price.count, differencePct: price.differencePct } }));
   console.log(JSON.stringify({ deployedVersion: candidate, previousVersion: previous, sourceSha256: hash(source(next)), aiMode: answer.mode }));
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Deployed verified version ${candidate}.\n\nSource, bindings, cron, assets, public IDX, and AI checks passed. No lead/report/email test requests were made.\n`);

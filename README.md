@@ -119,7 +119,7 @@ source; the email/PDF change only suppresses unsupported zero-comparable ratings
 
 ### Public Price Check (September 6, 2026)
 
-The snapshot automatically reads `/api/price-check?listingKey=...`. It uses IDX only and compares other distinct active asking prices in the exact municipality/community, home type, published size band and bedroom count; bathroom counts can differ by one. Reported parking is also checked. It does not alter the VOW comparable engine or create leads/reports/emails.
+The snapshot automatically reads `/api/price-check?listingKey=...`. It uses IDX only and compares other distinct active asking prices in the exact municipality/community, home type, published size band and bedroom count, including the reported primary/additional bedroom breakdown when supplied; bathroom counts can differ by one. Reported parking is also checked. It does not alter the VOW comparable engine or create leads/reports/emails.
 
 At least three matches are required. The subject asking price is compared with their median: within ±5% is in line, below/above that is lower/higher, and a gap beyond 25% requires closer review. A wide interquartile price spread (>30% of median), missing subject facts, or too few matches withholds the label. The UI explains the basis and links all active matches. This is an asking-price comparison, not an appraisal or sold-value score.
 
