@@ -36,8 +36,8 @@ assert.equal((await cf(`/workers/scripts/${worker}/deployments`)).deployments[0]
 const home = await fetch(preview); assert.equal(home.status, 200); assert.match(await home.text(), /AI HOME ASSISTANT/);
 const checks = [];
 let aiListingKey;
-for (const city of ["Toronto", "Vaughan"]) for (const mode of ["new", "drops", "budget"]) {
-  const url = new URL("/api/discovery", preview); url.search = new URLSearchParams({ city, mode, maxPrice: "2000000" });
+for (const city of ["Toronto", "Vaughan"]) for (const mode of ["new", "luxury", "budget"]) {
+  const url = new URL("/api/discovery", preview); url.search = new URLSearchParams({ city, mode, maxPrice: mode === "luxury" ? "" : "2000000" });
   const r = await fetch(url); const data = await r.json();
   checks.push({ city, mode, status: r.status, count: data.listings?.length, code: data.code || null });
   if (r.ok && data.listings?.length) {
@@ -50,13 +50,9 @@ for (const city of ["Toronto", "Vaughan"]) for (const mode of ["new", "drops", "
 }
 console.log(JSON.stringify({ discoveryChecks: checks }));
 appendFileSync(process.env.GITHUB_STEP_SUMMARY, "```json\n" + JSON.stringify(checks, null, 2) + "\n```\n");
-if (!checks.every(c => c.status === 200 && c.count > 0)) {
-  const diagnostic = await (await fetch(new URL("/api/preview/discovery-check", preview))).json();
-  console.log(JSON.stringify({ priceFieldDiagnostics: diagnostic }));
-}
 const response = await fetch(new URL("/api/home-assistant", preview), { method: "POST", headers: { Origin: new URL(preview).origin, "Content-Type": "application/json" }, body: JSON.stringify({ listingKey: aiListingKey, topic: "costs" }) });
 const answer = await response.json();
 console.log(JSON.stringify({ assistantStatus: response.status, assistantMode: answer.mode, factCount: answer.facts?.length }));
 assert.equal(response.status, 200); assert.equal(answer.mode, "ai");
-console.log("Preview verified. Production deployment has not changed. No lead, report or email endpoint invoked.");
 assert.ok(checks.every(c => c.status === 200 && c.count > 0), "Live IDX discovery needs correction; production unchanged");
+console.log("Preview verified. Production deployment has not changed. No lead, report or email endpoint invoked.");

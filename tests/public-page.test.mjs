@@ -50,7 +50,7 @@ test("discovery empty, error and escaped result states use only the discovery en
   });
   elements.get("discoveryCity").value = "Vaughan";
   elements.get("discoveryType").value = "any";
-  vm.runInContext("openDiscovery('drops')", context);
+  vm.runInContext("openDiscovery('luxury')", context);
   const submit = elements.get("discoveryForm").handlers.submit;
   await submit({ preventDefault() {} });
   assert.match(elements.get("discoveryStatus").textContent, /No matches in the listings checked/);

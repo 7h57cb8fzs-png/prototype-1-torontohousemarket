@@ -10,12 +10,15 @@ test("new listings require dates within seven days and public active residential
   const rows = [home("N1000001"), home("N1000001"), home("N1000002", { StandardStatus: "Sold" }), home("N1000003", { TransactionType: "For Lease" }), home("N1000004", { InternetAddressDisplayYN: false }), home("N1000005", { InternetEntireListingDisplayYN: "No" }), home("N1000006", { OriginalEntryTimestamp: null }), home("N1000007", { OriginalEntryTimestamp: "2026-08-01" }), home("N1000008", { OriginalEntryTimestamp: "2026-09-10" }), home("N1000009", { City: "Markham" }), home("N1000010", { PropertySubType: "Office" })];
   assert.deepEqual(discoverySelection(rows, options(), now).map(r => r.listingKey), ["N1000001"]);
 });
-test("price drops use this listing's original asking price, not sold or fabricated values", () => {
-  const rows = [home("N1000001"), home("N1000002", { OriginalListPrice: null }), home("N1000003", { OriginalListPrice: 900000 }), home("N1000004", { OriginalListPrice: 1000000 }), home("N1000005", { OriginalListPrice: 1200000 })];
-  const matches = discoverySelection(rows, options({ mode: "drops" }), now);
-  assert.deepEqual(matches.map(r => r.listingKey), ["N1000005", "N1000001"]);
-  assert.equal(matches[1].priceChange.amount, 100000);
-  assert.equal(matches[1].priceChange.percent, 9.1);
+test("luxury uses an explicit asking-price threshold, not a value score", () => {
+  const rows = [home("N1000001", { ListPrice: 1999999 }), home("N1000002", { ListPrice: 2000000 }), home("N1000003", { ListPrice: 3500000 })];
+  const matches = discoverySelection(rows, options({ mode: "luxury" }), now);
+  assert.deepEqual(matches.map(r => r.listingKey), ["N1000003", "N1000002"]);
+  assert.equal(matches[0].value_rating, undefined);
+});
+test("snapshot price reductions require reported original and current asking prices", () => {
+  assert.equal(publicListingFacts(home("N1000001")).priceChange.amount, 100000);
+  assert.equal(publicListingFacts(home("N1000001", { OriginalListPrice: null })).priceChange, null);
 });
 test("budget cap and freehold/condo townhouse distinction are exact", () => {
   const rows = [home("N1000001", { PropertySubType: "Att/Row/Townhouse", ListPrice: 900000 }), home("N1000002", { PropertySubType: "Condo Townhouse", ListPrice: 800000 }), home("N1000003", { PropertySubType: "Att/Row/Townhouse", ListPrice: 1100000 })];
@@ -73,7 +76,7 @@ test("pagination refuses foreign hosts and caps scans with honest coverage", asy
     page++;
     return Response.json({ value: [home(`N100000${page}`)], "@odata.nextLink": foreign ? "https://example.org/steal" : `https://query.ampre.ca/odata/Property?$skip=${page * 100}` });
   });
-  const request = new Request("https://example.com/api/discovery?city=Vaughan&mode=drops");
+  const request = new Request("https://example.com/api/discovery?city=Vaughan&mode=budget&maxPrice=1200000");
   const env = { PUBLIC_DISCOVERY_ENABLED: "true", AMPRE_TOKEN: "idx-fixture" };
   assert.equal((await worker.fetch(request, env, {})).status, 502);
   assert.equal(page, 1);
@@ -140,7 +143,7 @@ test("unsupported sorting uses the current count, never a fixed historical offse
     assert.equal(u.searchParams.get("$skip"), "373");
     return Response.json({ value: [home("N1000001")] });
   });
-  const response = await worker.fetch(new Request("https://example.com/api/discovery?city=Vaughan&mode=drops"), { PUBLIC_DISCOVERY_ENABLED: "true", AMPRE_TOKEN: "idx-fixture" }, {});
+  const response = await worker.fetch(new Request("https://example.com/api/discovery?city=Vaughan&mode=budget&maxPrice=1200000"), { PUBLIC_DISCOVERY_ENABLED: "true", AMPRE_TOKEN: "idx-fixture" }, {});
   const data = await response.json();
   assert.equal(response.status, 200); assert.equal(data.listings.length, 1);
   assert.equal(data.coverage.partial, true); assert.equal(calls.length, 3);

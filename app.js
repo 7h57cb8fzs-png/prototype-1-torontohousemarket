@@ -679,7 +679,7 @@ for (const button of document.querySelectorAll("[data-home-topic]")) {
 // Discovery only opens public snapshots. It never submits a lead or sends a report.
 const discoveryModes = {
   new: { title: "Just Listed", description: "Active homes entered on this MLS listing in the past 7 days. A relisting is not necessarily new to the market." },
-  drops: { title: "Price Drops", description: "Current asking price below the original price on the same MLS listing. A reduction is not proof of good value; its date may not be reported." },
+  luxury: { title: "Luxury Homes", description: "Explore active homes asking $2 million or more, highest asking price first. Open a home for the listing facts and showing options." },
   budget: { title: "Search by Budget", description: "Active homes at or below your asking-price cap, lowest asking price first. This is not a mortgage affordability assessment." }
 };
 let discoveryMode = "new";
@@ -703,6 +703,8 @@ function openDiscovery(mode, focus = true) {
   $("discoveryTitle").textContent = discoveryModes[mode].title;
   $("discoveryDescription").textContent = discoveryModes[mode].description;
   $("discoveryBudget").required = mode === "budget";
+  $("discoveryBudget").min = mode === "luxury" ? "2000000" : "100000";
+  if (mode === "luxury" && $("discoveryBudget").value && Number($("discoveryBudget").value) < 2000000) $("discoveryBudget").value = "";
   for (const tile of document.querySelectorAll("[data-discovery]")) {
     if (tile.dataset.discovery === mode) tile.setAttribute("aria-current", "true");
     else tile.removeAttribute("aria-current");
@@ -738,7 +740,7 @@ discoveryForm.addEventListener("submit", async (event) => {
     if (!response.ok || !data.ok || !Array.isArray(data.listings)) throw new Error(data.error || "Listing search is temporarily unavailable.");
     $("discoveryStatus").textContent = data.listings.length ? `${data.listings.length} home${data.listings.length === 1 ? "" : "s"} to explore. Open a home to recheck its facts.` : "No matches in the listings checked. This is not a full-market search. Try another type or budget, or check an address directly.";
     $("discoveryResults").innerHTML = data.listings.map((home) => {
-      const badge = discoveryMode === "drops" && home.priceChange ? `${money(home.priceChange.amount)} below original asking` : home.daysLive != null ? `${home.daysLive} days on this listing` : "Active listing";
+      const badge = discoveryMode === "luxury" ? "Asking $2M+" : home.daysLive != null ? `${home.daysLive} days on this listing` : "Active listing";
       const facts = [home.propertySubType, home.beds != null ? `${home.beds} bed` : null, home.baths != null ? `${home.baths} bath` : null].filter(Boolean).join(" · ");
       return `<article class="discovery-home"><span class="home-badge">${escapeHtml(badge)}</span><strong class="home-price">${money(home.listPrice)}</strong><h4>${escapeHtml(home.address)}</h4><p>${escapeHtml(facts)}</p><small>${escapeHtml(home.listingOffice || "Listing office not reported")} · MLS ${escapeHtml(home.listingKey)}</small><a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">Check this home →</a></article>`;
     }).join("");
