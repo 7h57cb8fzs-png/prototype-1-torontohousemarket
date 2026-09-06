@@ -3027,7 +3027,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "unified-buyer-brief-v108-20260906";
+var VERSION4 = "unified-buyer-brief-v109-20260906";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3280,7 +3280,7 @@ async function publicPriceCheck(request, env, ctx) {
   } catch { return json7({ ok: false, error: "We could not verify the comparison data just now. No price label has been assigned. Try again shortly." }, 502); }
 }
 
-const HOME_AI_VERSION = "home-brief-v108-20260906";
+const HOME_AI_VERSION = "home-brief-v109-20260906";
 const homeAiBudget = new Map();
 function homeBriefCandidates(p, topic) {
   const money = value => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 }).format(value);
@@ -3316,8 +3316,8 @@ function homeBriefCandidates(p, topic) {
 }
 async function generateHomeBrief(env, candidates, topic) {
   const fallback = { facts: candidates.defaults.facts, checks: candidates.defaults.checks };
-  const contextualFacts = candidates.facts.filter(f => !['asking', 'rooms'].includes(f.id));
-  const factOptions = topic === 'overview' && contextualFacts.length >= 3 ? contextualFacts : candidates.facts;
+  const contextualFacts = candidates.facts.filter(f => !['asking', 'rooms', 'parking', 'setting'].includes(f.id));
+  const factOptions = topic === 'overview' && contextualFacts.length >= 2 ? contextualFacts : candidates.facts;
   if (!env.AI?.run) return { ...fallback, ai: false, failure: 'not_configured' };
   let timer;
   try {
@@ -3334,9 +3334,16 @@ async function generateHomeBrief(env, candidates, topic) {
     // selections must not discard otherwise valid evidence or introduce text.
     const selectIds = (items, list, max) => Array.isArray(items) ? [...new Set(items.map(item => typeof item === 'string' ? item : item?.id).filter(id => typeof id === 'string' && list.some(row => row.id === id)))].slice(0, max) : [];
     const facts = selectIds(value?.facts, factOptions, 3);
+    if (topic === "overview" && facts.length) {
+      const featured = ["flexibility", "reduction", "lot"].filter(id => factOptions.some(f => f.id === id)).slice(0, 2);
+      facts.splice(0, facts.length, ...[...new Set([...featured, ...facts])].slice(0, 3));
+    }
     const checks = selectIds(value?.checks, candidates.checks, 2);
     const critical = candidates.checks.find(c => ["legal", "condo"].includes(c.id));
-    if (critical && topic !== "costs") { checks.unshift(critical.id); checks.splice(0, checks.length, ...[...new Set(checks)].slice(0, 2)); }
+    if (critical && topic !== "costs") {
+      const next = checks.find(id => id !== critical.id && id !== "parking_count") || "condition";
+      checks.splice(0, checks.length, critical.id, next);
+    }
     if (!facts.length || !checks.length) throw new Error("Unsupported AI selection");
     return { facts, checks, ai: true };
   } catch (error) { return { ...fallback, ai: false, failure: error.message === 'Unsupported AI selection' ? 'invalid_selection' : error.message === 'AI timeout' ? 'timeout' : error instanceof SyntaxError ? 'invalid_json' : 'provider_error' }; }

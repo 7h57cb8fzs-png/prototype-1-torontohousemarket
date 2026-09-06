@@ -44,3 +44,9 @@ test("preview versions refuse report and lead writes", async () => {
     assert.equal((await worker.fetch(new Request(`https://preview-prototype-1-torontohousemarket.example.workers.dev${path}`, { method: "POST" }), {}, {})).status, 403);
   }
 });
+
+test('overview puts property-specific features and approval checks ahead of parking repetition', async () => {
+ const options=homeBriefCandidates({listPrice:929900,livingAreaRange:'1100-1500',parkingTotal:10,lotWidth:30,lotDepth:140,publicListing:{lotUnits:'Feet'},basement:['Separate Entrance'],remarks:'Separate entrance and second kitchen',kitchensTotal:2},'overview');
+ const result=await generateHomeBrief({AI:{run:async()=>({response:JSON.stringify({facts:['size','parking'],checks:['parking_count','condition']})})}},options,'overview');
+ assert.equal(result.ai,true);assert.deepEqual(result.facts.slice(0,2),['flexibility','lot']);assert.deepEqual(result.checks,['legal','condition']);
+});

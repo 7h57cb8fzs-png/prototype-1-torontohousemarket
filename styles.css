@@ -537,7 +537,8 @@ body:has(.mobile-showing:not(.hidden)){padding-bottom:90px}
 .site-footer{padding-bottom:24px}
 }
 
-@media(max-width:360px){.nav-actions>a{display:none}
+@media(max-width:400px){.nav-actions>a{display:none}}
+@media(max-width:360px){
 .range-head{flex-direction:column;gap:10px}
 .range-head>div:last-child{text-align:left}
 .range-head strong{font-size:19px}
@@ -548,4 +549,14 @@ body:has(.mobile-showing:not(.hidden)){padding-bottom:90px}
 
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}
 *,*::before,*::after{transition:none!important;animation:none!important}
+}
+
+.home-ai-panel:focus,.price-check:focus{outline:2px solid var(--line);outline-offset:-2px}
+@media(min-width:1000px){
+.home-ai-panel{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr)}
+.home-ai-head,.brief-next{grid-column:1/-1}
+.brief-insights{border-top:0;border-left:1px solid var(--line);padding:28px}
+.home-ai-answer{grid-template-columns:1fr;gap:28px}
+.home-ai-questions{gap:6px}
+.home-ai-questions button{padding:8px 10px;font-size:11px}
 }
