@@ -3034,6 +3034,7 @@ var worker_v11_default = {
     if (url.pathname === "/api/discovery/config" && request.method === "GET") return json7({ ok: true, enabled: env.PUBLIC_DISCOVERY_ENABLED === "true", cities: DISCOVERY_CITIES }, 200);
     if (url.pathname === "/api/discovery" && request.method === "GET") return publicDiscovery(request, env, ctx);
     if (url.pathname === "/api/home-assistant" && request.method === "POST") return publicHomeAssistant(request, env, ctx);
+    if (url.pathname === "/api/preview/discovery-check" && request.method === "GET" && url.hostname.endsWith(".workers.dev") && url.hostname.split(".")[0] !== "prototype-1-torontohousemarket") return previewDiscoveryCheck(env);
     if (url.pathname === "/api/featured-listings") return json7({ ok: false, error: "Public IDX display is disabled." }, 404, { "Cache-Control": "no-store" });
     if (url.pathname === "/api/vow/config" && request.method === "GET") return vowConfig(env);
     if (url.pathname === "/api/vow/register" && request.method === "POST") return vowRegister(request, env);
@@ -3122,6 +3123,20 @@ function forwardPublicSnapshot(source, target) {
 }
 
 const HOME_AI_VERSION = "home-brief-20260906";
+async function previewDiscoveryCheck(env) {
+  const checks = [];
+  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  for (const [name, filter] of [["geographic", "contains(UnparsedAddress,'Vaughan')"], ["original_reduction", "ListPrice lt OriginalListPrice"], ["previous_reduction", "ListPrice lt PreviousListPrice"], ["recent_change", `PriceChangeTimestamp ge ${since}`], ["original_positive", "OriginalListPrice gt 0"]]) {
+    const u = new URL(`${AMPRE_BASE}/Property`); u.search = new URLSearchParams({ "$filter": filter, "$top": "10", "$count": "true" });
+    try {
+      const r = await amplifyFetch(u.href, { AMPRE_TOKEN: env.AMPRE_TOKEN });
+      const b = await r.json().catch(() => ({}));
+      const rows = (b.value || []).filter(p => isActiveForSale(p) && !displayDenied(p.InternetEntireListingDisplayYN) && !displayDenied(p.InternetAddressDisplayYN));
+      checks.push({ name, status: r.status, total: b["@odata.count"], priceFields: rows[0] ? Object.keys(rows[0]).filter(k => /price|timestamp/i.test(k)) : [], samples: rows.slice(0, 2).map(p => ({ listingKey: p.ListingKey, price: p.ListPrice, original: p.OriginalListPrice, previous: p.PreviousListPrice, changedAt: p.PriceChangeTimestamp })) });
+    } catch { checks.push({ name, status: 0 }); }
+  }
+  return json7({ ok: true, checks });
+}
 const homeAiBudget = new Map();
 function homeBriefCandidates(p, topic) {
   const money = value => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 }).format(value);
