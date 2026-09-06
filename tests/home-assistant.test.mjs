@@ -13,6 +13,11 @@ test("AI returns only server-defined facts and check IDs", async () => {
   assert.equal(result.ai, true);
   assert.deepEqual(result.facts, ["fee", "tax"]);
 });
+test('extra or wrapped AI selections retain only verified server IDs', async () => {
+  const result = await generateHomeBrief({AI:{run:async()=>({response:JSON.stringify({facts:[{id:'fee',text:'invented return'},'tax','fee','asking','parking','worth_2million'],checks:['condo','costs','condition','buy_now']})})}},candidates,'costs');
+  assert.equal(result.ai,true); assert.deepEqual(result.facts,['fee','tax','asking']);
+  assert.deepEqual(result.checks,['condo','costs']); assert.ok(!JSON.stringify(result).includes('invented'));
+});
 test("unsupported AI claims, missing provider, and failures use labeled deterministic fallback", async () => {
   for (const AI of [undefined, { run: async () => { throw new Error("Unavailable"); } }, { run: async () => ({ response: '{"facts":["worth_2million"],"checks":["buy_now"]}' }) }]) {
     const result = await generateHomeBrief({ AI }, candidates, "costs");

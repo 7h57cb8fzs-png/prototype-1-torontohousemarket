@@ -3313,9 +3313,13 @@ async function generateHomeBrief(env, candidates, topic) {
     ]);
     const raw = result?.response ?? result;
     const value = typeof raw === "string" ? JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, "")) : raw;
-    const valid = (ids, list, max) => Array.isArray(ids) && ids.length > 0 && ids.length <= max && new Set(ids).size === ids.length && ids.every(id => typeof id === "string" && list.some(row => row.id === id));
-    if (!valid(value?.facts, factOptions, 3) || !valid(value?.checks, candidates.checks, 2)) throw new Error("Unsupported AI selection");
-    return { facts: value.facts, checks: value.checks, ai: true };
+    // Keep only server-authored IDs. Extra, duplicate or object-wrapped model
+    // selections must not discard otherwise valid evidence or introduce text.
+    const selectIds = (items, list, max) => Array.isArray(items) ? [...new Set(items.map(item => typeof item === 'string' ? item : item?.id).filter(id => typeof id === 'string' && list.some(row => row.id === id)))].slice(0, max) : [];
+    const facts = selectIds(value?.facts, factOptions, 3);
+    const checks = selectIds(value?.checks, candidates.checks, 2);
+    if (!facts.length || !checks.length) throw new Error("Unsupported AI selection");
+    return { facts, checks, ai: true };
   } catch (error) { return { ...fallback, ai: false, failure: error.message === 'Unsupported AI selection' ? 'invalid_selection' : error.message === 'AI timeout' ? 'timeout' : error instanceof SyntaxError ? 'invalid_json' : 'provider_error' }; }
   finally { clearTimeout(timer); }
 }
