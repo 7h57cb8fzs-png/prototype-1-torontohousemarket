@@ -65,6 +65,7 @@ async function checkAvenueAddress(base) {
     const response = await fetch(`${base}/api/property?q=${encodeURIComponent(query)}`);
     const data = await response.json();
     const property = data.property;
+    console.log(JSON.stringify({ addressDiagnostic: { query, status: response.status, ok: data.ok, error: data.error, listingKey: property?.listingKey, address: property?.address, resolvedFromAddress: property?.resolvedFromAddress, inputValidation: property?.inputValidation, resolution: property?.resolution } }));
     check(response.ok && data.ok && property?.listingKey && property.resolvedFromAddress && /^981 Avenue (Road|Rd)\b/i.test(property.address), `Address search failed: ${query}`);
     check(!matchedKey || matchedKey === property.listingKey, 'Address variants resolve to different listings');
     matchedKey = property.listingKey;
