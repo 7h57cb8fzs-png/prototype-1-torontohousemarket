@@ -666,7 +666,7 @@ function renderPriceCheck(data) {
     : data.reason || "There is not enough verified comparison data to assign a price label.";
   $("priceCheckNumbers").innerHTML = available ? `<div><span>THIS ASKING PRICE</span><strong>${money(data.asking)}</strong></div><div><span>MATCHED MEDIAN ASK</span><strong>${money(data.medianAsk)}</strong></div><div><span>ACTIVE MATCHES</span><strong>${data.count}</strong></div>` : "";
   $("priceCheckCriteria").textContent = data.criteria ? `Matched on: ${data.criteria}. Parking is also checked when reported for both homes.` : "";
-  $("priceCheckMatches").innerHTML = (data.matches || []).map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.beds)} bed · ${escapeHtml(home.baths)} bath · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
+  $("priceCheckMatches").innerHTML = (data.matches || []).map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.bedroomLayout || home.beds)} bed · ${escapeHtml(home.baths)} bath · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
   $("priceCheckCoverage").textContent = `${data.note || "Public IDX asking prices; not the entire market."}${data.coverage?.partial ? " The search reached its scan limit." : ""}${data.checkedAt ? ` Checked ${formatDate(data.checkedAt)}; may be cached for up to 5 minutes.` : ""}`;
   $("priceCheckDetails").classList.toggle("hidden", !data.criteria);
 }
@@ -678,7 +678,7 @@ async function loadPriceCheck(listing) {
   priceCheckController = new AbortController();
   const controller = priceCheckController, timer = window.setTimeout(() => controller.abort(), 30000);
   try {
-    const response = await fetch(`/api/price-check?listingKey=${encodeURIComponent(listingKey)}`, { headers: { Accept: "application/json" }, signal: controller.signal });
+    const response = await fetch(`/api/price-check?listingKey=${encodeURIComponent(listingKey)}`, { cache: "no-store", headers: { Accept: "application/json" }, signal: controller.signal });
     const data = await response.json();
     if (sequence !== priceCheckSequence || liveListing?.listingKey !== listingKey) return;
     if (!response.ok || !data.ok || data.listingKey !== listingKey) throw new Error(data.error || "Price Check could not verify the comparison data.");

@@ -76,3 +76,13 @@ test('a zero neighbourhood count retries postal retrieval while retaining exact 
   assert.ok(filters.some(f=>f.startsWith('startswith(PostalCode')));
   assert.equal(priceCheckSelection(home(1),scan.rows).count,3);
 });
+
+test('1+1 bedroom layouts cannot earn a tick by comparison with 2+0 layouts', () => {
+  const subject=home(1,{BedroomsTotal:2,BedroomsAboveGrade:1,BedroomsBelowGrade:1});
+  const same=peers.map(r=>({...r,BedroomsTotal:2,BedroomsAboveGrade:1,BedroomsBelowGrade:1}));
+  const different=same.map(r=>({...r,BedroomsAboveGrade:2,BedroomsBelowGrade:0}));
+  assert.equal(priceCheckSelection(subject,different).count,0);
+  const result=priceCheckSelection(subject,same);
+  assert.equal(result.count,3); assert.match(result.criteria,/1\+1 reported bedroom layout/);
+  assert.equal(result.matches[0].bedroomLayout,'1+1');
+});

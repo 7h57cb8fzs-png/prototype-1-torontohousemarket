@@ -3125,7 +3125,7 @@ function forwardPublicSnapshot(source, target) {
 
 // Public asking-price position. This never calls the sold-comparable engine,
 // generates a report, or substitutes a VOW credential for IDX.
-const PRICE_CHECK_VERSION = "asking-position-1";
+const PRICE_CHECK_VERSION = "asking-position-2-bedroom-layout";
 const priceCheckBudget = new Map();
 function priceCheckArea(row) {
   const match = String(row?.LivingAreaRange || "").replace(/,/g, "").match(/^\s*(\d+)\s*[-–]\s*(\d+)\s*$/);
@@ -3143,6 +3143,7 @@ function priceCheckSelection(subject, records) {
   if (!publicListingFacts(subject)) return { ...result, reason: "A current listing with public details is required for a Price Check." };
   const type = Object.values(DISCOVERY_TYPES).find(types => types?.includes(subject.PropertySubType));
   const area = priceCheckArea(subject), beds = numberOrNull(subject.BedroomsTotal), baths = numberOrNull(subject.BathroomsTotalInteger);
+  const primaryBeds = numberOrNull(subject.BedroomsAboveGrade), extraBeds = numberOrNull(subject.BedroomsBelowGrade);
   const city = normalizeText(subject.City), community = normalizeText(subject.CityRegion), asking = numberOrNull(subject.ListPrice);
   const missing = [!type && "a supported home type", !area && "a comparable closed size range", beds === null && "bedrooms", baths === null && "bathrooms", !city && "municipality", !community && "neighbourhood", !(asking > 0) && "asking price"].filter(Boolean);
   if (missing.length) return { ...result, reason: `We could not verify ${missing.join(", ")} for this listing. There is not enough detail for a reliable price comparison yet.` };
@@ -3156,14 +3157,16 @@ function priceCheckSelection(subject, records) {
     if (!type.includes(row.PropertySubType) || normalizeText(row.City) !== city || normalizeText(row.CityRegion) !== community) continue;
     const otherArea = priceCheckArea(row), otherBeds = numberOrNull(row.BedroomsTotal), otherBaths = numberOrNull(row.BathroomsTotalInteger), price = numberOrNull(row.ListPrice);
     if (!otherArea || otherArea.low !== area.low || otherArea.high !== area.high || otherBeds !== beds || otherBaths === null || Math.abs(otherBaths - baths) > 1 || !(price > 0)) continue;
+    if (primaryBeds !== null && numberOrNull(row.BedroomsAboveGrade) !== primaryBeds || extraBeds !== null && numberOrNull(row.BedroomsBelowGrade) !== extraBeds) continue;
     const parking = numberOrNull(subject.ParkingTotal), otherParking = numberOrNull(row.ParkingTotal);
     if (parking !== null && otherParking !== null && ((parking === 0) !== (otherParking === 0) || Math.abs(parking - otherParking) > 1)) continue;
     seen.add(identity);
     seenKeys.add(key);
-    matches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName) });
+    matches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, bedroomLayout: primaryBeds !== null && extraBeds !== null ? `${primaryBeds}+${extraBeds}` : null, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName) });
   }
   result.matches = matches; result.count = matches.length;
-  result.criteria = `${cleanText(subject.CityRegion)} · ${cleanText(subject.PropertySubType)} · ${area.label} · ${beds} bedrooms · bathrooms within 1`;
+  const layout = primaryBeds !== null && extraBeds !== null ? `${primaryBeds}+${extraBeds} reported bedroom layout` : `${beds} bedrooms`;
+  result.criteria = `${cleanText(subject.CityRegion)} · ${cleanText(subject.PropertySubType)} · ${area.label} · ${layout} · bathrooms within 1`;
   if (matches.length < 3) return { ...result, reason: `Only ${matches.length} matching active listing${matches.length === 1 ? " was" : "s were"} found in the data checked. At least 3 are needed; this does not mean there are no comparable sold homes.` };
   const prices = matches.map(r => r.asking).sort((a, b) => a - b);
   const median = medianPrice(prices);
