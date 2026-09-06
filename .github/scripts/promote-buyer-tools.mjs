@@ -22,12 +22,8 @@ async function activeVersion() {
 async function version(id) { return cf(`/workers/workers/${worker}/versions/${id}?include=modules`); }
 function source(value) { return Buffer.from(value.modules.find(m => m.name === "worker-v11.js").content_base64, "base64"); }
 function expectedAsset(path) {
-  const contents = readFileSync(path);
-  if (path !== "index.html") return contents;
-  // worker_v4_default applies these exact legacy substitutions when serving HTML.
-  return Buffer.from(contents.toString("utf8")
-    .replace(/<p class="legal-disclosure">[\s\S]*?<\/p>/i, '<p class="legal-disclosure">Showing targets depend on listing, seller and property-access availability.</p>')
-    .replace(/phase2-20260814c/g, "phase2-20260814d"));
+  // Static asset routes bypass the Worker; compare complete unmodified bytes.
+  return readFileSync(path);
 }
 const names = value => value.bindings.filter(b => !["ASSETS", "PUBLIC_DISCOVERY_ENABLED"].includes(b.name)).map(b => `${b.name}:${b.type}`).sort();
 check(/^[a-f0-9-]{36}$/.test(candidate || ""), "Candidate must be a verified preview version");
@@ -68,8 +64,20 @@ try {
   check(isDeepStrictEqual(schedule, await cf(`/workers/scripts/${worker}/schedules`)), "Cron schedule changed");
   for (const path of ["index.html", "app.js", "styles.css"]) {
     const url = path === "index.html" ? "/" : `/${path}`;
-    const r = await fetch(`${origin}${url}?release=${process.env.GITHUB_SHA}`, { headers: { "Cache-Control": "no-cache" } });
-    check(r.ok && hash(Buffer.from(await r.arrayBuffer())) === hash(expectedAsset(path)), `Live asset mismatch: ${path}`);
+    let matched = false, actual, status;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const r = await fetch(`${origin}${url}?release=${process.env.GITHUB_SHA}&attempt=${attempt}`, { headers: { "Cache-Control": "no-cache" } });
+      status = r.status; actual = Buffer.from(await r.arrayBuffer());
+      matched = r.ok && hash(actual) === hash(expectedAsset(path));
+      if (matched) break;
+      await new Promise(resolve => setTimeout(resolve, 4000));
+    }
+    if (!matched) {
+      const a = actual.toString("utf8"), e = expectedAsset(path).toString("utf8");
+      let first = 0; while (first < Math.min(a.length, e.length) && a[first] === e[first]) first++;
+      console.log(JSON.stringify({ liveAsset: path, status, actualBytes: actual.length, expectedBytes: expectedAsset(path).length, firstDifference: first, actualExcerpt: a.slice(Math.max(0, first - 50), first + 300), expectedExcerpt: e.slice(Math.max(0, first - 50), first + 300) }));
+    }
+    check(matched, `Live asset mismatch after propagation window: ${path}`);
   }
   const health = await (await fetch(`${origin}/api/version`)).json();
   check(health.ok && health.vowAccess, "Version or VOW configuration health failed");
