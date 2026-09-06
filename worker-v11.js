@@ -274,7 +274,7 @@ function parseAddress(input) {
     ["place", "Place"],
     ["pl", "Place"]
   ]);
-  const suffixIndex = tokens.findIndex((token) => suffixes.has(token.replace(/\./g, "").toLowerCase()));
+  const suffixIndex = addressSuffixIndex(tokens, suffixes);
   const streetSuffix = suffixIndex >= 0 ? suffixes.get(tokens[suffixIndex].replace(/\./g, "").toLowerCase()) : null;
   const streetTokens = suffixIndex >= 0 ? tokens.slice(0, suffixIndex) : tokens;
   const trailing = suffixIndex >= 0 ? tokens.slice(suffixIndex + 1) : [];
@@ -2743,6 +2743,15 @@ async function runQuery2(filter, env, top, orderby = "") {
   }
 }
 __name(runQuery2, "runQuery");
+function addressSuffixIndex(tokens, aliases) {
+  // Street names can themselves be street types (Avenue Road, Forest Hill Road).
+  // Keep at least one name token and choose the last suffix before a unit.
+  const unitIndex = tokens.findIndex((token, index) => index > 0 && /^(?:(?:unit|suite|apt|apartment)\b|#|\d)/i.test(token));
+  for (let i = (unitIndex < 0 ? tokens.length : unitIndex) - 1; i > 0; i--) {
+    if (aliases.has(tokens[i].replace(/\./g, "").toLowerCase())) return i;
+  }
+  return -1;
+}
 function parseAddress5(raw) {
   let first = String(raw || "").replace(/\s+/g, " ").trim().split(",")[0].trim();
   first = first.replace(/^(?:unit|suite|apt|apartment|#)\s*[A-Za-z0-9-]+\s*[-,]?\s*/i, "");
@@ -2752,7 +2761,7 @@ function parseAddress5(raw) {
   let direction = null;
   let suffix = null;
   let unit = null;
-  const suffixIndex = tokens.findIndex((token) => STREET_TYPE_ALIASES.has(normalizeToken(token)));
+  const suffixIndex = addressSuffixIndex(tokens, STREET_TYPE_ALIASES);
   if (suffixIndex >= 0) {
     suffix = STREET_TYPE_ALIASES.get(normalizeToken(tokens[suffixIndex]));
     const remainder = tokens.slice(suffixIndex + 1);
@@ -2765,7 +2774,7 @@ function parseAddress5(raw) {
   if (suffixIndex < 0 && tokens.length && DIRECTION_ALIASES.has(normalizeToken(tokens[tokens.length - 1]))) {
     direction = DIRECTION_ALIASES.get(normalizeToken(tokens.pop()));
   }
-  if (suffixIndex < 0 && tokens.length && STREET_TYPE_ALIASES.has(normalizeToken(tokens[tokens.length - 1]))) {
+  if (suffixIndex < 0 && tokens.length > 1 && STREET_TYPE_ALIASES.has(normalizeToken(tokens[tokens.length - 1]))) {
     suffix = STREET_TYPE_ALIASES.get(normalizeToken(tokens.pop()));
   }
   if (!direction && tokens.length && DIRECTION_ALIASES.has(normalizeToken(tokens[tokens.length - 1]))) {
@@ -3017,7 +3026,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-report-evidence-audit-v103-20260906";
+var VERSION4 = "stage4-address-name-fix-v104-20260906";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3082,7 +3091,7 @@ var worker_v11_default = {
 async function publicProperty(request, env, ctx) {
   const publicUrl = new URL(request.url);
   publicUrl.searchParams.set("mode", "public_snapshot");
-  publicUrl.searchParams.set("snapshot_version", "public-facts-20260906");
+  publicUrl.searchParams.set("snapshot_version", "public-facts-address-v104-20260906");
   const cacheKey = new Request(publicUrl.toString(), { method: "GET" });
   const edgeCache = typeof caches !== "undefined" ? caches.default : null;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
@@ -3120,7 +3129,7 @@ function forwardPublicSnapshot(source, target) {
   if (source.searchParams.get("mode") === "report_evidence") target.searchParams.set("mode", "report_evidence");
   if (source.searchParams.get("mode") === "public_snapshot") {
     target.searchParams.set("mode", "public_snapshot");
-    target.searchParams.set("snapshot_version", source.searchParams.get("snapshot_version") || "public-facts-20260906");
+    target.searchParams.set("snapshot_version", source.searchParams.get("snapshot_version") || "public-facts-address-v104-20260906");
   }
 }
 

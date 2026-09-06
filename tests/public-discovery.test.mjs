@@ -124,6 +124,26 @@ test("address lookup carries public facts into the final snapshot", async (t) =>
   assert.ok(collectionCalls >= 1);
 });
 
+for (const query of ['981 avenue rd', '981 Avenue Road']) {
+  test(`public address search resolves ${query} through the complete request path`, async t => {
+    const record = home('C1000001', { UnparsedAddress: '981 Avenue Road, Toronto, ON', StreetNumber: '981', StreetName: 'Avenue', StreetSuffix: 'Road', City: 'Toronto', Media: [{ MediaKey: 'photo', MediaType: 'image/jpeg', MediaURL: 'https://example.com/photo.jpg' }] });
+    t.mock.method(globalThis, 'fetch', async input => {
+      const url = new URL(input);
+      if (url.pathname.includes("Property('C1000001')")) return Response.json(record);
+      assert.equal(url.pathname, '/odata/Property');
+      return Response.json({ value: [record] });
+    });
+    const response = await worker.fetch(new Request(`https://example.com/api/property?q=${encodeURIComponent(query)}`), { AMPRE_TOKEN: 'idx-fixture' }, { waitUntil() {} });
+    const data = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(data.property.listingKey, 'C1000001');
+    assert.equal(data.property.resolvedFromAddress, true);
+    assert.equal(data.property.forSale, true);
+    assert.ok(data.property.publicListing);
+    assert.equal(data.property.comparableContext.available, false);
+  });
+}
+
 test("restricted single-property snapshots cannot leak details through older handlers", async (t) => {
   t.mock.method(globalThis, "fetch", async () => Response.json(home("N1000001", { InternetAddressDisplayYN: false, PublicRemarks: "PRIVATE ADDRESS DETAIL", ClosePrice: 888888, Media: [{ MediaKey: "photo", MediaType: "image/jpeg", MediaURL: "https://example.com/photo.jpg" }] })));
   const response = await worker.fetch(new Request("https://example.com/api/property?listingKey=N1000001"), { AMPRE_TOKEN: "idx-fixture" }, { waitUntil() {} });

@@ -59,6 +59,19 @@ async function checkBedroomPricing(base) {
   if (p.count < 3) check(!p.available && p.medianAsk === null, "Sparse bedroom layout received a price label");
   console.log(JSON.stringify({ bedroomLayoutCheck: { listingKey: p.listingKey, matches: p.count, signal: p.signal } }));
 }
+async function checkAvenueAddress(base) {
+  let matchedKey;
+  for (const query of ['981 avenue rd', '981 Avenue Road']) {
+    const response = await fetch(`${base}/api/property?q=${encodeURIComponent(query)}`);
+    const data = await response.json();
+    const property = data.property;
+    check(response.ok && data.ok && property?.listingKey && property.resolvedFromAddress && /^981 Avenue (Road|Rd)\b/i.test(property.address), `Address search failed: ${query}`);
+    check(!matchedKey || matchedKey === property.listingKey, 'Address variants resolve to different listings');
+    matchedKey = property.listingKey;
+    console.log(JSON.stringify({ addressSearch: { query, listingKey: matchedKey, address: property.address, forSale: property.forSale } }));
+  }
+}
+await checkAvenueAddress(previewOrigin);
 await checkBedroomPricing(previewOrigin);
 const positivePreview = await (await fetch(`${previewOrigin}/api/price-check?listingKey=N13519308`)).json();
 check(positivePreview.ok && positivePreview.available && positivePreview.count >= 3, "Preview freehold Price Check failed");
@@ -104,6 +117,7 @@ try {
   const ai = await fetch(`${origin}/api/home-assistant`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ listingKey, topic: "costs" }) });
   const answer = await ai.json();
   check(ai.ok && answer.mode === "ai" && answer.facts?.length, "Live AI assistant verification failed");
+  await checkAvenueAddress(origin);
   await checkBedroomPricing(origin);
   const priceResponse = await fetch(`${origin}/api/price-check?listingKey=N13519308`);
   const price = await priceResponse.json();
