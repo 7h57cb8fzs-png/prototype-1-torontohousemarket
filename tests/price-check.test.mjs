@@ -64,3 +64,15 @@ test('foreign pagination is rejected before a credential can leave AMPRE', async
   });
   await assert.rejects(priceCheckRows(home(1),{AMPRE_TOKEN:'idx-fixture'}),/Invalid pagination/);
 });
+
+test('a zero neighbourhood count retries postal retrieval while retaining exact locality', async t => {
+  const filters=[];
+  t.mock.method(globalThis,'fetch',async input=>{
+    const u=new URL(input); filters.push(u.searchParams.get('$filter'));
+    if(u.searchParams.has('$count')) return Response.json({'@odata.count':u.searchParams.get('$filter').startsWith('contains')?0:4,value:[]});
+    return Response.json({value:[...peers,home(5,{CityRegion:'Patterson'})]});
+  });
+  const scan=await priceCheckRows(home(1),{AMPRE_TOKEN:'idx-fixture'});
+  assert.ok(filters.some(f=>f.startsWith('startswith(PostalCode')));
+  assert.equal(priceCheckSelection(home(1),scan.rows).count,3);
+});

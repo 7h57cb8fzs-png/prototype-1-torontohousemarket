@@ -3144,7 +3144,8 @@ function priceCheckSelection(subject, records) {
   const type = Object.values(DISCOVERY_TYPES).find(types => types?.includes(subject.PropertySubType));
   const area = priceCheckArea(subject), beds = numberOrNull(subject.BedroomsTotal), baths = numberOrNull(subject.BathroomsTotalInteger);
   const city = normalizeText(subject.City), community = normalizeText(subject.CityRegion), asking = numberOrNull(subject.ListPrice);
-  if (!type || !area || beds === null || baths === null || !city || !community || !(asking > 0)) return { ...result, reason: "The listing is missing a supported home type, closed size range, room count, neighbourhood, or asking price. We cannot make a reliable price comparison yet." };
+  const missing = [!type && "a supported home type", !area && "a comparable closed size range", beds === null && "bedrooms", baths === null && "bathrooms", !city && "municipality", !community && "neighbourhood", !(asking > 0) && "asking price"].filter(Boolean);
+  if (missing.length) return { ...result, reason: `We could not verify ${missing.join(", ")} for this listing. There is not enough detail for a reliable price comparison yet.` };
   const seen = new Set([priceCheckIdentity(subject)]);
   const seenKeys = new Set([String(subject.ListingKey)]);
   const matches = [];
@@ -3188,10 +3189,15 @@ async function priceCheckRows(subject, env) {
     const r = await amplifyFetch(countUrl.href, { AMPRE_TOKEN: env.AMPRE_TOKEN });
     if (r.status === 400) continue;
     if (!r.ok) throw new Error("IDX unavailable");
-    countBody = await r.json(); break;
+    countBody = await r.json();
+    // The subject is known to be active in this community. A zero count cannot
+    // establish an empty market: retry the supported postal query and continue
+    // enforcing exact community/city locally.
+    if (countBody["@odata.count"] === 0) continue;
+    break;
   }
   const count = countBody?.["@odata.count"];
-  if (!Number.isSafeInteger(count) || count < 0 || count > 100600) throw new Error("Cannot verify inventory coverage");
+  if (!Number.isSafeInteger(count) || count <= 0 || count > 100600) throw new Error("Cannot verify inventory coverage");
   const skipped = Math.max(0, count - 600);
   countUrl.searchParams.delete("$count"); countUrl.searchParams.set("$top", "100");
   if (skipped) countUrl.searchParams.set("$skip", String(skipped));
