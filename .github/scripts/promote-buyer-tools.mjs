@@ -137,6 +137,13 @@ try {
     if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 32000));
   }
   check(ai.ok && answer.mode === "ai" && answer.facts?.length, "Live AI assistant verification failed after three attempts");
+  const schoolProperty = await (await fetch(`${origin}/api/property?listingKey=W13676100`)).json();
+  const schoolToken = schoolProperty.property?.schoolResearchToken;
+  if (schoolToken) {
+    const schoolResponse = await fetch(`${origin}/api/school-enrichment?token=${encodeURIComponent(schoolToken)}`, {signal:AbortSignal.timeout(26000)}).catch(()=>null);
+    const schoolBody = await schoolResponse?.json().catch(()=>null);
+    console.log(JSON.stringify({schoolCardCheck:{status:schoolResponse?.status,name:schoolBody?.schoolSummary?.name,source:schoolBody?.schoolSummary?.source,available:!!schoolBody?.schoolSummary?.name}}));
+  } else console.log(JSON.stringify({schoolCardCheck:{name:schoolProperty.property?.schoolSummary?.name,tokenAvailable:false}}));
   await checkWhitburn(origin);
   await checkAvenueAddress(origin);
   await checkBedroomPricing(origin);

@@ -132,3 +132,19 @@ test('asking infographic explains a sparse sample without suggesting a sale valu
  vm.runInContext('resetPriceCheck()',context);
  assert.equal(elements.get('priceCheckRange').innerHTML,'');assert.equal(elements.get('priceEvidence').innerHTML,'');
 });
+
+test('offer and school cards render useful source-aware states',()=>{
+ const {context,elements}=page();
+ context.p={forSale:true,offerTiming:{type:'anytime'},schoolSummary:{name:'Example School',rating:8.2,ratingScale:10,ratingYear:'2025'}};
+ vm.runInContext('renderBuyerEssentials(p)',context);
+ assert.equal(elements.get('offerTimingValue').textContent,'Offers anytime');assert.match(elements.get('schoolRating').textContent,/8.2\/10.*MLS-reported.*2025/);
+ vm.runInContext('renderBuyerEssentials({forSale:true})',context);
+ assert.equal(elements.get('offerTimingValue').textContent,'Offer date not reported');assert.equal(elements.get('schoolRating').textContent,'');
+});
+test('school results cannot overwrite a newly selected property',async()=>{
+ let finish;const {context,elements}=page(async()=>await new Promise(resolve=>finish=resolve));
+ const pending=vm.runInContext('liveListing={listingKey:"N1000001",forSale:true,schoolResearchToken:"signed-test"}; loadSchoolSnapshot(liveListing)',context);
+ vm.runInContext('liveListing={listingKey:"N1000002",forSale:true,photos:[]}; renderListing(liveListing)',context);
+ finish(Response.json({ok:true,schoolSummary:{name:'OLD SCHOOL'}}));await pending;
+ assert.ok(!elements.get('schoolName').textContent.includes('OLD SCHOOL'));
+});

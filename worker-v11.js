@@ -1245,14 +1245,20 @@ function buildPriceOpinion(comp, activeForSale) {
 }
 __name(buildPriceOpinion, "buildPriceOpinion");
 function detectOfferTiming(p) {
-  const brokerageText = firstValue(p, ["BrokerageRemarks", "BrokerRemarks", "PrivateRemarks", "RemarksForBrokerages", "RemarksForBrokerage", "SyndicationRemarks"]);
-  const text = [brokerageText, p.PublicRemarks, p.PublicRemarksExtras].filter((v) => typeof v === "string").join(" ");
-  const offerText = text.split(/(?<=[.!?])\s+|\n+/).filter((s) => /\boffer(?:s|ing)?\b|offer presentation|presentation of offers/i.test(s)).join(" ");
-  if (/offers?\s+anytime|any\s*time/i.test(offerText)) return { type: "anytime", label: "There is no offer date", note: "Brokerage remarks indicate offers are accepted anytime. Realtor verification required." };
-  const date = offerText.match(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?\b/i)?.[0] || offerText.match(/\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b/)?.[0] || offerText.match(/\b\d{1,2}[-/]\d{1,2}[-/]20\d{2}\b/)?.[0] || null;
-  const time = offerText.match(/\b\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b/i)?.[0] || null;
-  if (offerText && date) return { type: "scheduled", label: [date, time].filter(Boolean).join(" \xB7 "), note: "Offer date was detected in brokerage/listing remarks. Realtor verification required." };
-  return { type: "none", label: "There is no offer date", note: "No offer date was found in the available brokerage/listing remarks." };
+  // Only public remarks may supply public offer instructions. Missing text is
+  // unknown, never evidence that there is no offer date.
+  const text = [p.PublicRemarks, p.PublicRemarksExtras].filter(v => typeof v === 'string').join(' ');
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/).filter(t => /\boffers?\b|offer presentation/i.test(t));
+  const anytime = sentences.some(t => /offers?\s+(?:accepted\s+|welcome\s+|considered\s+)?any\s*time/i.test(t) && !/\b(?:not|no|never)\b[^.!?]{0,35}offers?[^.!?]{0,30}any\s*time/i.test(t));
+  const dates = sentences.filter(t => /offers?[^.!?]{0,65}(?:present|review|consider|accept|submit|register|deadline|due|on\b)|presentation of offers/i.test(t)).map(t => {
+    const date = t.match(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?\b/i)?.[0] || t.match(/\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b/)?.[0];
+    const time = t.match(/\b\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b/i)?.[0];
+    return date ? {date,time} : null;
+  }).filter(Boolean);
+  if (anytime && dates.length || new Set(dates.map(d=>d.date)).size > 1) return {type:'unclear',label:'Confirm offer instructions',note:'The public listing has more than one offer instruction. Ask your Realtor to confirm the current deadline.'};
+  if (dates.length) return {type:'scheduled',label:[dates[0].date,dates[0].time].filter(Boolean).join(' · '),note:'Reported in the public listing. Confirm the date, year, time and any early-offer instructions with your Realtor.'};
+  if (anytime) return {type:'anytime',label:'Offers anytime',note:'The public listing says offers are considered anytime. Confirm current instructions with your Realtor.'};
+  return {type:'unknown',label:'Offer date not reported',note:'No clear offer deadline was found in the public listing. This does not mean offers are accepted anytime.'};
 }
 __name(detectOfferTiming, "detectOfferTiming");
 function buildSchoolSummary(p) {
@@ -1263,11 +1269,13 @@ function buildSchoolSummary(p) {
     { name: firstValue(p, ["SchoolName", "NearbySchool"]), rating: firstFiniteNumber(p, ["SchoolRating", "NearbySchoolRating"]) }
   ];
   const selected = choices.find((school) => cleanText(school.name));
+  const scale = firstFiniteNumber(p, ["SchoolRatingScale", "ElementarySchoolRatingScale", "HighSchoolRatingScale"]);
   if (!selected) return { name: null, rating: null, source: "AMPRE MLS", note: "School data unavailable \xB7 confirm attendance boundary and rating with the school board." };
   return {
     name: cleanText(selected.name),
-    rating: selected.rating,
-    ratingScale: selected.rating != null ? 10 : null,
+    rating: Number.isFinite(selected.rating) && selected.rating >= 0 && selected.rating <= 10 ? selected.rating : null,
+    ratingScale: scale === 10 && Number.isFinite(selected.rating) && selected.rating >= 0 && selected.rating <= 10 ? 10 : null,
+    ratingYear: cleanText(p.SchoolRatingYear) || null,
     source: "AMPRE MLS",
     note: selected.rating == null ? "Rating unavailable \xB7 confirm attendance boundary with the school board." : null
   };
@@ -3027,7 +3035,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "unified-buyer-brief-v109-20260906";
+var VERSION4 = "showing-report-offers-schools-v110-20260906";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3118,6 +3126,7 @@ async function publicProperty(request, env, ctx) {
     delete body.property.historySummary.lastListPrice;
   }
   applyVerifiedPropTxHistory(body.property);
+  if (["none", "unknown"].includes(body.property.offerTiming?.type)) body.property.offerTiming = {type:"unknown",label:"Offer date not reported",note:"No clear deadline in the public listing. Confirm offer instructions with your Realtor."};
   body.property.comparableContext = { available: false, matchCount: 0, confidence: "Included in your report", basis: "Recent sold comparables and the value range are emailed after your request." };
   body.property.priceOpinion = { available: false, label: "Included in your report", note: "Your value range is prepared after your request." };
   const result = json7(body, response.status, { "Cache-Control": "public, max-age=60, s-maxage=300" });
@@ -3280,7 +3289,7 @@ async function publicPriceCheck(request, env, ctx) {
   } catch { return json7({ ok: false, error: "We could not verify the comparison data just now. No price label has been assigned. Try again shortly." }, 502); }
 }
 
-const HOME_AI_VERSION = "home-brief-v109-20260906";
+const HOME_AI_VERSION = "home-brief-v110-20260906";
 const homeAiBudget = new Map();
 function homeBriefCandidates(p, topic) {
   const money = value => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 }).format(value);
@@ -3302,7 +3311,7 @@ function homeBriefCandidates(p, topic) {
   }
   const checks = [
     { id: "condition", title: "Condition", text: "Ask about the age of the roof and heating, and any history of leaks." },
-    { id: "availability", title: "Showing & offers", text: "What is the earliest confirmed showing time, and is there an offer deadline?" },
+    { id: "inspection", title: "Inspection access", text: "Can your inspector review the home before an offer? Ask for any available inspection report." },
     { id: "costs", title: "Ownership costs", text: "Confirm current taxes, all maintenance or common-element fees, and which utilities or rentals cost extra. These are not total ownership costs." },
     { id: "layout", title: "Layout & measurements", text: "Do the room dimensions, natural light, storage and parking work for your needs? Verify them in person." }
   ];
@@ -3669,6 +3678,7 @@ async function findNearestFreeSchool(latitude, longitude) {
   const candidates = features.map((feature) => normalizePublicSchool(feature, latitude, longitude)).filter(Boolean).sort((a, b) => a.distanceKm - b.distanceKm);
   const result = candidates[0] || null;
   if (!result) return null;
+  result.ratingScale = null;
   result.source = used?.official ? "City of Toronto Open Data" : "Toronto public school-location dataset";
   if (cache) {
     const cachedResponse = json7(result, 200, { "Cache-Control": "public, max-age=2592000" });
@@ -4882,6 +4892,17 @@ function reportPriceGraphic(report) {
   const text = [label,range,ask ? `Current asking price: ${cad(ask)}` : 'No verified current asking price.',position,`Confidence: ${confidence}. ${explanation}`,valid ? 'A modelled range from selected sold homes, not a forecast, guaranteed sale price or recommended opening offer.' : 'No automated price recommendation.'].filter(Boolean).join('\n');
   return {confidence,text,html:`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#edf5ef;border-radius:12px;margin:18px 0"><tr><td style="padding:20px"><p style="font-size:12px;font-weight:bold;color:#196b60;margin:0 0 8px">${html(label.toUpperCase())}</p><p style="font-size:25px;line-height:1.3;letter-spacing:-.5px;font-weight:bold;color:#183330;margin:0 0 8px">${html(range)}</p>${ask ? `<p style="font-size:14px;color:#374f45;margin:0">This home is asking <strong>${html(cad(ask))}</strong></p>` : ''}${bar}${position ? `<p style="font-size:14px;color:#183330;line-height:1.5;margin:0 0 16px">${html(position)}</p>` : ''}<p style="font-size:13px;font-weight:bold;color:#183330;margin:0 0 8px">${html(confidence)} confidence</p><table role="presentation" width="96" cellpadding="0" cellspacing="0"><tr>${confidenceBar}</tr></table><p style="font-size:13px;line-height:1.55;color:#4c6459;margin:10px 0">${html(explanation)}</p><p style="font-size:11px;line-height:1.5;color:#5b6c68;margin:0">${valid ? 'Modelled from selected sold homes. Not a forecast or an opening-offer recommendation.' : 'No automated price recommendation.'}</p></td></tr></table>`};
 }
+function reportPriceSuggestion(report) {
+  const v = report.valuation || {}, f = report.facts || {}, comps = report.comparables || [], policy = report.comparable_policy || {};
+  const community = normalizeText(f.neighbourhood || '');
+  const sameCommunity = !!community && comps.length >= 3 && comps.every(c => normalizeText(c.cityRegion || '') === community);
+  const type = String(f.property_type || '').toLowerCase().replace(/[^a-z]/g,'');
+  const sameType = !!type && comps.every(c => String(c.propertySubType || '').toLowerCase().replace(/[^a-z]/g,'') === type);
+  const asOf = Date.parse(report.generated_at || '');
+  const fresh = Number.isFinite(asOf) && comps.every(c => {const age=(asOf-Date.parse(c.soldDate || ''))/864e5; return Number.isFinite(age) && age >= 0 && age <= 100;});
+  const available = v.available && report.value_rating?.available && f.for_sale !== false && f.list_price > 0 && /^(medium|high)$/i.test(v.confidence || '') && !policy.expandedWindow && !policy.sizeFallbackUsed && sameCommunity && sameType && fresh && Number(v.midpoint) >= Number(v.low) && Number(v.midpoint) <= Number(v.high);
+  return available ? {available:true,price:Number(v.midpoint),text:`Price reference to discuss: ${cad(v.midpoint)}. The modelled midpoint of current same-community sold evidence; agree an offer with your Realtor after checking condition and offer instructions.`} : {available:false,price:null,text:'Price suggestion: Realtor review needed. A specific price requires enough recent sales of the same home type in the same community, with at least medium confidence.'};
+}
 function propertyReportEmail(address, agentData, input) {
   const report = reportWithoutUnsupportedRating(input);
   const f = report.facts, v = report.valuation, comps = report.comparables, policy = report.comparable_policy || {};
@@ -4943,8 +4964,12 @@ function propertyReportEmail(address, agentData, input) {
   const compRows = comps.map((c,i) => `<tr><td style="padding:12px 0;border-bottom:1px solid #e5e7eb">${paragraph(`${i+1}. ${c.address || "MLS comparable"}`)}<p style="margin:0;font-size:14px;line-height:1.6">${html([cad(c.soldPrice), c.soldDate, c.propertySubType, c.beds != null ? `${c.beds} bd` : null, c.baths != null ? `${c.baths} ba` : null, c.livingAreaRange, c.cityRegion, c.distanceKm != null ? `${Number(c.distanceKm).toFixed(2)} km` : 'Distance unavailable'].filter(Boolean).join(' · '))}</p></td></tr>`).join('');
   const disclaimer = "Preliminary decision support, not an appraisal or guarantee of value. Confirm listing status, measurements, taxes, legal use and sold evidence with your Realtor before relying on them.";
   const priceGraphic = reportPriceGraphic(report);
-  const textParts = [title,address,status,context,priceGraphic.text,`Prepared ${generated}`,"BOTTOM LINE",verdict,reason,`Modelled sold-evidence range: ${range}`,`Evidence confidence: ${confidence}`,rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : `Value rating unavailable. ${rating.reason || "More reliable evidence is needed."}`,"QUICK READ",factsRead,"Recent comparable sales",evidence,`Observed sold prices: ${observedRange}. This may differ from the modelled range.`,locality,size,...comps.map((c,i)=>`${i+1}. ${c.address} · ${cad(c.soldPrice)} · ${c.soldDate} · ${c.distanceKm != null ? `${c.distanceKm} km` : 'Distance unavailable'}`),"WHAT THE NUMBERS SAY",v.basis,"KNOWN MONTHLY COSTS",...costs,"CHECK BEFORE AN OFFER",...checks,...questions,actionTitle,action,propertyUrl.toString(),actionNote,generatedMode,disclaimer];
-  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${html(title)}</title></head><body style="margin:0;background:#f7f7f2;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} · ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 10px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden"><tr><td style="padding:28px 26px;background:#183330;color:#fff"><p style="color:#b9dccc;font-size:12px;letter-spacing:1px;margin:0 0 8px">${html(title)}</p><h1 style="font-size:26px;line-height:1.25;margin:8px 0 12px">${html(address)}</h1><p style="font-size:16px;line-height:1.5;margin:0;color:#e5e7eb">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section('BOTTOM LINE',`<h2 style="font-size:23px;line-height:1.3;margin:0 0 12px">${html(verdict)}</h2>${paragraph(reason)}${priceGraphic.html}${paragraph(rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : `Value rating unavailable. ${rating.reason || 'More reliable evidence is needed.'}`)}`)}${section('QUICK READ',paragraph(factsRead))}${section('Recent comparable sales',paragraph(evidence)+paragraph(`Observed sold prices: ${observedRange}. The modelled range may differ because it weights the selected sales.`)+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>`+paragraph([locality,size].filter(Boolean).join(' ')))}${section('WHAT THE NUMBERS SAY',paragraph(v.basis || reason))}${section('KNOWN MONTHLY COSTS',bullets(costs))}${section('CHECK BEFORE AN OFFER',bullets(checks)+(questions.length ? label('QUESTIONS FOR YOUR REALTOR')+bullets(questions) : ''))}${section(actionTitle,`<p style="margin:0 0 16px"><a href="${html(propertyUrl.toString())}" style="display:inline-block;padding:15px 18px;background:#183330;color:#fff;text-decoration:none;border-radius:9px;font-size:16px;font-weight:700">${html(action)}</a></p>${paragraph(actionNote)}`)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6">${html(generatedMode)}<br><br>${html(disclaimer)}<br><br>Toronto House Market · ${html(agent)}</td></tr></table></td></tr></table></body></html>`;
+  const suggestion = reportPriceSuggestion(report);
+  const freshEmail = validEmail(agentData?.email) ? agentData.email : "torontohousemarket@gmail.com";
+  const refreshUrl = `mailto:${freshEmail}?subject=${encodeURIComponent(`Fresh price analysis: ${address}`)}&body=${encodeURIComponent(`Please refresh the sold comparisons, price suggestion and price window for ${address}${f.listing_key ? ` (MLS ${f.listing_key})` : ""} before I decide on an offer.`)}`;
+  const pricingFreshness = `Calculated ${generated}. This email is a snapshot; prices and listing status can change. Request a fresh analysis before making an offer.`;
+  const textParts = [title,address,status,context,priceGraphic.text,suggestion.text,pricingFreshness,`Request a fresh price analysis: ${refreshUrl}`,`Prepared ${generated}`,"BOTTOM LINE",verdict,reason,`Modelled sold-evidence range: ${range}`,`Evidence confidence: ${confidence}`,rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : `Value rating unavailable. ${rating.reason || "More reliable evidence is needed."}`,"QUICK READ",factsRead,"Recent comparable sales",evidence,`Observed sold prices: ${observedRange}. This may differ from the modelled range.`,locality,size,...comps.map((c,i)=>`${i+1}. ${c.address} · ${cad(c.soldPrice)} · ${c.soldDate} · ${c.distanceKm != null ? `${c.distanceKm} km` : 'Distance unavailable'}`),"WHAT THE NUMBERS SAY",v.basis,"KNOWN MONTHLY COSTS",...costs,"CHECK BEFORE AN OFFER",...checks,...questions,actionTitle,action,propertyUrl.toString(),actionNote,generatedMode,disclaimer];
+  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${html(title)}</title></head><body style="margin:0;background:#f7f7f2;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} · ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 10px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden"><tr><td style="padding:28px 26px;background:#183330;color:#fff"><p style="color:#b9dccc;font-size:12px;letter-spacing:1px;margin:0 0 8px">${html(title)}</p><h1 style="font-size:26px;line-height:1.25;margin:8px 0 12px">${html(address)}</h1><p style="font-size:16px;line-height:1.5;margin:0;color:#e5e7eb">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section('BOTTOM LINE',`<h2 style="font-size:23px;line-height:1.3;margin:0 0 12px">${html(verdict)}</h2>${paragraph(reason)}${priceGraphic.html}${paragraph(suggestion.text)}${paragraph(pricingFreshness)}<p style="margin:0 0 18px"><a href="${html(refreshUrl)}" style="display:inline-block;border:1px solid #196b60;border-radius:8px;padding:12px 16px;color:#196b60;font-size:14px;font-weight:bold;text-decoration:none">Request a fresh price analysis ↗</a></p>${paragraph(rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : `Value rating unavailable. ${rating.reason || 'More reliable evidence is needed.'}`)}`)}${section('QUICK READ',paragraph(factsRead))}${section('Recent comparable sales',paragraph(evidence)+paragraph(`Observed sold prices: ${observedRange}. The modelled range may differ because it weights the selected sales.`)+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>`+paragraph([locality,size].filter(Boolean).join(' ')))}${section('WHAT THE NUMBERS SAY',paragraph(v.basis || reason))}${section('KNOWN MONTHLY COSTS',bullets(costs))}${section('CHECK BEFORE AN OFFER',bullets(checks)+(questions.length ? label('QUESTIONS FOR YOUR REALTOR')+bullets(questions) : ''))}${section(actionTitle,`<p style="margin:0 0 16px"><a href="${html(propertyUrl.toString())}" style="display:inline-block;padding:15px 18px;background:#183330;color:#fff;text-decoration:none;border-radius:9px;font-size:16px;font-weight:700">${html(action)}</a></p>${paragraph(actionNote)}`)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6">${html(generatedMode)}<br><br>${html(disclaimer)}<br><br>Toronto House Market · ${html(agent)}</td></tr></table></td></tr></table></body></html>`;
   return {subject:`AI Property Report Ready: ${address} | ${rating.available ? `Value Rating ${rating.score}/10` : active ? 'Realtor Review' : 'Property Review'}`,html:htmlBody,text:textParts.filter(Boolean).join('\n\n')};
 }
 __name(propertyReportEmail, "propertyReportEmail");
@@ -5205,6 +5230,9 @@ export {
   reportWithoutUnsupportedRating,
   reportBuyerChecks,
   propertyReportEmail,
+  reportPriceSuggestion,
+  detectOfferTiming,
+  buildSchoolSummary,
   reportPriceGraphic,
   propertyReportPdf,
   publicListingFacts,

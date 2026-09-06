@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=buyer-brief-v109-20260906" />
+  <link rel="stylesheet" href="/styles.css?v=showing-report-v110-20260906" />
 </head>
 <body>
 <header class="site-header">
@@ -21,31 +21,30 @@
       <span class="brand-mark">THM</span>
       <span class="brand-name">Toronto House Market</span>
     </a>
-    <div class="nav-actions"><a href="#explore">Explore homes</a><button class="nav-cta" type="button" data-scroll="#lookup">Find a property</button></div>
+    <div class="nav-actions"><button id="headerReportButton" class="nav-cta" type="button">AI report + showing</button></div>
   </div>
 </header>
 
 <main id="top">
   <section class="hero" id="lookup">
     <div class="wrap hero-inner">
-      <div class="speed-chip"><span class="live-dot"></span> SHOWING REQUESTS · 1–24 HOUR TARGET*</div>
-      <h1>See the home sooner.<br><span>Know what to ask.</span></h1>
-      <p class="hero-copy">Found a home you like? See the key facts now. Request a fast showing and get your AI buyer report with recent sold comparisons.</p>
+      <div class="speed-chip"><span class="live-dot"></span> FAST SHOWING + AI BUYER REPORT</div>
+      <h1>See the home.<br><span>Get the AI report.</span></h1>
+      <p class="hero-copy">One request gets you a fast showing and a private AI buyer report. Understand the price, compare recent sales and know what to check before an offer.</p>
 
       <form id="analysisForm" class="search-box" novalidate>
         <div class="search-input-wrap">
           <span class="search-icon" aria-hidden="true">⌕</span>
           <input id="propertyInput" name="property" autocomplete="off" aria-label="MLS number, street address, or listing URL" placeholder="MLS #, street address, or listing URL" required />
         </div>
-        <button id="lookupButton" class="primary-btn hero-cta" type="submit">View property →</button>
+        <button id="lookupButton" class="primary-btn hero-cta" type="submit">Preview this home →</button>
       </form>
       <div id="inputStatus" class="input-status" aria-live="polite">Free property preview · No sign-up</div>
-      <p class="hero-ai-note">One request starts your showing and your private buyer report.</p>
+      <p class="hero-ai-note"><strong>Your showing request starts your full AI report.</strong> It is emailed when ready.</p>
 
-      <div class="hero-proof">
-        <div><strong>01</strong><span>Preview the property</span></div>
-        <div><strong>02</strong><span>Request a showing</span></div>
-        <div><strong>03</strong><span>Get the full buyer report</span></div>
+      <div class="hero-included" id="reportIncluded">
+        <article><span class="included-icon" aria-hidden="true">↗</span><div><strong>See it sooner</strong><p>Earliest available showing · 1–24 hour target*</p></div></article>
+        <article><span class="included-icon" aria-hidden="true">✦</span><div><strong>Your AI buyer report</strong><p>Sold comparisons · price window · confidence · key checks</p></div></article>
       </div>
       <p class="speed-disclaimer">*Target only. Actual showing time depends on listing, seller and property-access availability.</p>
     </div>
@@ -91,11 +90,11 @@
           </a>
 
           <div id="activeActionBox" class="speed-action-box hidden">
-            <div class="speed-action-top"><span>SHOWING REQUEST</span><small>1–24 HOUR TARGET*</small></div>
-            <strong>See this home.</strong>
+            <div class="speed-action-top"><span>SHOWING + AI REPORT</span><small>1–24 HOUR TARGET*</small></div>
+            <strong>See it. Understand it.</strong>
             <p>Your Realtor confirms the earliest available time.</p>
-            <button id="seeHomeButton" class="showing-btn" type="button">Request earliest showing →</button>
-            <small class="ai-after">Includes your AI report: recent sales, price guidance and key questions.</small>
+            <button id="seeHomeButton" class="showing-btn" type="button">Request showing + AI report</button>
+            <small class="ai-after">Your full AI buyer report is generated after this request and emailed when ready.</small>
           </div>
 
           <div id="offMarketActionBox" class="offmarket-action-box hidden">
@@ -118,6 +117,11 @@
         <div><span>PARKING</span><strong id="factParking">—</strong></div>
         <div><span>TAX</span><strong id="factTax">—</strong></div>
       </div>
+
+      <section id="buyerEssentials" class="buyer-essentials hidden" aria-label="Offer timing and schools">
+        <article><span class="panel-kicker">OFFER TIMING</span><strong id="offerTimingValue">Checking offer details…</strong><p id="offerTimingNote"></p></article>
+        <article><span class="panel-kicker">SCHOOLS &amp; RATINGS</span><strong id="schoolName">Finding a nearby school…</strong><p id="schoolDetails"></p><span id="schoolRating"></span><div class="school-links"><a href="https://www.compareschoolrankings.org/" target="_blank" rel="noopener noreferrer">School ratings ↗</a><a href="https://www.eqao.com/the-assessments/find-my-school/" target="_blank" rel="noopener noreferrer">Official test results ↗</a></div></article>
+      </section>
 
       <section id="homeAiPanel" class="home-ai-panel hidden" aria-labelledby="homeAiTitle" tabindex="-1">
         <div class="home-ai-head"><div><span class="home-ai-kicker">PRICE · PROPERTY · NEXT STEP</span><h3 id="homeAiTitle">Your buyer brief.</h3><p>A clearer view before you book a showing.</p></div><span class="home-ai-mark" aria-hidden="true">✦</span></div>
@@ -150,7 +154,7 @@
             <button type="button" data-home-topic="costs">Running costs</button>
           </div>
         </div>
-        <div class="brief-next"><div><strong>Like what you see?</strong><span>See the home. Get the sold-price analysis.</span></div><button id="briefShowingButton" class="primary-btn" type="button">Request a showing →</button></div>
+        <div class="brief-next"><div><strong>Like what you see?</strong><span>One request starts your showing and full AI report.</span></div><button id="briefShowingButton" class="primary-btn" type="button">Get showing + AI report</button></div>
       </section>
 
       <details class="extra-facts"><summary>More listing details &amp; costs</summary>
@@ -230,9 +234,9 @@
         <p>We help you see the home sooner and understand the price before you make a decision.</p>
       </div>
       <div class="steps">
-        <article><span>01</span><h3>Check the home</h3><p>Enter an MLS number, street address, or listing URL.</p></article>
-        <article><span>02</span><h3>Request a showing</h3><p>Choose as soon as possible, today, or within 24 hours.</p></article>
-        <article><span>03</span><h3>Get the buyer report</h3><p>Get the sold evidence and a clear next step by email. A value range is included when supported.</p></article>
+        <article><span>01</span><h3>Preview the home</h3><p>Enter an MLS number, street address, or listing URL.</p></article>
+        <article><span>02</span><h3>Request a showing</h3><p>Choose your showing time. The same request starts your AI report.</p></article>
+        <article><span>03</span><h3>Get the buyer report</h3><p>Receive sold comparisons, a supported price window and key checks by email.</p></article>
       </div>
     </div>
   </section>
@@ -284,7 +288,7 @@
           </label>
         </div>
         <p id="leadError" class="form-error hidden" aria-live="polite"></p>
-        <button id="leadSubmit" class="primary-btn full" type="submit">Request showing →</button>
+        <button id="leadSubmit" class="primary-btn full" type="submit">Showing + AI report</button>
         <small id="serviceNote" class="service-note">Realtor response target: within 5 minutes, 9 AM–9 PM. Showing target: 1–24 hours, subject to availability.</small>
       </form>
     </div>
@@ -310,7 +314,7 @@
   <div id="galleryCounter" class="gallery-counter"></div>
 </div>
 
-<div id="mobileShowing" class="mobile-showing hidden"><div><small>SHOWING + AI REPORT</small><strong id="mobileAsking"></strong></div><button id="mobileShowingButton" class="primary-btn" type="button">Request showing →</button></div>
-<script src="/app.js?v=buyer-brief-v109-20260906" defer></script>
+<div id="mobileShowing" class="mobile-showing hidden"><div><small>SHOWING + AI REPORT</small><strong id="mobileAsking"></strong></div><button id="mobileShowingButton" class="primary-btn" type="button">Showing + AI report</button></div>
+<script src="/app.js?v=showing-report-v110-20260906" defer></script>
 </body>
 </html>

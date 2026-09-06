@@ -70,6 +70,8 @@ let photos = [];
 let galleryIndex = 0;
 let currentLeadMode = "showing";
 let loading = false;
+let schoolSequence = 0;
+let schoolController = null;
 let homeAiSequence = 0;
 let homeAiController = null;
 let priceCheckSequence = 0;
@@ -117,6 +119,7 @@ analysisForm.addEventListener("submit", async (event) => {
     showResult();
     loadPriceCheck(liveListing);
     loadHomeAssistant('overview');
+    loadSchoolSnapshot(liveListing);
 
     const verification = liveListing.inputValidation?.label || "Property checked.";
     setInputStatus("ok", verification);
@@ -133,7 +136,7 @@ analysisForm.addEventListener("submit", async (event) => {
 function setLoading(value) {
   loading = value;
   lookupButton.disabled = value;
-  lookupButton.textContent = value ? "Finding property…" : "View property →";
+  lookupButton.textContent = value ? "Finding property…" : "Preview this home →";
   analysisForm.classList.toggle("is-loading", value);
 }
 
@@ -143,6 +146,7 @@ function setInputStatus(type, text) {
 }
 
 function hideResult() {
+  schoolSequence++; schoolController?.abort();
   $("mobileShowing").classList.add("hidden");
   $("mobileAsking").textContent = "";
   resetHomeAssistant();
@@ -155,6 +159,7 @@ function showResult() {
 }
 
 function renderListing(listing) {
+  schoolSequence++; schoolController?.abort();
   resetDynamicSections();
   resetPriceCheck();
 
@@ -196,6 +201,7 @@ function renderListing(listing) {
   renderQuickFacts(listing);
   renderAiBrief(listing);
   renderMarketRead(listing);
+  renderBuyerEssentials(listing);
   renderDetails(listing);
   $("mobileShowing").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
   $("mobileAsking").textContent = listing.forSale && listing.listPrice > 0 ? money(listing.listPrice) : "";
@@ -369,6 +375,35 @@ function renderMarketRead(listing) {
   $("snapshotCommunityNote").textContent = d.crossStreet ? `Near ${d.crossStreet}` : "Check the exact location and your commute.";
 }
 
+function renderBuyerEssentials(listing) {
+  const visible = listing.forSale && !listing.displayRestricted;
+  $("buyerEssentials").classList.toggle("hidden", !visible);
+  const offer = visible ? listing.offerTiming : null;
+  $("offerTimingValue").textContent = offer?.type === 'scheduled' ? offer.label : offer?.type === 'anytime' ? 'Offers anytime' : offer?.type === 'unclear' ? 'Confirm offer instructions' : 'Offer date not reported';
+  $("offerTimingNote").textContent = ['scheduled', 'unclear'].includes(offer?.type) ? offer.note || 'Confirm the deadline and any early-offer instructions with your Realtor.' : offer?.type === 'anytime' ? 'The listing says offers can be considered anytime. Confirm before submitting.' : 'No clear deadline in the public listing. Your Realtor will confirm the offer instructions.';
+  renderSchoolSummary(visible ? listing.schoolSummary : null, visible && !!listing.schoolResearchToken);
+}
+function renderSchoolSummary(school, loading = false) {
+  $("schoolName").textContent = school?.name || (loading ? 'Finding a nearby school…' : 'Check schools for this address');
+  $("schoolDetails").textContent = school?.name ? [school.distanceKm != null ? `${school.distanceKm} km away` : null, school.board, 'Nearby does not confirm enrolment. Check the school board’s boundary.'].filter(Boolean).join(' · ') : loading ? 'School details load separately from your property preview.' : 'Use the ratings and official results links to search by school or address.';
+  const score = school?.rating;
+  $("schoolRating").textContent = typeof score === 'number' && Number.isFinite(score) && score >= 0 && score <= 10 && school.ratingScale === 10 ? `${score}/10 · MLS-reported rating${school.ratingYear ? ` · ${school.ratingYear}` : ' · year not supplied'}` : school?.name ? 'Rating: check the published school report below.' : '';
+}
+async function loadSchoolSnapshot(listing) {
+  if (!listing?.forSale || listing.displayRestricted || listing.schoolSummary?.name || !listing.schoolResearchToken) return;
+  const sequence = schoolSequence, key = listing.listingKey;
+  schoolController = new AbortController(); const controller = schoolController;
+  const timer = window.setTimeout(() => controller.abort(), 26000);
+  try {
+    const response = await fetch(`/api/school-enrichment?token=${encodeURIComponent(listing.schoolResearchToken)}`, {headers:{Accept:'application/json'},signal:controller.signal,cache:'no-store'});
+    const data = await response.json();
+    if (sequence !== schoolSequence || liveListing?.listingKey !== key) return;
+    if (!response.ok || !data.ok) throw new Error('School lookup unavailable');
+    renderSchoolSummary(data.schoolSummary);
+  } catch {
+    if (sequence === schoolSequence && liveListing?.listingKey === key) { renderSchoolSummary(null); $("schoolDetails").textContent = 'Nearby school lookup is unavailable. You can still check published ratings and official results.'; }
+  } finally { window.clearTimeout(timer); }
+}
 function renderDetails(listing) {
   if (!listing.forSale || listing.displayRestricted) listing = { forSale: false };
   const d = listing.details || {};
@@ -405,6 +440,10 @@ remarksToggle.addEventListener("click", () => {
   remarksToggle.textContent = opening ? "Hide listing remarks ↑" : "Read listing remarks ↓";
 });
 
+$("headerReportButton").addEventListener("click", () => {
+  if (!loading && liveListing?.forSale && !liveListing.displayRestricted) return openLeadModal("showing");
+  document.getElementById("lookup").scrollIntoView({behavior:"smooth",block:"start"}); propertyInput.focus({preventScroll:true});
+});
 seeHomeButton.addEventListener("click", () => openLeadModal("showing"));
 for (const id of ["briefShowingButton", "mobileShowingButton"]) $(id).addEventListener("click", () => openLeadModal("showing"));
 deepReportButton.addEventListener("click", () => openLeadModal("buyer_offmarket"));
@@ -428,12 +467,12 @@ function openLeadModal(mode) {
   leadMode.value = mode;
 
   if (mode === "showing") {
-    modalEyebrow.textContent = "SHOWING REQUEST · 1–24 HOUR TARGET";
-    modalTitle.textContent = "See this home as soon as available.";
-    modalCopy.textContent = "Share your details once. We route the showing request and email your full Buyer Decision Report.";
+    modalEyebrow.textContent = "SHOWING + AI BUYER REPORT";
+    modalTitle.textContent = "Your showing. Your AI report.";
+    modalCopy.textContent = "Choose your showing time. This request also starts your AI buyer report with sold comparisons, a supported price window and key checks—emailed when ready.";
     nextStepLabel.textContent = "WHEN DO YOU WANT TO SEE IT?";
     showingTiming.innerHTML = `<option value="asap">As soon as possible</option><option value="today">Today, if available</option><option value="within_24h">Within 24 hours</option>`;
-    leadSubmit.textContent = "Request showing →";
+    leadSubmit.textContent = "Request showing + AI report";
     serviceNote.textContent = "Realtor response target: within 5 minutes, 9 AM–9 PM. Showing target: 1–24 hours, subject to availability.";
   } else if (mode === "seller") {
     modalEyebrow.textContent = "SELLER VALUE REVIEW";
@@ -543,7 +582,7 @@ leadForm.addEventListener("submit", async (event) => {
 function renderLeadSuccess(result) {
   const afterHours = !!result.queued_after_hours;
   if (currentLeadMode === "showing") {
-    successTitle.textContent = "Showing request sent.";
+    successTitle.textContent = "Showing + AI report requested.";
     successCopy.textContent = afterHours
       ? "Your request is saved for the next service window. A Realtor will confirm the earliest available appointment."
       : "A Realtor will contact you to confirm the earliest appointment available from the listing side.";
