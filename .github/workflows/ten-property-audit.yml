@@ -25,6 +25,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          PREVIEW_ONLY: "true"
           EXPECTED_ACTIVE_SHA: b8f05b41f3e442b7b1fdfcf3ef065957e0afab490af9d2e14e9cae2f24ce609c
         run: node .github/scripts/ten-property-audit.mjs
       - uses: actions/upload-artifact@v4

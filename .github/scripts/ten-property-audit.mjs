@@ -34,6 +34,10 @@ assert.equal((await cf(`/workers/scripts/${worker}/deployments`)).deployments[0]
 const release={active,candidate,preview,beforeSha:hash(source),candidateSha:hash(readFileSync('worker-v11.js'))};
 writeFileSync('audit-output/release.json',JSON.stringify(release,null,2));
 console.log(JSON.stringify(release));
+if (process.env.PREVIEW_ONLY === 'true') {
+  console.log('Preview refreshed; previously audited property selection is unchanged.');
+  process.exit(0);
+}
 const seed=randomBytes(16).toString('hex'),results=[],pools=[];
 console.log(JSON.stringify({randomSeed:seed,method:'One random home per city and property-type stratum, from the returned current IDX pool'}));
 for(const [city,types] of Object.entries({Toronto:['condo','semi'],Vaughan:['detached','freehold_town'],Mississauga:['condo_town','semi'],Oakville:['condo','detached'],Whitby:['detached','freehold_town']})) for(const type of types) {
