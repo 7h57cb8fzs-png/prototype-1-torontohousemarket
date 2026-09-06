@@ -81,7 +81,7 @@ async function handleProperty(request, env) {
   let validationLabel = null;
   const directKey = /^[A-Z]\d{7,9}$/.test(listingKeyParam) ? listingKeyParam : input.listingKey;
   if (directKey) {
-    subject = await fetchPropertyByKey(directKey, env);
+    subject = await fetchPropertyByKey(directKey, env, !reportEvidence);
     if (!subject) return json({ ok: false, error: "That MLS listing could not be found." }, 404);
     history = publicSnapshot || reportEvidence ? [subject] : await findSameAddressHistory(subject, env);
     resolution = input.type === "link" ? "link_mls" : "mls";
@@ -94,7 +94,7 @@ async function handleProperty(request, env) {
         property: buildNoMlsProperty(input.queryText || rawQuery, input.type === "link" ? "Listing URL checked" : "Address checked")
       });
     }
-    subject = found.subject.ListingKey ? await fetchPropertyByKey(found.subject.ListingKey, env) || found.subject : found.subject;
+    subject = found.subject.ListingKey ? await fetchPropertyByKey(found.subject.ListingKey, env, !reportEvidence) || found.subject : found.subject;
     history = found.history;
     resolution = found.resolution;
     validationLabel = input.type === "link" ? `Listing URL matched to ${subject.ListingKey ? `MLS ${subject.ListingKey}` : "MLS history"}` : found.resolution === "address_live" ? `Address matched to active MLS ${subject.ListingKey}` : "Address matched to MLS history";
@@ -172,10 +172,10 @@ function buildNoMlsProperty(address, validationLabel) {
   };
 }
 __name(buildNoMlsProperty, "buildNoMlsProperty");
-async function fetchPropertyByKey(listingKey, env) {
+async function fetchPropertyByKey(listingKey, env, includeMedia = true) {
   if (!listingKey) return null;
   const params = new URLSearchParams();
-  params.set("$expand", "Media($select=MediaKey,MediaModificationTimestamp,MediaURL,MediaType;$filter=MediaType eq 'image/jpeg')");
+  if (includeMedia) params.set("$expand", "Media($select=MediaKey,MediaModificationTimestamp,MediaURL,MediaType;$filter=MediaType eq 'image/jpeg')");
   let response = await amplifyFetch(`${AMPRE_BASE}/Property('${encodeURIComponent(listingKey)}')?${params.toString()}`, env);
   if (!response.ok) response = await amplifyFetch(`${AMPRE_BASE}/Property('${encodeURIComponent(listingKey)}')`, env);
   if (!response.ok) return null;
@@ -1647,7 +1647,7 @@ async function property(request, env, ctx) {
   if (!base.ok || !body?.ok || !body?.property) return json2(body || { ok: false, error: "Unable to load property." }, base.status);
   const p = body.property;
   if (validation) p.inputValidation = validation;
-  if (u.searchParams.get("mode") === "public_snapshot") return json2(body, base.status);
+  if (["public_snapshot", "report_evidence"].includes(u.searchParams.get("mode"))) return json2(body, base.status);
   if (p.listingKey) {
     const [bundle, media] = await Promise.all([
       bundleByKey(p.listingKey, env),
@@ -1987,7 +1987,7 @@ var worker_v7_default = {
         p.inputValidation = validation;
         p.resolution = p.forSale ? "address_live" : "address_history";
       }
-      if (p.listingKey && url.searchParams.get("mode") !== "public_snapshot") {
+      if (p.listingKey && !["public_snapshot", "report_evidence"].includes(url.searchParams.get("mode"))) {
         const media = await fetchPropertyMedia2(p.listingKey, env);
         const normalized = normalizeMedia2(media);
         if (normalized.length) {
@@ -3017,7 +3017,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-report-evidence-audit-v100-20260906";
+var VERSION4 = "stage4-report-evidence-audit-v101-20260906";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3117,6 +3117,7 @@ async function publicProperty(request, env, ctx) {
 __name(publicProperty, "publicProperty");
 
 function forwardPublicSnapshot(source, target) {
+  if (source.searchParams.get("mode") === "report_evidence") target.searchParams.set("mode", "report_evidence");
   if (source.searchParams.get("mode") === "public_snapshot") {
     target.searchParams.set("mode", "public_snapshot");
     target.searchParams.set("snapshot_version", source.searchParams.get("snapshot_version") || "public-facts-20260906");
@@ -5095,6 +5096,7 @@ export {
   mergeCurrentIdxWithVow,
   numberOrNull,
   buildPropertyReport,
+  loadPropertyForReport,
   buildValueRating,
   reportWithoutUnsupportedRating,
   reportBuyerChecks,

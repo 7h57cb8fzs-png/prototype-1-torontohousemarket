@@ -1,8 +1,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { loadPropertyForReport } from "../worker-v11.js";
 
 const source = readFileSync(new URL("../worker-v11.js", import.meta.url), "utf8");
+
+test("full report request preserves evidence-only mode through every legacy wrapper", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const subject = { ListingKey: "N7000001", UnparsedAddress: "50 Test Road, Vaughan", StreetNumber: "50", StreetName: "Test", CityRegion: "Maple", City: "Vaughan", PostalCode: "L6A 1A1", PropertySubType: "Detached", StandardStatus: "Active", TransactionType: "For Sale", ListPrice: 1000000, BedroomsTotal: 3, BathroomsTotalInteger: 2, LivingAreaRange: "1500-2000", Media: [{MediaKey:"photo-l",MediaURL:"https://example.com/photo.jpg",MediaType:"image/jpeg"}] };
+  const rows = [1,2,3].map(n => ({...subject,ListingKey:`N700000${n+1}`,UnparsedAddress:`${n} Other Road, Vaughan`,StandardStatus:"Closed",ClosePrice:950000+n*10000,PurchaseContractDate:new Date(Date.now()-30*86400000).toISOString()}));
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const auth = new Headers(init.headers).get("Authorization");
+    calls.push({url,auth});
+    if (url.pathname.includes("/Property(")) return Response.json(subject);
+    if (url.searchParams.get("$count") === "true") return Response.json({"@odata.count":rows.length,value:[]});
+    if (url.pathname.endsWith("/Property")) return Response.json({value:rows});
+    throw new Error(`Unexpected extra lookup: ${url.pathname}`);
+  };
+  try {
+    const property = await loadPropertyForReport({AMPRE_TOKEN:"public-test",AMPRE_VOW_TOKEN:"protected-test"},{property_snapshot:{listingKey:subject.ListingKey},metadata:{}});
+    assert.equal(property.comparableContext.comparables.length,3);
+    assert.equal(property.reportDataPipeline.subjectFacts,"rechecked_current_idx");
+    assert.equal(property.historySummary.appearanceCount,1);
+    const protectedCalls = calls.filter(c => c.auth === "Bearer protected-test");
+    assert.ok(protectedCalls.length > 1);
+    assert.ok(protectedCalls.every(c => !c.url.pathname.includes("/Media")),"protected evidence must not load photos");
+    assert.ok(protectedCalls.every(c => !c.url.searchParams.has("$expand")),"protected subject must not expand media");
+    assert.ok(protectedCalls.every(c => !c.url.searchParams.has("$orderby")),"report mode must skip full address-history scans");
+  } finally { globalThis.fetch = originalFetch; }
+});
 
 test("scheduled automation delivers ready emails before expensive report generation", () => {
   const match = source.match(/async function processAutomationJobs\(env\) \{([\s\S]*?)\n\}/);

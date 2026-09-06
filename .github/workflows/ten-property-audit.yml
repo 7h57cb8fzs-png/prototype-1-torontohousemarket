@@ -4,17 +4,31 @@ on:
     branches: [fix/ten-property-reliability-20260906]
 permissions:
   contents: read
+concurrency:
+  group: thm-guarded-production
+  cancel-in-progress: false
 jobs:
-  diagnostics:
+  release:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Inspect sanitized report generation diagnostics
+      - name: Validate evidence path and report behavior
+        run: node --test tests/*.test.mjs
+      - name: Prepare verified preview
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-        run: node .github/scripts/report-audit-diagnostics.mjs
+          PREVIEW_ONLY: "true"
+          EXPECTED_ACTIVE_SHA: 25e054eff4a65a359775ddd668d19b251a899b05c4008c6bdf18710c6a84083d
+        run: node .github/scripts/ten-property-audit.mjs
+      - name: Promote verified report path fix with rollback guards
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          EXPECTED_BEFORE_SHA: 25e054eff4a65a359775ddd668d19b251a899b05c4008c6bdf18710c6a84083d
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; process.env.CANDIDATE_VERSION_ID=JSON.parse(fs.readFileSync("audit-output/release.json")).candidate; await import("./.github/scripts/promote-buyer-tools.mjs");'
