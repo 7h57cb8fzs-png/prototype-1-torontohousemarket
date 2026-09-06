@@ -1,0 +1,25 @@
+name: Preview buyer tools without production deployment
+on:
+  push:
+    branches: [feature/buyer-tools-ai-20260906]
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate combined changes
+        run: |
+          node --check worker-v11.js
+          node --check app.js
+          node --test tests/*.test.mjs
+      - name: Upload version and verify live public features
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          EXPECTED_ACTIVE_SHA: 0c29ea238668e96591018142bfcaa771fbac3c49f48240d5db7759d5f25f6a42
+        run: node .github/scripts/preview-buyer-tools.mjs

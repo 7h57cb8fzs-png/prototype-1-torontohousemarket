@@ -70,6 +70,8 @@ let photos = [];
 let galleryIndex = 0;
 let currentLeadMode = "showing";
 let loading = false;
+let homeAiSequence = 0;
+let homeAiController = null;
 
 for (const button of document.querySelectorAll("[data-scroll]")) {
   button.addEventListener("click", () => {
@@ -137,6 +139,7 @@ function setInputStatus(type, text) {
 }
 
 function hideResult() {
+  resetHomeAssistant();
   snapshotSection.classList.add("hidden");
 }
 
@@ -151,7 +154,7 @@ function renderListing(listing) {
   const active = !!listing.forSale;
   const restricted = !!listing.displayRestricted;
 
-  resultEyebrow.textContent = active ? "LIVE LISTING · SHOWING READY" : hasMls ? "OFF-MARKET MLS HISTORY" : "OFF-MARKET PROPERTY";
+  resultEyebrow.textContent = active ? "PUBLIC MLS SNAPSHOT" : "PROPERTY REVIEW";
   snapshotProperty.textContent = listing.address || activePropertyInput;
   snapshotMeta.textContent = buildSnapshotMeta(listing);
 
@@ -186,6 +189,9 @@ function renderListing(listing) {
   renderAiBrief(listing);
   renderMarketRead(listing);
   renderDetails(listing);
+  $("homeAiPanel").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
+  const updated = listing.publicListing?.updatedAt;
+  $("snapshotFreshness").textContent = active ? `${updated ? `Listing updated ${formatDate(updated)}. ` : ""}Public IDX snapshot · may be cached for up to 5 minutes. Confirm availability before visiting.` : "No current for-sale listing verified. Historical details may not describe the property today.";
 }
 
 function resetDynamicSections() {
@@ -212,9 +218,6 @@ function buildSnapshotMeta(listing) {
 function renderPrice(listing) {
   if (listing.forSale) {
     return listing.listPrice ? money(listing.listPrice) : `<span class="price-caption">ACTIVE LISTING</span>Price unavailable`;
-  }
-  if (listing.priceOpinion?.available) {
-    return `<span class="price-caption">THM INDICATIVE VALUE</span>${money(listing.priceOpinion.midpoint)}`;
   }
   return `<span class="price-caption">STATUS</span>Not currently for sale`;
 }
@@ -300,87 +303,56 @@ function usePhotoFallback(image,index) {
 photoMainButton.addEventListener("click", () => openGallery(0));
 
 function renderQuickFacts(listing) {
+  if (!listing.forSale || listing.displayRestricted) listing = {};
   $("factBeds").textContent = listing.beds ?? "—";
   $("factBaths").textContent = listing.baths ?? "—";
   $("factType").textContent = listing.propertySubType || listing.propertyType || "—";
-  $("factLot").textContent = listing.lotWidth && listing.lotDepth ? `${formatNumber(listing.lotWidth)} × ${formatNumber(listing.lotDepth)} ft` : "—";
+  $("factLot").textContent = listing.lotWidth && listing.lotDepth ? `${formatNumber(listing.lotWidth)} × ${formatNumber(listing.lotDepth)} ${listing.publicListing?.lotUnits || "(units not reported)"}` : "—";
   $("factParking").textContent = listing.parkingTotal ?? "—";
   $("factTax").textContent = listing.details?.annualTax ? `${money(listing.details.annualTax)}${listing.details.taxYear ? ` · ${listing.details.taxYear}` : ""}` : "—";
 }
 
 function renderAiBrief(listing) {
-  const opinion = listing.priceOpinion;
-
-  if (listing.forSale) {
-    if (opinion?.available && listing.listPrice) {
-      if (listing.listPrice < opinion.low) {
-        setSignal("priceSignal", "Below THM range", `${money(listing.listPrice)} asking vs. ${compactMoney(opinion.low)}–${compactMoney(opinion.high)} model range.`);
-      } else if (listing.listPrice > opinion.high) {
-        setSignal("priceSignal", "Above THM range", `${money(listing.listPrice)} asking vs. ${compactMoney(opinion.low)}–${compactMoney(opinion.high)} model range.`);
-      } else {
-        setSignal("priceSignal", "Inside THM range", `${money(listing.listPrice)} asking sits inside ${compactMoney(opinion.low)}–${compactMoney(opinion.high)}.`);
-      }
-    } else {
-      setSignal("priceSignal", listing.listPrice ? `${money(listing.listPrice)} asking` : "Price unavailable", "We will not force a weak comparable range when the match set is too thin.");
-    }
-  } else if (opinion?.available) {
-    setSignal("priceSignal", `${compactMoney(opinion.low)}–${compactMoney(opinion.high)}`, "Indicative off-market value range from the current MLS match set; not an appraisal or CMA.");
-  } else {
-    setSignal("priceSignal", "Deep review available", "There is not enough public MLS data on this screen to responsibly force a value range.");
+  if (!listing.forSale || listing.displayRestricted) {
+    for (const id of ["priceSignal", "marketSignal", "flagSignal", "showingSignal"]) setSignal(id, "Current details unavailable", "Request a property review. We have not verified current public listing facts.");
+    return;
   }
-
-  if (listing.forSale) {
-    const days = listing.daysLive;
-    const title = typeof days === "number" ? (days === 0 ? "Listed today" : days <= 3 ? "Fresh listing" : `${days} days live`) : "Active listing";
-    setSignal("marketSignal", title, listing.offerTiming?.note || "Confirm current showing and offer timing before acting.");
-  } else {
-    setSignal("marketSignal", "Off market", listing.foundInMls === false ? "No active listing or matching MLS history was found for this input." : "No active for-sale listing was found for this property.");
-  }
-
-  const flags = [];
-  if (Array.isArray(listing.basement) && listing.basement.length) flags.push(listing.basement.join(" + "));
-  if (listing.kitchensTotal > 1) flags.push(`${listing.kitchensTotal} kitchens`);
-  if (listing.remarks && /permit|approval|zoning|legal|separate entrance|apartment/i.test(listing.remarks)) flags.push("Verify legal use / permits");
-  if (listing.details?.pool && joinValue(listing.details.pool)) flags.push(`Pool: ${joinValue(listing.details.pool)}`);
-  setSignal("flagSignal", flags[0] || (listing.forSale ? "Verify material facts" : "Off-market path"), flags.slice(1).join(" · ") || (listing.forSale ? "Condition, legal use and major systems still need in-person or professional verification." : "Use the deeper property or seller report for the next layer."));
-
-  const focus = listing.showingFocus;
-  setSignal("showingSignal", focus?.title || (listing.forSale ? "Condition + layout" : "Deep property review"), focus?.note || "Verify what the listing cannot tell you.");
+  const change = listing.publicListing?.priceChange;
+  setSignal("priceSignal", listing.listPrice ? money(listing.listPrice) : "Not reported",
+    change ? `${money(change.amount)} (${change.percent}%) below the original ${money(change.original)} asking price on this MLS listing. Not a value estimate.` : "The seller’s asking price, not an estimate of market value. No verified reduction is shown.");
+  const days = listing.daysLive;
+  setSignal("marketSignal", Number.isFinite(days) ? days === 0 ? "Listed today" : `${days} days on this listing` : "Active listing",
+    listing.offerTiming?.note || "Confirm showing access and whether there is an offer deadline.");
+  const layout = [];
+  if (listing.publicListing?.bedroomsBelowGrade > 0) layout.push(`${listing.publicListing.bedroomsBelowGrade} bedroom(s) below grade`);
+  if (Array.isArray(listing.basement) && listing.basement.length) layout.push(`${listing.basement.join(", ")} basement`);
+  if (listing.parkingTotal != null) layout.push(`${listing.parkingTotal} parking space(s)`);
+  setSignal("flagSignal", listing.livingAreaRange ? `${listing.livingAreaRange} sq ft (MLS range)` : "Size not reported", layout.join(" · ") || "Confirm room dimensions, usable space and parking at your showing.");
+  const extraUnit = listing.kitchensTotal > 1 || /separate entrance|apartment|legal|permit/i.test(listing.remarks || "");
+  setSignal("showingSignal", extraUnit ? "Verify any additional unit" : listing.isCondominium ? "Review fees & building records" : "Check condition & major systems",
+    extraUnit ? "Listing mentions are not proof of legal use. Verify permits, occupancy and fire safety with qualified professionals." : listing.isCondominium ? "Ask what fees cover, about planned work, and for a professional review of the status certificate." : "Check the roof, heating, cooling and signs of moisture. Photos cannot confirm condition.");
 }
 
 function renderMarketRead(listing) {
-  const opinion = listing.priceOpinion;
-  const comp = listing.comparableContext;
-  const soldComps = $("soldComps");
-
-  $("soldRangeValue").textContent = opinion?.available ? `${compactMoney(opinion.low)} – ${compactMoney(opinion.high)}` : "No forced range";
-  $("soldRangeNote").textContent = opinion?.available ? `${opinion.confidence || comp?.confidence || "Indicative"} confidence · ${opinion.note || "weighted match set"}` : (opinion?.note || "Not enough reliable public MLS matches.");
-
-  $("compCountValue").textContent = comp?.available ? `${comp.matchCount} closest matches` : comp?.matchCount ? `${comp.matchCount} weak matches` : "Match set unavailable";
-  $("compCountNote").textContent = comp?.basis || "Property type, size, lot and recency weighted";
-
-  const rows = Array.isArray(comp?.comparables) ? comp.comparables.slice(0, 5) : [];
-  soldComps.innerHTML = rows.length ? rows.map((item) => {
-    const facts = [item.beds != null ? `${item.beds} bd` : null, item.baths != null ? `${item.baths} ba` : null, item.livingAreaRange, item.lotWidth && item.lotDepth ? `${formatNumber(item.lotWidth)}×${formatNumber(item.lotDepth)} lot` : null].filter(Boolean).join(" · ");
-    return `<article class="sold-comp"><div><span>${escapeHtml(item.address || "MLS comparable")}</span><small>${escapeHtml([item.soldDate ? formatDate(item.soldDate) : null, facts].filter(Boolean).join(" · "))}</small></div><div><strong>${money(item.soldPrice)}</strong><em>${Math.round(item.similarity || 0)}% match</em></div></article>`;
-  }).join("") : `<div class="sold-comps-empty">No responsible sold-comp set is available for this property yet. THM will not substitute asking prices for sold evidence.</div>`;
-
-  $("offerTimingValue").textContent = listing.forSale ? (listing.offerTiming?.label || "Verify") : "Not for sale";
-  $("offerTimingNote").textContent = listing.forSale ? (listing.offerTiming?.note || "Confirm before relying on timing.") : "No active showing or offer workflow.";
-
-  if (listing.forSale) {
-    $("listingTempoValue").textContent = typeof listing.daysLive === "number" ? (listing.daysLive === 0 ? "Listed today" : `${listing.daysLive} day${listing.daysLive === 1 ? "" : "s"} live`) : (listing.status || "Active");
-    $("listingTempoNote").textContent = listing.details?.listedAt ? `Listed ${formatDate(listing.details.listedAt)}` : "Live MLS listing";
-  } else if (listing.historySummary?.appearanceCount) {
-    $("listingTempoValue").textContent = listing.historySummary.lastSeenDate ? `Last seen ${formatDate(listing.historySummary.lastSeenDate)}` : `${listing.historySummary.appearanceCount} MLS records`;
-    $("listingTempoNote").textContent = `${listing.historySummary.appearanceCount} MLS appearance${listing.historySummary.appearanceCount === 1 ? "" : "s"} found in 10 years`;
-  } else {
-    $("listingTempoValue").textContent = "No MLS history match";
-    $("listingTempoNote").textContent = "A deeper owner/property review can still be requested.";
-  }
+  const current = listing.forSale && !listing.displayRestricted;
+  const d = current ? listing.details || {} : {};
+  const tax = d.annualTax;
+  $("snapshotTaxValue").textContent = Number.isFinite(tax) ? `${money(tax)} / year` : "Not reported";
+  $("snapshotTaxNote").textContent = Number.isFinite(tax) ? `${d.taxYear || "MLS-reported"} · about ${money(tax / 12)} / month for tax alone. Not total ownership cost.` : "Confirm the current tax bill.";
+  const fee = current ? listing.maintenanceFee : null;
+  $("snapshotFeeValue").textContent = Number.isFinite(fee?.amount) ? `${money(fee.amount)} / ${fee.frequency || "period not reported"}` : "Not reported";
+  const feeNotes = [];
+  if (fee?.included?.length) feeNotes.push(`Listed as included: ${fee.included.join(", ")}.`);
+  if (fee?.notIncluded?.length) feeNotes.push(`Listed as excluded: ${fee.notIncluded.join(", ")}.`);
+  $("snapshotFeeNote").textContent = feeNotes.join(" ") || "Do not assume no fee. Confirm any condo, common-element or other charges.";
+  $("snapshotPossessionValue").textContent = d.possession || "To be confirmed";
+  $("snapshotPossessionNote").textContent = "Possession is separate from your showing date.";
+  $("snapshotCommunityValue").textContent = current ? listing.cityRegion || listing.city || "Not reported" : "Not verified";
+  $("snapshotCommunityNote").textContent = d.crossStreet ? `Near ${d.crossStreet}` : "Check the exact location and your commute.";
 }
 
 function renderDetails(listing) {
+  if (!listing.forSale || listing.displayRestricted) listing = { forSale: false };
   const d = listing.details || {};
   const items = [
     ["STYLE", joinValue(d.architecturalStyle)],
@@ -664,3 +636,135 @@ function escapeHtml(value) {
 function escapeAttr(value) {
   return escapeHtml(value).replace(/`/g, "&#096;");
 }
+
+function resetHomeAssistant() {
+  homeAiSequence++;
+  homeAiController?.abort();
+  $("homeAiAnswer").innerHTML = "";
+  $("homeAiAnswer").classList.add("hidden");
+  $("homeAiStatus").textContent = "Choose a question. No sign-up needed.";
+  for (const button of document.querySelectorAll("[data-home-topic]")) { button.disabled = false; button.removeAttribute("aria-pressed"); }
+}
+for (const button of document.querySelectorAll("[data-home-topic]")) {
+  button.addEventListener("click", async () => {
+    if (!liveListing?.listingKey || !liveListing.forSale || loading) return;
+    resetHomeAssistant();
+    const sequence = homeAiSequence;
+    const listingKey = liveListing.listingKey;
+    homeAiController = new AbortController();
+    const controller = homeAiController;
+    const timer = window.setTimeout(() => controller.abort(), 25000);
+    button.setAttribute("aria-pressed", "true");
+    for (const question of document.querySelectorAll("[data-home-topic]")) question.disabled = true;
+    $("homeAiStatus").textContent = "Reading this home’s listing facts…";
+    try {
+      const response = await fetch("/api/home-assistant", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ listingKey, topic: button.dataset.homeTopic }), signal: controller.signal });
+      const data = await response.json();
+      if (sequence !== homeAiSequence || liveListing?.listingKey !== listingKey) return;
+      if (!response.ok || !data.ok || data.listingKey !== listingKey) throw new Error(data.error || "The assistant is temporarily unavailable. Your listing facts are still below.");
+      $("homeAiStatus").textContent = data.label;
+      const rows = (items) => (items || []).map(item => `<li><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.text)}</span></li>`).join("");
+      $("homeAiAnswer").innerHTML = `<div><h4>From the listing</h4><ul>${rows(data.facts)}</ul></div><div><h4>Ask your Realtor</h4><ul>${rows(data.checks)}</ul></div><p>${escapeHtml(data.note)}</p>`;
+      $("homeAiAnswer").classList.remove("hidden");
+    } catch (error) {
+      if (sequence !== homeAiSequence) return;
+      $("homeAiStatus").textContent = error.name === "AbortError" ? "The assistant took too long. Try again, or review the listing facts below." : error.message;
+    } finally {
+      window.clearTimeout(timer);
+      if (sequence === homeAiSequence) for (const question of document.querySelectorAll("[data-home-topic]")) question.disabled = false;
+    }
+  });
+}
+
+// Discovery only opens public snapshots. It never submits a lead or sends a report.
+const discoveryModes = {
+  new: { title: "Just Listed", description: "Active homes entered on this MLS listing in the past 7 days. A relisting is not necessarily new to the market." },
+  drops: { title: "Price Drops", description: "Current asking price below the original price on the same MLS listing. A reduction is not proof of good value; its date may not be reported." },
+  budget: { title: "Search by Budget", description: "Active homes at or below your asking-price cap, lowest asking price first. This is not a mortgage affordability assessment." }
+};
+let discoveryMode = "new";
+let discoveryController = null;
+let discoverySequence = 0;
+const discoveryForm = $("discoveryForm");
+function resetDiscoveryResults() {
+  discoverySequence++;
+  discoveryController?.abort();
+  $("discoverySubmit").disabled = false;
+  $("discoverySubmit").textContent = "Find homes";
+  $("discoveryResults").innerHTML = "";
+  $("discoveryCoverage").textContent = "";
+  $("discoveryStatus").textContent = "Choose your filters, then find homes.";
+}
+function openDiscovery(mode, focus = true) {
+  if (!discoveryModes[mode]) return;
+  resetDiscoveryResults();
+  discoveryMode = mode;
+  $("discoveryPanel").classList.remove("hidden");
+  $("discoveryTitle").textContent = discoveryModes[mode].title;
+  $("discoveryDescription").textContent = discoveryModes[mode].description;
+  $("discoveryBudget").required = mode === "budget";
+  for (const tile of document.querySelectorAll("[data-discovery]")) {
+    if (tile.dataset.discovery === mode) tile.setAttribute("aria-current", "true");
+    else tile.removeAttribute("aria-current");
+  }
+  if (focus) { $("discoveryPanel").scrollIntoView({ behavior: "smooth", block: "start" }); $("discoveryTitle").focus({ preventScroll: true }); }
+}
+for (const tile of document.querySelectorAll("[data-discovery]")) {
+  tile.addEventListener("click", (event) => {
+    event.preventDefault();
+    history.pushState(null, "", tile.getAttribute("href"));
+    openDiscovery(tile.dataset.discovery);
+  });
+}
+discoveryForm.addEventListener("input", resetDiscoveryResults);
+discoveryForm.addEventListener("change", resetDiscoveryResults);
+discoveryForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!discoveryForm.reportValidity()) return;
+  resetDiscoveryResults();
+  const sequence = discoverySequence;
+  discoveryController = new AbortController();
+  const controller = discoveryController;
+  const timer = window.setTimeout(() => controller.abort(), 20000);
+  const params = new URLSearchParams({ mode: discoveryMode, city: $("discoveryCity").value, type: $("discoveryType").value });
+  if ($("discoveryBudget").value) params.set("maxPrice", $("discoveryBudget").value);
+  $("discoverySubmit").disabled = true;
+  $("discoverySubmit").textContent = "Checking…";
+  $("discoveryStatus").textContent = "Checking public listings…";
+  try {
+    const response = await fetch(`/api/discovery?${params}`, { headers: { Accept: "application/json" }, signal: controller.signal });
+    const data = await response.json();
+    if (sequence !== discoverySequence) return;
+    if (!response.ok || !data.ok || !Array.isArray(data.listings)) throw new Error(data.error || "Listing search is temporarily unavailable.");
+    $("discoveryStatus").textContent = data.listings.length ? `${data.listings.length} home${data.listings.length === 1 ? "" : "s"} to explore. Open a home to recheck its facts.` : "No matches in the listings checked. This is not a full-market search. Try another type or budget, or check an address directly.";
+    $("discoveryResults").innerHTML = data.listings.map((home) => {
+      const badge = discoveryMode === "drops" && home.priceChange ? `${money(home.priceChange.amount)} below original asking` : home.daysLive != null ? `${home.daysLive} days on this listing` : "Active listing";
+      const facts = [home.propertySubType, home.beds != null ? `${home.beds} bed` : null, home.baths != null ? `${home.baths} bath` : null].filter(Boolean).join(" · ");
+      return `<article class="discovery-home"><span class="home-badge">${escapeHtml(badge)}</span><strong class="home-price">${money(home.listPrice)}</strong><h4>${escapeHtml(home.address)}</h4><p>${escapeHtml(facts)}</p><small>${escapeHtml(home.listingOffice || "Listing office not reported")} · MLS ${escapeHtml(home.listingKey)}</small><a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">Check this home →</a></article>`;
+    }).join("");
+    $("discoveryCoverage").textContent = `${data.note || "Results are a selection, not the full market."} ${data.coverage?.partial ? "The search reached its scan limit. " : ""}${data.coverage?.moreMatches ? "Showing the first 12 matches. Narrow your filters for more focused results. " : ""}${data.checkedAt ? `Checked ${formatDate(data.checkedAt)}; results may be cached for up to 5 minutes.` : ""}`;
+  } catch (error) {
+    if (sequence !== discoverySequence) return;
+    $("discoveryStatus").textContent = error.name === "AbortError" ? "The search took too long. Try again, or check an address directly." : error.message || "Unable to check listings. Please try again.";
+  } finally {
+    window.clearTimeout(timer);
+    if (sequence === discoverySequence) { $("discoverySubmit").disabled = false; $("discoverySubmit").textContent = "Find homes"; }
+  }
+});
+$("discoveryResults").addEventListener("click", (event) => {
+  const link = event.target.closest("[data-open-listing]");
+  if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  if (loading) return;
+  propertyInput.value = link.dataset.openListing;
+  analysisForm.requestSubmit();
+});
+function restoreDiscoveryHash() {
+  const mode = window.location.hash.replace(/^#browse-/, "");
+  if (discoveryModes[mode]) openDiscovery(mode, false);
+}
+window.addEventListener("hashchange", restoreDiscoveryHash);
+window.addEventListener("popstate", restoreDiscoveryHash);
+restoreDiscoveryHash();
+const linkedMls = new URLSearchParams(window.location.search).get("listingKey");
+if (linkedMls && /^[A-Z]\d{7,9}$/.test(linkedMls)) { propertyInput.value = linkedMls; analysisForm.requestSubmit(); }

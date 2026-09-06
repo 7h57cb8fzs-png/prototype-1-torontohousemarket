@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=copy-20260905" />
+  <link rel="stylesheet" href="/styles.css?v=buyer-tools-20260906" />
 </head>
 <body>
 <header class="site-header">
@@ -21,7 +21,7 @@
       <span class="brand-mark">THM</span>
       <span class="brand-name">Toronto House Market</span>
     </a>
-    <button class="nav-cta" type="button" data-scroll="#lookup">Check a home</button>
+    <div class="nav-actions"><a href="#explore">Explore homes</a><button class="nav-cta" type="button" data-scroll="#lookup">Check a home</button></div>
   </div>
 </header>
 
@@ -35,11 +35,12 @@
       <form id="analysisForm" class="search-box" novalidate>
         <div class="search-input-wrap">
           <span class="search-icon" aria-hidden="true">⌕</span>
-          <input id="propertyInput" name="property" autocomplete="off" placeholder="MLS #, street address, or listing URL" required />
+          <input id="propertyInput" name="property" autocomplete="off" aria-label="MLS number, street address, or listing URL" placeholder="MLS #, street address, or listing URL" required />
         </div>
         <button id="lookupButton" class="primary-btn hero-cta" type="submit">Check this home →</button>
       </form>
       <div id="inputStatus" class="input-status" aria-live="polite">No sign-up to check · Live MLS facts</div>
+      <p class="hero-ai-note">New: ask AI what to check before your showing. Start with a home above.</p>
 
       <div class="hero-proof">
         <div><strong>01</strong><span>Check the live listing</span></div>
@@ -113,29 +114,41 @@
         <div><span>TAX</span><strong id="factTax">—</strong></div>
       </div>
 
+      <section id="homeAiPanel" class="home-ai-panel hidden" aria-labelledby="homeAiTitle">
+        <div class="home-ai-head"><div><span class="home-ai-kicker">AI HOME ASSISTANT</span><h3 id="homeAiTitle">Ask about this home.</h3><p>Get a focused brief from this listing’s public facts.</p></div><span class="home-ai-mark" aria-hidden="true">✦</span></div>
+        <div class="home-ai-questions" aria-label="Questions about the selected home">
+          <button type="button" data-home-topic="overview">What stands out?</button>
+          <button type="button" data-home-topic="visit">What should I check?</button>
+          <button type="button" data-home-topic="costs">What costs are listed?</button>
+        </div>
+        <p id="homeAiStatus" class="home-ai-status" role="status" aria-live="polite">Choose a question. No sign-up needed.</p>
+        <div id="homeAiAnswer" class="home-ai-answer hidden"></div>
+        <p class="home-ai-note">Listing facts can guide a visit. Sold comparables and any supported value rating stay in your private report.</p>
+      </section>
+
       <div class="content-grid">
         <section class="intel-panel ai-panel">
           <div class="panel-head">
-            <div><span class="panel-kicker">QUICK BUYER READ</span><h3>What matters before a showing.</h3></div>
-            <span class="instant-pill">ON SCREEN NOW</span>
+            <div><span class="panel-kicker">BEFORE YOU VISIT</span><h3>The useful details. Up front.</h3></div>
+            <span class="instant-pill">LISTING FACTS</span>
           </div>
           <div class="ai-grid">
-            <article><span>PRICE POSITION</span><strong id="priceSignal">Checking</strong><p id="priceSignalText">Building a property-specific market range.</p></article>
-            <article><span>MARKET TIMING</span><strong id="marketSignal">Checking</strong><p id="marketSignalText">Reading listing freshness and offer context.</p></article>
-            <article><span>WHAT STANDS OUT</span><strong id="flagSignal">Checking</strong><p id="flagSignalText">Looking for details that can change value or strategy.</p></article>
-            <article><span>WHAT TO VERIFY</span><strong id="showingSignal">Checking</strong><p id="showingSignalText">What photos and listing fields cannot confirm.</p></article>
+            <article><span>ASKING PRICE</span><strong id="priceSignal">—</strong><p id="priceSignalText"></p></article>
+            <article><span>LISTING TIMING</span><strong id="marketSignal">—</strong><p id="marketSignalText"></p></article>
+            <article><span>SPACE &amp; LAYOUT</span><strong id="flagSignal">—</strong><p id="flagSignalText"></p></article>
+            <article><span>CHECK AT THE SHOWING</span><strong id="showingSignal">—</strong><p id="showingSignalText"></p></article>
           </div>
         </section>
 
         <section class="intel-panel market-panel">
-          <div class="panel-head compact"><div><span class="panel-kicker">FULL BUYER REPORT</span><h3>Sold comparables and value range.</h3><p class="panel-subcopy">Emailed after your request.</p></div></div>
+          <div class="panel-head compact"><div><span class="panel-kicker">PLAN AHEAD</span><h3>Costs &amp; practical details.</h3></div></div>
           <div class="market-pulse-grid">
-            <div><span>ESTIMATED RANGE</span><strong id="soldRangeValue">—</strong><small id="soldRangeNote">Checking match quality</small></div>
-            <div><span>MATCH STRENGTH</span><strong id="compCountValue">—</strong><small id="compCountNote">Property type, size, lot and recency weighted</small></div>
-            <div><span>OFFER / STATUS</span><strong id="offerTimingValue">—</strong><small id="offerTimingNote">Checking public listing context</small></div>
-            <div><span>MLS HISTORY</span><strong id="listingTempoValue">—</strong><small id="listingTempoNote">Checking property history</small></div>
+            <div><span>PROPERTY TAX</span><strong id="snapshotTaxValue">—</strong><small id="snapshotTaxNote"></small></div>
+            <div><span>MAINTENANCE FEE</span><strong id="snapshotFeeValue">—</strong><small id="snapshotFeeNote"></small></div>
+            <div><span>POSSESSION</span><strong id="snapshotPossessionValue">—</strong><small id="snapshotPossessionNote"></small></div>
+            <div><span>COMMUNITY</span><strong id="snapshotCommunityValue">—</strong><small id="snapshotCommunityNote"></small></div>
           </div>
-          <div id="soldComps" class="sold-comps" aria-live="polite"></div>
+          <p class="report-note"><span class="panel-kicker">FULL BUYER REPORT</span><br>Want the sold evidence? Your private report follows your request. A value rating is shown only when the evidence supports one.</p>
         </section>
       </div>
 
@@ -146,7 +159,37 @@
         <p id="listingRemarks" class="listing-remarks hidden"></p>
       </section>
 
-      <p class="disclaimer">AI-assisted preliminary decision support only. THM ranges are screening estimates, not appraisals or CMAs. Property condition, legal use, permits, offer timing and other material facts require professional verification.</p>
+      <p id="snapshotFreshness" class="snapshot-freshness"></p>
+      <p class="disclaimer">Public listing facts, not an appraisal or a value rating. Measurements, fees, taxes, condition, legal use and availability require verification. Private sold evidence is not displayed here.</p>
+    </div>
+  </section>
+
+  <section class="discovery-section" id="explore" aria-labelledby="exploreTitle">
+    <div class="wrap">
+      <div class="section-head discovery-heading">
+        <span class="section-label">YOUR NEXT HOME</span>
+        <h2 id="exploreTitle">A simpler place to start.</h2>
+        <p>Find a home. Check the facts. Request a showing.</p>
+      </div>
+      <nav class="discovery-shortcuts" aria-label="Ways to explore homes">
+        <a class="discovery-tile" href="#browse-new" data-discovery="new"><span class="tile-icon" aria-hidden="true">✦</span><strong>Just Listed</strong><span>Listed in the past 7 days</span><span class="tile-action">See recent listings →</span></a>
+        <a class="discovery-tile" href="#browse-drops" data-discovery="drops"><span class="tile-icon" aria-hidden="true">↘</span><strong>Price Drops</strong><span>Below the original asking price</span><span class="tile-action">See reduced listings →</span></a>
+        <a class="discovery-tile" href="#browse-budget" data-discovery="budget"><span class="tile-icon" aria-hidden="true">$</span><strong>Search by Budget</strong><span>Your price cap. Your home type.</span><span class="tile-action">Set your search →</span></a>
+      </nav>
+      <section id="discoveryPanel" class="discovery-panel hidden" aria-labelledby="discoveryTitle">
+        <h3 id="discoveryTitle" tabindex="-1">Just Listed</h3>
+        <p id="discoveryDescription"></p>
+        <form id="discoveryForm" class="discovery-form">
+          <label>City<select id="discoveryCity" name="city"><option>Toronto</option><option>Vaughan</option><option>Richmond Hill</option><option>Markham</option><option>Aurora</option><option>Newmarket</option><option>King</option><option>Whitchurch-Stouffville</option><option>Mississauga</option><option>Brampton</option><option>Caledon</option><option>Oakville</option><option>Burlington</option><option>Milton</option><option>Pickering</option><option>Ajax</option><option>Whitby</option><option>Oshawa</option></select></label>
+          <label>Home type<select id="discoveryType" name="type"><option value="any">Any supported type</option><option value="detached">Detached</option><option value="semi">Semi-detached</option><option value="freehold_town">Freehold townhouse</option><option value="condo">Condo apartment</option><option value="condo_town">Condo townhouse</option><option value="duplex">Duplex</option></select></label>
+          <label>Maximum asking price<input id="discoveryBudget" name="maxPrice" type="number" min="100000" max="20000000" step="1" inputmode="numeric" placeholder="e.g. 1,200,000" /></label>
+          <button id="discoverySubmit" class="primary-btn" type="submit">Find homes</button>
+        </form>
+        <p id="discoveryStatus" class="discovery-status" role="status" aria-live="polite">Choose your search above.</p>
+        <div id="discoveryResults" class="discovery-results"></div>
+        <p id="discoveryCoverage" class="discovery-coverage"></p>
+        <a href="#lookup" class="lookup-return">Have an address or MLS number? Check it directly ↑</a>
+      </section>
     </div>
   </section>
 
@@ -160,7 +203,7 @@
       <div class="steps">
         <article><span>01</span><h3>Check the home</h3><p>Enter an MLS number, street address, or listing URL.</p></article>
         <article><span>02</span><h3>Request a showing</h3><p>Choose as soon as possible, today, or within 24 hours.</p></article>
-        <article><span>03</span><h3>Get the buyer report</h3><p>Receive recent sold comparables, a value range, and a clear next step by email.</p></article>
+        <article><span>03</span><h3>Get the buyer report</h3><p>Get the sold evidence and a clear next step by email. A value range is included when supported.</p></article>
       </div>
     </div>
   </section>
@@ -238,6 +281,6 @@
   <div id="galleryCounter" class="gallery-counter"></div>
 </div>
 
-<script src="/app.js?v=copy-20260905" defer></script>
+<script src="/app.js?v=buyer-tools-20260906" defer></script>
 </body>
 </html>

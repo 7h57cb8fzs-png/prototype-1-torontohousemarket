@@ -2,6 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { propertyReportEmail } from "../worker-v11.js";
 
+test("zero comparables suppress stale scores and explain the recorded reason", () => {
+  const message = propertyReportEmail("981 Avenue Road", {}, {
+    facts: { list_price: 1499000 }, comparables: [],
+    valuation: { available: true, low: 1000000, high: 2000000, basis: "No same-type local sales were returned in the searched data." },
+    value_rating: { available: true, score: 8.5, label: "Strong value" },
+    narrative: { executive_summary: "Strong value", market_read: "Strong value" }
+  });
+  assert.ok(message.html.includes("Value rating unavailable"));
+  assert.ok(message.html.includes("No same-type local sales were returned"));
+  assert.ok(message.text.includes("This does not prove"));
+  for (const value of ["BUYER READ", "BUYER OPPORTUNITY SNAPSHOT", "8.5", "Worth a closer look", "Strong value"]) {
+    assert.ok(!message.html.includes(value), value);
+    assert.ok(!message.subject.includes(value), value);
+  }
+});
+
 test("buyer report email leads with a clear decision and showing action", () => {
   const message = propertyReportEmail(
     "331 Davos Road, Vaughan, ON L4H 0M8",

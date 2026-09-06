@@ -16,6 +16,8 @@ on:
       - tests/comparable-engine.test.mjs
       - tests/email-copy.test.mjs
       - tests/job-orchestration.test.mjs
+      - tests/public-discovery.test.mjs
+      - tests/public-page.test.mjs
 
 permissions:
   contents: read
@@ -34,9 +36,7 @@ jobs:
           set -euo pipefail
           node --check worker-v11.js
           node --check app.js
-          node --test tests/comparable-engine.test.mjs
-          node --test tests/email-copy.test.mjs
-          node --test tests/job-orchestration.test.mjs
+          node --test tests/*.test.mjs
           grep -q 'See the home.' index.html
           grep -q 'FULL BUYER REPORT' index.html
           grep -q 'function renderMarketRead' app.js

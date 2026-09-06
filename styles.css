@@ -259,3 +259,72 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
   .photo-thumbs{display:none!important}
   .panel-head{flex-direction:column}
 }
+
+/* Buyer tools: extend the established THM palette, with clearer reading sizes. */
+.nav-actions{display:flex;align-items:center;gap:20px}
+.hero-ai-note{font-size:14px;color:#364782;margin:8px 0 0}
+.home-ai-panel{margin:24px 0;background:#101d3b;border-radius:22px;padding:30px;color:#fff}
+.home-ai-head{display:flex;justify-content:space-between;align-items:center;gap:20px}
+.home-ai-kicker{font-size:12px;letter-spacing:.1em;font-weight:800;color:#b8c9ff}
+.home-ai-head h3{font-size:30px;letter-spacing:-.03em;margin:8px 0}
+.home-ai-head p{font-size:16px;color:#d9e3fb;margin:0}
+.home-ai-mark{font-size:48px;color:#9cb8ff}
+.home-ai-questions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.home-ai-questions button{background:#fff;color:#17254b;border:2px solid transparent;border-radius:999px;padding:11px 18px;font-size:16px;font-weight:700}
+.home-ai-questions button[aria-pressed=true]{border-color:#a3b6ff;background:#dce5ff}
+.home-ai-questions button:hover{background:#e8eeff}
+.home-ai-status{font-size:14px;color:#d9e3fb;margin:18px 0 0}
+.home-ai-note{font-size:13px;color:#bac9e6;line-height:1.6;margin:18px 0 0}
+.home-ai-answer{margin-top:22px;padding:24px;background:#fff;color:var(--ink);border-radius:16px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.home-ai-answer h4{font-size:18px;margin:0 0 14px}
+.home-ai-answer ul{list-style:none;padding:0;margin:0;display:grid;gap:16px}
+.home-ai-answer li strong{display:block;font-size:16px;margin-bottom:5px}
+.home-ai-answer li span{display:block;font-size:16px;color:#46536a;line-height:1.6}
+.home-ai-answer>p{grid-column:1/-1;margin:0;font-size:13px;color:#546076;border-top:1px solid var(--line);padding-top:14px}
+@media(max-width:700px){.home-ai-panel{padding:22px}.home-ai-answer{grid-template-columns:1fr;padding:20px}.home-ai-head h3{font-size:26px}.home-ai-questions{flex-direction:column;align-items:stretch}.home-ai-questions button{text-align:left}}
+.nav-actions>a{color:var(--ink);font-size:14px;font-weight:750;text-decoration:none}
+.nav-actions>a:hover{text-decoration:underline}
+.discovery-section{padding:56px 0 64px;scroll-margin-top:88px}
+.discovery-heading{text-align:left;max-width:none;margin-bottom:26px}
+.discovery-heading h2{font-size:clamp(30px,4vw,42px);margin:8px 0;letter-spacing:-.035em}
+.discovery-heading p{font-size:18px;color:#46536a;margin:0}
+.discovery-shortcuts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.discovery-tile{display:flex;flex-direction:column;align-items:flex-start;padding:26px;gap:9px;background:#fff;border:1px solid var(--line);border-radius:22px;color:var(--ink);text-decoration:none;box-shadow:var(--shadow-soft);transition:transform .15s,border-color .15s}
+.discovery-tile:hover{transform:translateY(-3px);border-color:var(--blue)}
+.discovery-tile[aria-current=true]{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-soft)}
+.tile-icon{display:grid;place-items:center;width:48px;height:48px;margin-bottom:8px;background:var(--blue-soft);color:var(--blue-dark);font-size:28px;font-weight:750;border-radius:14px}
+.discovery-tile:nth-child(2) .tile-icon{background:var(--green-soft);color:#086348}
+.discovery-tile strong{font-size:24px;letter-spacing:-.02em}
+.discovery-tile>span:not(.tile-icon){font-size:16px;color:#46536a}
+.discovery-tile .tile-action{margin-top:12px;font-weight:750;color:var(--blue-dark)!important}
+.discovery-panel{margin-top:24px;padding:28px;border:1px solid var(--line);border-radius:22px;background:#fff;scroll-margin-top:90px}
+.discovery-panel h3{font-size:28px;margin:0 0 8px}
+.discovery-panel>p{font-size:16px;color:#46536a;line-height:1.6}
+.discovery-form{display:grid;grid-template-columns:1fr 1fr 1fr auto;align-items:end;gap:14px;margin:24px 0}
+.discovery-form label{display:grid;gap:7px;color:#293750;font-weight:700;font-size:14px;min-width:0}
+.discovery-form select,.discovery-form input{width:100%;min-width:0;border:1px solid #a7b1c2;border-radius:10px;min-height:48px;padding:10px;background:#fff;color:var(--ink);font-size:16px}
+.discovery-form button{min-height:48px;padding:12px 22px}
+.discovery-status{font-weight:650}
+.discovery-results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.discovery-home{display:flex;flex-direction:column;padding:22px;border:1px solid var(--line);border-radius:16px;gap:8px;min-width:0}
+.home-badge{font-size:13px;font-weight:700;color:#086348}
+.home-price{font-size:28px;letter-spacing:-.025em}
+.discovery-home h4{font-size:18px;line-height:1.4;margin:0;overflow-wrap:anywhere}
+.discovery-home p{margin:0;color:#46536a;font-size:16px}
+.discovery-home small{display:block;color:#546076;font-size:12px;line-height:1.5;margin-bottom:12px}
+.discovery-home a{margin-top:auto;color:var(--blue-dark);font-weight:750;font-size:16px;text-decoration:none;padding-top:14px;border-top:1px solid var(--line)}
+.discovery-home a:hover{text-decoration:underline}
+.discovery-panel .discovery-coverage{font-size:14px}
+.lookup-return{display:inline-block;color:var(--blue-dark);font-size:16px;font-weight:700;padding:8px 0}
+.report-note{margin:22px 0 0;padding-top:18px;border-top:1px solid var(--line);font-size:16px;color:#46536a;line-height:1.6}
+.snapshot-freshness{font-size:14px;color:#46536a;margin:20px 0 8px}
+.eyebrow,.panel-kicker,.section-label{font-size:12px}
+.ai-grid article p,.market-pulse-grid small,.panel-subcopy{font-size:16px;line-height:1.6;color:#46536a}
+.ai-grid article>span,.market-pulse-grid>div>span,.quick-facts span,.detail-item span{font-size:13px;color:#46536a}
+.market-pulse-grid strong{font-size:21px;overflow-wrap:anywhere}
+.speed-disclaimer,.disclaimer{font-size:12px;color:#536078}
+.input-status{font-size:14px;color:#536078}
+:is(a,button,input,select):focus-visible{outline:3px solid var(--blue);outline-offset:4px}
+@media(max-width:1000px){.discovery-form{grid-template-columns:1fr 1fr}.discovery-results{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.discovery-shortcuts,.discovery-results{grid-template-columns:1fr}.discovery-tile{padding:22px}.discovery-panel{padding:20px}.discovery-form{grid-template-columns:1fr}.nav-actions{gap:12px}.nav-actions>a{font-size:13px}.discovery-section{padding:38px 0}.discovery-heading p{font-size:16px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}}
