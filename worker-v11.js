@@ -3017,7 +3017,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-vow-dynamic-window-copy-v99-20260903";
+var VERSION4 = "stage4-report-evidence-audit-v100-20260906";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -4317,7 +4317,13 @@ async function buildPropertyReport(env, lead, property2, requestId = null) {
     address: property2.address || lead.resolved_address || lead.property_input,
     status: property2.marketStatus || property2.status || "Unknown",
     neighbourhood: property2.cityRegion || null,
-    list_price: property2.listPrice || null,
+    listing_key: property2.listingKey || null,
+    for_sale: property2.forSale === true,
+    checked_at: new Date().toISOString(),
+    list_price: property2.forSale === true ? numberOrNull(property2.listPrice) : null,
+    maintenance_fee: property2.maintenanceFee || null,
+    bedroom_layout: property2.publicListing?.bedroomsAboveGrade != null && property2.publicListing?.bedroomsBelowGrade != null
+      ? `${property2.publicListing.bedroomsAboveGrade}+${property2.publicListing.bedroomsBelowGrade}` : null,
     property_type: property2.propertySubType || property2.propertyType || null,
     beds: property2.beds ?? null,
     baths: property2.baths ?? null,
@@ -4362,10 +4368,10 @@ async function buildPropertyReport(env, lead, property2, requestId = null) {
   const narrative = groundReportNarrative(ai?.narrative || fallback, facts, valuation, comparables, comp.policy || {});
   const valueRating = buildValueRating(facts, valuation, comp.policy || {}, comparables.length);
   return {
-    schema_version: 4,
+    schema_version: 5,
     generated_at: (/* @__PURE__ */ new Date()).toISOString(),
     report_type: "THM AI buyer intelligence brief",
-    prompt_version: String(env.PROPERTY_REPORT_PROMPT_VERSION || "vow-ai-v1"),
+    prompt_version: "evidence-first-v2-20260906",
     ai_generation: ai ? { provider: ai.provider, model: ai.model, fallback_used: ai.fallback_used, web_grounded: !!ai.web_grounded } : { provider: "deterministic_fallback", model: null, fallback_used: true, web_grounded: false },
     research_sources: Array.isArray(ai?.sources) ? ai.sources.slice(0, 6) : [],
     facts,
@@ -4457,9 +4463,9 @@ function groundReportNarrative(narrative, facts, valuation, comparables, policy 
 }
 __name(groundReportNarrative, "groundReportNarrative");
 function buildValueRating(facts, valuation, policy, matchCount) {
-  if (!valuation.available) return { available: false, score: null, label: "Realtor review", indicator: "REVIEW", reason: "Current exact-type nearby sold evidence was not sufficient for an automated rating.", windowDays: policy.windowDays || 300 };
+  if (!valuation.available || matchCount < 3 || facts.for_sale === false || /low|unavailable/i.test(valuation.confidence || "") || policy.sizeFallbackUsed || Number(policy.windowDays) > 300) return { available: false, score: null, label: "Realtor review", indicator: "REVIEW", reason: "Current exact-type nearby sold evidence was not sufficient for an automated rating.", windowDays: policy.windowDays || 300 };
   const ask = Number(facts.list_price), low = Number(valuation.low), mid = Number(valuation.midpoint), high = Number(valuation.high);
-  if (![ask, low, mid, high].every(Number.isFinite)) return { available: false, score: null, label: "Realtor review", indicator: "REVIEW", reason: "A complete asking-price comparison was not available.", windowDays: policy.windowDays || 100 };
+  if (![ask, low, mid, high].every(n => Number.isFinite(n) && n > 0) || low > mid || mid > high) return { available: false, score: null, label: "Realtor review", indicator: "REVIEW", reason: "A complete asking-price comparison was not available.", windowDays: policy.windowDays || 100 };
   let score;
   if (ask <= low) score = 8.8;
   else if (ask <= mid) score = 8.8 - (ask - low) / Math.max(1, mid - low) * 1.6;
@@ -4467,7 +4473,7 @@ function buildValueRating(facts, valuation, policy, matchCount) {
   else score = 5.2 - Math.min(3.2, (ask - high) / Math.max(1, high) * 12);
   if ((policy.windowDays || 100) > 100) score -= 0.6;
   if (Number(policy.farthestKm) > 5) score -= 0.5;
-  if (matchCount >= 5 && Number(policy.farthestKm) <= 2) score += 0.3;
+  if (matchCount >= 5 && policy.farthestKm != null && Number(policy.farthestKm) <= 2) score += 0.3;
   score = Math.round(Math.max(1, Math.min(9.5, score)) * 10) / 10;
   const label = score >= 8.5 ? "Strong value" : score >= 7 ? "Good value" : score >= 5.5 ? "Fairly priced" : score >= 4 ? "Price needs support" : "Caution";
   const indicator = score >= 7 ? "POSITIVE" : score >= 5.5 ? "NEUTRAL" : score >= 4 ? "REVIEW" : "CAUTION";
@@ -4716,117 +4722,131 @@ function buildEmail(job, lead) {
   return emailDocument(subject, heading, intro, rows, link, reason === "buyer_request_confirmation" ? "Verify email and start report" : "Open lead dashboard");
 }
 __name(buildEmail, "buildEmail");
-function reportWithoutUnsupportedRating(report) {
-  if (Array.isArray(report.comparables) && report.comparables.length) return report;
-  const policy = report.comparable_policy || {};
-  const basis = clean5(report.valuation?.basis, 900);
-  const reason = `No qualifying sold comparables were returned for this report. ${basis || "The available data does not establish whether matching local sales are absent or retrieval was incomplete."} No value rating or price range is provided. This does not prove there are no comparable sales in the market. Ask your Realtor to verify the local sold evidence.`;
-  return { ...report, valuation: { ...report.valuation, available: false, low: null, midpoint: null, high: null, basis: reason }, value_rating: { available: false, score: null, label: "Value rating unavailable", reason, windowDays: policy.windowDays }, narrative: { ...report.narrative, executive_summary: reason, market_read: reason } };
+function reportAgentName(agent) {
+  const name = clean5(agent?.display_name, 120);
+  return name && !/^(unassigned|your assigned realtor|unknown)$/i.test(name) ? name : "Golestan Team";
 }
-function propertyReportEmail(address, agentData, report) {
-  report = reportWithoutUnsupportedRating(report);
-  const agent = agentData?.display_name || "your assigned Realtor", agentEmail = clean5(agentData?.email, 254), agentMobile = clean5(agentData?.mobile, 50);
-  const v = report.valuation || {}, n = report.narrative || {}, facts = report.facts || {}, history = report.history || {}, policy = report.comparable_policy || {}, comps = Array.isArray(report.comparables) ? report.comparables.slice(0, 5) : [];
-  const research = Array.isArray(report.research_sources) ? report.research_sources.filter((source) => /^https:\/\//i.test(String(source?.url || ""))).slice(0, 4) : [];
-  const rating = report.value_rating || buildValueRating(facts, v, policy, comps.length);
-  const range = v.available ? `${cad(v.low)} - ${cad(v.high)}` : "Needs Realtor review";
-  const ask = Number(facts.list_price), low = Number(v.low), high = Number(v.high), mid = Number(v.midpoint);
-  let verdict = "Price needs a local evidence check", verdictReason = "The current sold set is not strong enough for a responsible price conclusion.";
-  if (v.available && policy.expandedWindow) {
-    verdict = "Do not anchor to this range yet";
-    verdictReason = `The ${range} band is a screening signal only. The newest supplied sold record is ${v.newest_sold_date || "not recent"}; ask for fresher, closer sales before deciding on price.`;
-  } else if (v.available && Number.isFinite(ask) && Number.isFinite(high) && ask > high) {
-    const gap = ask - high, pct = high > 0 ? Math.round(gap / high * 100) : null;
-    verdict = "Asking price is above the evidence band";
-    verdictReason = `The ask is ${cad(gap)}${pct != null ? ` (${pct}%)` : ""} above the current high end. Condition or location must justify the premium.`;
-  } else if (v.available && Number.isFinite(ask) && Number.isFinite(low) && ask < low) {
-    verdict = "Asking price is below the evidence band";
-    verdictReason = "That can create value, but first confirm condition, legal use and any reason for the discount.";
-  } else if (v.available) {
-    verdict = "Asking price sits inside the evidence band";
-    verdictReason = `The weighted midpoint is ${cad(mid) || "unavailable"}. Final positioning still depends on condition and the closest local sale.`;
+function reportBuyerChecks(facts) {
+  if (/condo|apartment/i.test(facts.property_type || "")) return [
+    "Review the status certificate, reserve fund and any special assessments with your lawyer.",
+    "Confirm what maintenance fees cover, plus parking and locker ownership or exclusive use.",
+    "Check building rules, planned work, noise and the unit's condition during the showing."
+  ];
+  if (/duplex|triplex|multiplex/i.test(facts.property_type || "")) return [
+    "Verify permitted unit count and use; listing descriptions do not establish legal status.",
+    "Review leases, occupancy, actual rents and operating expenses before relying on income.",
+    "Check fire separation, entrances and major systems with qualified professionals."
+  ];
+  return [
+    "Check the roof, drainage, foundation and major systems during the showing and inspection.",
+    facts.basement && !/^none|no basement$/i.test(facts.basement)
+      ? "Check basement moisture, ceiling height and egress; confirm permits for any separate suite."
+      : "Check layout, storage, natural light and signs of water entry.",
+    "Ask which sold home is closest in condition, lot and location before choosing an offer price."
+  ];
+}
+function reportWithoutUnsupportedRating(input) {
+  const report = { ...input, facts: { ...input.facts }, valuation: { ...input.valuation } };
+  const facts = report.facts, policy = report.comparable_policy || {};
+  const seen = new Set();
+  const asOf = Date.parse(report.generated_at || "") || Date.now();
+  const supplied = Array.isArray(report.comparables) ? report.comparables : [];
+  const comparables = supplied.filter(c => {
+    const id = String(c.listingKey || c.address || "").trim().toLowerCase();
+    const addressKey = String(c.address || id).toLowerCase().replace(/[^a-z0-9]/g, "");
+    const sold = Date.parse(c.soldDate || "");
+    if (!id || seen.has(addressKey) || !(Number(c.soldPrice) > 0) || !Number.isFinite(sold) || sold > asOf + 86400000) return false;
+    if ((asOf - sold) / 86400000 > Number(policy.windowDays || 600) + 1) return false;
+    seen.add(addressKey);
+    return true;
+  }).slice(0, 5);
+  report.comparables = comparables;
+  const v = report.valuation;
+  const validRange = [v.low, v.midpoint, v.high].every(n => Number(n) > 0 && Number.isFinite(Number(n))) && Number(v.low) <= Number(v.midpoint) && Number(v.midpoint) <= Number(v.high);
+  if (comparables.length < 3 || comparables.length !== supplied.length || !validRange || !v.available) {
+    const basis = clean5(v.basis, 900);
+    const reason = `${comparables.length} qualifying sold comparables were returned for this report. ${basis || "The available data does not establish whether matching local sales are absent or retrieval was incomplete."} No value rating or price range is provided. This does not prove there are no comparable sales in the market. Ask your Realtor to verify the local sold evidence.`;
+    report.valuation = { ...v, available: false, low: null, midpoint: null, high: null, basis: reason };
+    report.value_rating = { available: false, score: null, label: "Value rating unavailable", reason };
+  } else {
+    report.value_rating = buildValueRating(facts, v, policy, comparables.length);
   }
-  let moveSignal = "SHOWING FIRST", moveTitle = "Test the expensive questions in person", moveNote = "Use the showing to verify condition, renovations and layout. The price check continues separately with fresh sold evidence.";
-  if (rating.available && rating.score >= 8.5) {
-    moveSignal = "STRONG VALUE SIGNAL";
-    moveTitle = "Worth moving quickly to the showing";
-    moveNote = "Verify condition and the closest sold matches before treating the rating as an offer recommendation.";
-  } else if (rating.available && rating.score >= 7) {
-    moveSignal = "POSITIVE VALUE SIGNAL";
-    moveTitle = "Worth serious consideration";
-    moveNote = "The price evidence is encouraging. Use the showing to test whether condition supports it.";
-  } else if (rating.available && rating.score >= 5.5) {
-    moveSignal = "BALANCED";
-    moveTitle = "Inspect first, then decide on price";
-    moveNote = "The asking price is broadly supported, but condition and feature differences will determine the real value.";
-  } else if (rating.available && rating.score >= 4) {
-    moveSignal = "NEGOTIATION SIGNAL";
-    moveTitle = "The price needs stronger support";
-    moveNote = "Focus on the closest sold homes and any condition gap before discussing an offer.";
-  } else if (rating.available) {
-    moveSignal = "CAUTION";
-    moveTitle = "Do not chase the asking price";
-    moveNote = "The current price appears difficult to support from the selected evidence. Verify why before proceeding.";
+  if (facts.for_sale === false || !(Number(facts.list_price) > 0)) {
+    facts.list_price = null;
+    report.value_rating = { available: false, score: null, label: "Value rating unavailable", reason: "No verified current asking price is available. A historical asking price is not a live offer opportunity." };
   }
-  const roomLabel = facts.beds != null && facts.baths != null ? `${facts.beds} bed / ${facts.baths} bath` : facts.beds != null ? `${facts.beds} bed` : facts.baths != null ? `${facts.baths} bath` : null;
-  const context = [facts.property_type, roomLabel, facts.neighbourhood, facts.living_area, facts.lot ? `${facts.lot} lot` : null].filter(Boolean).map(html).join(" &nbsp;|&nbsp; ");
-  const topComps = comps.slice(0, 3);
-  const compsHtml = topComps.length ? topComps.map((c, i) => `<tr><td style="padding:14px 0;border-bottom:1px solid #e7eaf0"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding-right:12px"><p style="margin:0;color:#151b2b;font:700 14px Arial,sans-serif;line-height:1.35">${i + 1}. ${html(c.address || "MLS comparable")}</p><p style="margin:5px 0 0;color:#798196;font:400 11px Arial,sans-serif;line-height:1.4">${html([c.soldDate, c.distanceKm != null ? `${Number(c.distanceKm).toFixed(2)} km away` : null, c.cityRegion, c.beds != null ? `${c.beds} bd` : null, c.baths != null ? `${c.baths} ba` : null, c.lotWidth && c.lotDepth ? `${c.lotWidth} x ${c.lotDepth} ft lot` : null].filter(Boolean).join(" | "))}</p></td><td align="right" width="126" style="white-space:nowrap"><p style="margin:0;color:#151b2b;font:800 15px Arial,sans-serif">${html(cad(c.soldPrice) || "-")}</p><p style="margin:5px 0 0;color:#3155f5;font:700 11px Arial,sans-serif">${html(Math.round(Number(c.similarity) || 0))}% property match</p></td></tr></table></td></tr>`).join("") : `<tr><td style="padding:15px 0;color:#687286;font:400 13px Arial,sans-serif">Current sold evidence was not sufficient for an automated rating. Ask ${html(agent)} for a local comparable review.</td></tr>`;
-  const compactBullets = /* @__PURE__ */ __name((items, tone) => Array.isArray(items) && items.length ? `<table width="100%" cellpadding="0" cellspacing="0" border="0">${items.slice(0, 3).map((x) => `<tr><td width="18" valign="top" style="padding:4px 0;color:${tone};font:800 13px Arial,sans-serif">&#8226;</td><td style="padding:4px 0;color:${tone === "#c9b577" ? "#dce2ee" : "#4e586d"};font:400 13px Arial,sans-serif;line-height:1.45">${html(x)}</td></tr>`).join("")}</table>` : "", "compactBullets");
-  const questionsHtml = Array.isArray(n.questions_for_realtor) && n.questions_for_realtor.length ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;background:#f7f8fb;border-left:4px solid #3155f5"><tr><td style="padding:18px"><p style="margin:0 0 8px;color:#3155f5;font:800 10px Arial,sans-serif;letter-spacing:1px">3 QUESTIONS THAT COULD CHANGE THE DECISION</p>${compactBullets(n.questions_for_realtor, "#3155f5")}</td></tr></table>` : "";
-  const researchHtml = research.length ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px;background:#f7f8fb"><tr><td style="padding:14px"><p style="margin:0 0 7px;color:#3155f5;font:800 9px Arial,sans-serif;letter-spacing:1px">LIVE PUBLIC RESEARCH</p>${research.map((source) => `<p style="margin:5px 0;color:#687286;font:400 10px Arial,sans-serif"><a href="${html(source.url)}" style="color:#3155f5">${html(source.title || source.url)}</a></p>`).join("")}<p style="margin:8px 0 0;color:#8991a2;font:400 9px Arial,sans-serif;line-height:1.45">Public research adds context only; it does not replace licensed sold evidence.</p></td></tr></table>` : "";
-  const contactHref = agentMobile ? `tel:${agentMobile.replace(/[^+\d]/g, "")}` : agentEmail ? `mailto:${agentEmail}` : "https://torontohousemarket.com";
-  const historyText = history.appearanceCount ? `${history.appearanceCount} MLS appearance${history.appearanceCount === 1 ? "" : "s"} in the last ${history.years || 10} years; latest recorded status ${history.lastStatus || "unknown"}${history.latestSold ? `; last sold ${cad(history.latestSold.price)} on ${history.latestSold.date}` : ""}.` : "No reliable subject-property sale history was returned in the current licensed record set.";
-  const offerLabel = facts.offer_timing?.label || "Confirm with listing side";
-  const smartFacts = `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px"><tr><td width="50%" valign="top" style="padding:14px;background:#f7f8fb;border-right:5px solid #fff"><p style="margin:0 0 6px;color:#7b8395;font:800 9px Arial,sans-serif;letter-spacing:1px">MARKET TIMING</p><p style="margin:0;color:#151b2b;font:800 15px Arial,sans-serif">${html(facts.days_on_market != null ? `${facts.days_on_market} days live` : "Confirm DOM")}</p></td><td width="50%" valign="top" style="padding:14px;background:#f7f8fb"><p style="margin:0 0 6px;color:#7b8395;font:800 9px Arial,sans-serif;letter-spacing:1px">OFFER TIMING</p><p style="margin:0;color:#151b2b;font:800 15px Arial,sans-serif;line-height:1.25">${html(offerLabel)}</p></td></tr><tr><td width="50%" valign="top" style="padding:14px;background:#f7f8fb;border-top:5px solid #fff;border-right:5px solid #fff"><p style="margin:0 0 6px;color:#7b8395;font:800 9px Arial,sans-serif;letter-spacing:1px">CLOSEST SCHOOL</p><p style="margin:0;color:#151b2b;font:800 14px Arial,sans-serif;line-height:1.25">${html(facts.closest_school || "Confirm attendance school")}</p></td><td width="50%" valign="top" style="padding:14px;background:#f7f8fb;border-top:5px solid #fff"><p style="margin:0 0 6px;color:#7b8395;font:800 9px Arial,sans-serif;letter-spacing:1px">MLS HISTORY</p><p style="margin:0;color:#151b2b;font:800 14px Arial,sans-serif">${html(history.appearanceCount ? `${history.appearanceCount} appearance${history.appearanceCount === 1 ? "" : "s"} / ${history.years || 10} years` : "No reliable history")}</p></td></tr></table>`;
-  const indicatorColor = rating.score >= 7 ? "#087555" : rating.score >= 5.5 ? "#8a6b1d" : rating.score >= 4 ? "#a35c18" : "#a63d40";
-  const filled = rating.available ? Math.round(Number(rating.score) || 0) : 0;
-  const ratingSegments = Array.from({ length: 10 }, (_, i) => `<td width="10%" height="10" bgcolor="${i < filled ? i < 3 ? "#c95b5f" : i < 6 ? "#d1a84b" : "#3ea879" : "#e6e9ef"}" style="border-right:2px solid #fff"></td>`).join("");
-  const ratingVisual = rating.available ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;background:#f7f8fb;border-top:4px solid ${indicatorColor}"><tr><td style="padding:20px"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td><p style="margin:0;color:#6f788c;font:800 9px Arial,sans-serif;letter-spacing:1px">THM VALUE RATING</p><p style="margin:6px 0 0;color:#151b2b;font:800 31px Arial,sans-serif">${html(rating.score)}<span style="font-size:14px;color:#7b8395"> / 10</span></p></td><td align="right"><p style="margin:0;color:${indicatorColor};font:800 11px Arial,sans-serif;letter-spacing:1px">${html(moveSignal)}</p><p style="margin:5px 0 0;color:#151b2b;font:800 18px Arial,sans-serif">${html(rating.label)}</p></td></tr></table><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:13px"><tr>${ratingSegments}</tr><tr><td colspan="3" align="left" style="padding-top:5px;color:#a63d40;font:700 8px Arial,sans-serif">CAUTION</td><td colspan="4" align="center" style="padding-top:5px;color:#8a6b1d;font:700 8px Arial,sans-serif">FAIR</td><td colspan="3" align="right" style="padding-top:5px;color:#087555;font:700 8px Arial,sans-serif">STRONG</td></tr></table><p style="margin:10px 0 0;color:#596277;font:400 12px Arial,sans-serif;line-height:1.5">${html(rating.reason)}</p></td></tr></table>` : `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 14px;background:#f7f8fb;border-top:4px solid #687286"><tr><td style="padding:20px"><p style="margin:0;color:#6f788c;font:800 9px Arial,sans-serif;letter-spacing:1px">THM VALUE RATING</p><p style="margin:7px 0;color:#151b2b;font:800 22px Arial,sans-serif">Value rating unavailable</p><p style="color:#596277;font:400 13px Arial,sans-serif;line-height:1.5">${html(rating.reason || v.basis || "Insufficient qualifying sold evidence. A Realtor review is required.")}</p></td></tr></table>`;
-  const priceGauge = v.available ? `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;background:#f7f8fb"><tr><td style="padding:16px"><p style="margin:0 0 10px;color:#6f788c;font:800 9px Arial,sans-serif;letter-spacing:1px">PRICE POSITION</p><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="left" style="color:#657086;font:700 11px Arial,sans-serif">${html(cad(v.low) || "-")}</td><td align="center" style="color:#151b2b;font:800 12px Arial,sans-serif">MID ${html(cad(v.midpoint) || "-")}</td><td align="right" style="color:#657086;font:700 11px Arial,sans-serif">${html(cad(v.high) || "-")}</td></tr><tr><td colspan="3" style="padding-top:8px"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td width="33%" height="9" bgcolor="#3ea879"></td><td width="34%" height="9" bgcolor="#d1a84b"></td><td width="33%" height="9" bgcolor="#c95b5f"></td></tr></table></td></tr><tr><td colspan="3" style="padding-top:8px;color:#596277;font:400 11px Arial,sans-serif">Asking price: <strong>${html(cad(facts.list_price) || "-")}</strong>${policy.farthestKm ? ` | nearest evidence selected first` : ""}</td></tr></table></td></tr></table>` : "";
-  const expandedNote = policy.expandedWindow ? `<p style="margin:0 0 18px;padding:10px 12px;background:#fff6ee;color:#87511d;font:700 11px Arial,sans-serif;line-height:1.45">Evidence note: the search was expanded from 100 to ${policy.windowDays || 300} days.</p>` : "";
-  const evidenceVisual = `${ratingVisual}${priceGauge}${expandedNote}`;
-  const htmlBody = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="X-UA-Compatible" content="IE=edge"></head><body style="margin:0;background:#eef1f5"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:22px 10px"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:680px;background:#ffffff"><tr><td bgcolor="#10182d" style="padding:30px;background:#10182d"><p style="margin:0 0 10px;color:#c9b577;font:800 11px Arial,sans-serif;letter-spacing:1.5px">THM BUYER INTELLIGENCE</p><h1 style="margin:0;color:#ffffff;font:800 27px Arial,sans-serif;line-height:1.22">${html(address)}</h1><p style="margin:12px 0 0;color:#b9c2d5;font:400 12px Arial,sans-serif;line-height:1.55">${context}</p></td></tr><tr><td style="padding:26px"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4eddd;border:1px solid #e2d5b5"><tr><td style="padding:20px"><p style="margin:0 0 7px;color:#81682d;font:800 10px Arial,sans-serif;letter-spacing:1.2px">RECOMMENDED NEXT MOVE</p><h2 style="margin:0;color:#151b2b;font:800 22px Arial,sans-serif;line-height:1.25">${html(moveTitle)}</h2><p style="margin:8px 0 0;color:#5e5b53;font:400 13px Arial,sans-serif;line-height:1.55">${html(moveNote)}</p></td></tr></table><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 24px"><tr><td width="33%" valign="top" style="padding:14px;background:#f7f8fb;border-right:5px solid #fff"><p style="margin:0 0 6px;color:#7b8395;font:800 9px Arial,sans-serif;letter-spacing:1px">ASKING</p><p style="margin:0;color:#151b2b;font:800 17px Arial,sans-serif">${html(cad(facts.list_price) || "-")}</p></td><td width="34%" valign="top" style="padding:14px;background:#f7f8fb;border-right:5px solid #fff"><p style="margin:0 0 6px;color:#7b8395;font:800 9px Arial,sans-serif;letter-spacing:1px">EVIDENCE BAND</p><p style="margin:0;color:#151b2b;font:800 15px Arial,sans-serif;line-height:1.25">${html(range)}</p></td><td width="33%" valign="top" style="padding:14px;background:#f7f8fb"><p style="margin:0 0 6px;color:#7b8395;font:800 9px Arial,sans-serif;letter-spacing:1px">EVIDENCE</p><p style="margin:0;color:#151b2b;font:800 15px Arial,sans-serif;line-height:1.25">${html(`${comps.length} match${comps.length === 1 ? "" : "es"} / ${policy.windowDays || 100}d`)}</p></td></tr></table><p style="margin:0 0 7px;color:#3155f5;font:800 10px Arial,sans-serif;letter-spacing:1.2px">THE 30-SECOND READ</p><p style="margin:0 0 24px;color:#3f4a60;font:400 15px Arial,sans-serif;line-height:1.65">${html(n.executive_summary || "Review the price evidence and showing priorities below before deciding on the next step.")}</p><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:22px"><tr><td><h2 style="margin:0;color:#151b2b;font:800 19px Arial,sans-serif">Best sold evidence</h2><p style="margin:5px 0 0;color:#798196;font:400 12px Arial,sans-serif;line-height:1.45">Top ${topComps.length} of ${comps.length} licensed matches used. Newest record: ${html(v.newest_sold_date || "unknown")}. ${comps.length > 3 ? `${comps.length - 3} additional matches were analysed.` : ""}</p></td></tr>${compsHtml}</table><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;background:#f7f8fb"><tr><td style="padding:18px"><p style="margin:0 0 6px;color:#3155f5;font:800 10px Arial,sans-serif;letter-spacing:1px">AI EVIDENCE READ</p><p style="margin:0;color:#4e586d;font:400 13px Arial,sans-serif;line-height:1.55">${html(n.market_read || v.basis || "The assigned Realtor should refresh the local sold evidence before an offer decision.")}</p></td></tr></table><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px"><tr><td width="50%" valign="top" style="padding:18px;background:#f2faf6;border-right:7px solid #fff"><p style="margin:0 0 8px;color:#087555;font:800 10px Arial,sans-serif;letter-spacing:1px">WHAT HELPS</p>${compactBullets(n.strengths, "#087555")}</td><td width="50%" valign="top" style="padding:18px;background:#fff6ee"><p style="margin:0 0 8px;color:#a35c18;font:800 10px Arial,sans-serif;letter-spacing:1px">WHAT COULD CHANGE IT</p>${compactBullets(n.risks, "#a35c18")}</td></tr></table><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#10182d"><tr><td style="padding:22px"><p style="margin:0 0 7px;color:#c9b577;font:800 10px Arial,sans-serif;letter-spacing:1px">YOUR NEXT MOVE</p><h2 style="margin:0 0 9px;color:#ffffff;font:800 20px Arial,sans-serif">Use the showing to answer the value questions.</h2><p style="margin:0 0 13px;color:#c7cfdf;font:400 13px Arial,sans-serif;line-height:1.55">${html(n.buyer_strategy || "Confirm condition and the strongest local comparable before deciding on price or conditions.")}</p>${compactBullets(n.inspection_priorities, "#c9b577")}<p style="margin:17px 0 0"><a href="${html(contactHref)}" style="display:inline-block;background:#c9b577;color:#10182d;text-decoration:none;font:800 14px Arial,sans-serif;padding:13px 18px">Ask ${html(agent)} for the local price check</a></p></td></tr></table><p style="margin:18px 0 0;color:#8991a2;font:400 10px Arial,sans-serif;line-height:1.55">MLS history: ${html(historyText)} Analysis uses licensed AMPRE / PropTx listing and sold evidence after the property request. AI provider: ${html(report.ai_generation?.provider || "deterministic fallback")}.</p></td></tr></table></td></tr></table></body></html>`;
-  const decisionMarker = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4eddd;border:1px solid #e2d5b5">';
-  const soldEvidenceMarker = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:22px"><tr><td><h2 style="margin:0;color:#151b2b;font:800 19px Arial,sans-serif">Best sold evidence</h2>';
-  const nextMoveMarker = '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#10182d">';
-  const disclaimerHtml = `<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:18px;background:#f7f8fb;border-left:4px solid #3155f5"><tr><td style="padding:14px"><p style="margin:0 0 5px;color:#3155f5;font:800 9px Arial,sans-serif;letter-spacing:1px">AI-ASSISTED BUYER BRIEF</p><p style="margin:0;color:#687286;font:400 10px Arial,sans-serif;line-height:1.5">This email uses AI assistance and licensed MLS evidence for preliminary decision support. It is not an appraisal, legal advice, home inspection or guarantee of value. Verify sold data and all material facts with a registered real estate professional.</p></td></tr></table>`;
-  const displayedRating = rating.available ? `${rating.score}/10 - ${rating.label}` : rating.label;
-  const assembledHtmlBody = htmlBody.replace(decisionMarker, `${evidenceVisual}${decisionMarker}`).replace(soldEvidenceMarker, `${smartFacts}${soldEvidenceMarker}`).replace(nextMoveMarker, `${questionsHtml}${nextMoveMarker}`).replace("</td></tr></table></td></tr></table></body></html>", `${researchHtml}${disclaimerHtml}</td></tr></table></td></tr></table></body></html>`);
-  const originalCompSummary = `Top ${topComps.length} of ${comps.length} licensed matches used. Newest record: ${html(v.newest_sold_date || "unknown")}. ${comps.length > 3 ? `${comps.length - 3} additional matches were analysed.` : ""}`;
-  const clearCompSummary = `${topComps.length} qualifying recent sale${topComps.length === 1 ? "" : "s"} shown. Latest sale: ${html(v.newest_sold_date || "unknown")}.`;
-  const technicalLine = `Analysis uses licensed AMPRE / PropTx listing and sold evidence after the property request. AI provider: ${html(report.ai_generation?.provider || "deterministic fallback")}.`;
-  const finalHtmlBody = assembledHtmlBody
-    .replace("THM BUYER INTELLIGENCE", "YOUR BUYER DECISION REPORT")
-    .replace("RECOMMENDED NEXT MOVE", "BOTTOM LINE")
-    .replace(html(moveTitle), html(verdict))
-    .replace(html(moveNote), html(verdictReason))
-    .replace(">ASKING</p>", ">ASKING PRICE</p>")
-    .replace(">EVIDENCE BAND</p>", ">SOLD RANGE</p>")
-    .replace(">EVIDENCE</p>", ">COMPARABLES</p>")
-    .replace("THE 30-SECOND READ", "QUICK READ")
-    .replace("Best sold evidence", "Recent comparable sales")
-    .replace(originalCompSummary, clearCompSummary)
-    .replace("AI EVIDENCE READ", "WHAT THE NUMBERS SAY")
-    .replace("WHAT HELPS", "STRENGTHS")
-    .replace("WHAT COULD CHANGE IT", "WATCH")
-    .replace("3 QUESTIONS THAT COULD CHANGE THE DECISION", "QUESTIONS FOR YOUR REALTOR")
-    .replace("YOUR NEXT MOVE", "READY TO SEE IT?")
-    .replace("Use the showing to answer the value questions.", "Request the earliest available showing.")
-    .replace(`Ask ${html(agent)} for the local price check`, `Request a showing with ${html(agent)}`)
-    .replace(technicalLine, "Licensed MLS evidence is used for preliminary buyer decision support.")
-    .replace("LIVE PUBLIC RESEARCH", "SOURCES")
-    .replace("AI-ASSISTED BUYER BRIEF", "IMPORTANT")
-    .replaceAll("PRICE POSITION", "SOLD PRICE RANGE")
-    .replace(">MID ", ">MIDPOINT ");
-  const text = ["YOUR BUYER DECISION REPORT", address, context, `Value rating: ${displayedRating}`, "BOTTOM LINE", verdict, verdictReason, `Asking price: ${cad(facts.list_price) || "-"}`, `Recent sold range: ${range}`, `Comparables: ${comps.length} / ${policy.windowDays || 100} days`, policy.expandedWindow ? `Evidence note: search expanded from 100 to ${policy.windowDays || 300} days.` : null, "QUICK READ", n.executive_summary, "RECENT COMPARABLE SALES", ...topComps.map((c, i) => `${i + 1}. ${c.address} | ${cad(c.soldPrice)} | ${c.soldDate}${c.distanceKm != null ? ` | ${Number(c.distanceKm).toFixed(2)} km` : ""} | ${Math.round(Number(c.similarity) || 0)}% match`), "WHAT THE NUMBERS SAY", n.market_read, "STRENGTHS", ...(n.strengths || []).slice(0, 3).map((x) => `- ${x}`), "WATCH", ...(n.risks || []).slice(0, 3).map((x) => `- ${x}`), "READY TO SEE IT?", n.buyer_strategy, ...(n.inspection_priorities || []).slice(0, 3).map((x) => `- ${x}`), `Request a showing with ${agent}: ${agentMobile || agentEmail || "torontohousemarket.com"}`, "AI-assisted preliminary decision support using licensed MLS evidence. Not an appraisal, legal advice, inspection, or guarantee of value. Verify material facts with a registered real estate professional."].filter(Boolean).join("\n\n");
-  return { subject: `AI Property Report Ready: ${address} | ${rating.available ? `Value Rating ${rating.score}/10` : "Realtor Review"}`, html: finalHtmlBody, text };
+  return report;
+}
+function propertyReportEmail(address, agentData, input) {
+  const report = reportWithoutUnsupportedRating(input);
+  const f = report.facts, v = report.valuation, comps = report.comparables, policy = report.comparable_policy || {};
+  const n = report.narrative || {}, rating = report.value_rating;
+  const agent = reportAgentName(agentData);
+  const active = f.for_sale !== false && Number(f.list_price) > 0;
+  const generated = report.generated_at ? new Date(report.generated_at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'See your request date';
+  const confidence = v.confidence || "Not established";
+  const range = v.available ? `${cad(v.low)} – ${cad(v.high)}` : "Needs Realtor review";
+  const lowConfidence = /low|unavailable/i.test(confidence) || policy.expandedWindow || policy.sizeFallbackUsed;
+  let verdict = "Price needs a local evidence check";
+  let reason = v.basis || "The supplied sales do not support a responsible automated value range.";
+  if (v.available) {
+    if (!active) { verdict = "Property review — no current asking-price comparison"; reason = "This sold-evidence range is preliminary. It does not establish that this property is available to buy."; }
+    else if (lowConfidence) { verdict = "Treat this range as a starting point"; reason = "The evidence needs Realtor review before deciding on price. Age, size differences and condition can materially change the result."; }
+    else if (Number(f.list_price) > Number(v.high)) { verdict = "Asking price is above the evidence band"; reason = `The ask is ${cad(Number(f.list_price) - Number(v.high))} above the modelled high end. Ask which condition or location differences support that premium.`; }
+    else if (Number(f.list_price) < Number(v.low)) { verdict = "Asking price is below the evidence band"; reason = "Check offer instructions and condition before treating a low asking price as a bargain."; }
+    else { verdict = "Asking price sits inside the evidence band"; reason = "Compare condition and the closest sold homes before choosing an offer price."; }
+  }
+  const bedroomLabel = f.bedroom_layout ? `${f.bedroom_layout} reported bedrooms` : f.beds != null ? `${f.beds} reported bedrooms` : null;
+  const context = [f.property_type, bedroomLabel, f.baths != null ? `${f.baths} baths` : null, f.living_area ? `${f.living_area} sq ft` : null, f.neighbourhood].filter(Boolean).join(" · ");
+  const status = active ? `For sale · asking ${cad(f.list_price)}` : "Not confirmed available for sale · no live asking price";
+  const newest = comps.length ? comps.map(c => c.soldDate).sort().at(-1) : null;
+  const rawPrices = comps.map(c => Number(c.soldPrice));
+  const observedRange = comps.length ? `${cad(Math.min(...rawPrices))} – ${cad(Math.max(...rawPrices))}` : "None returned";
+  const evidence = `${comps.length} qualifying sales shown · ${policy.windowDays || 100}-day search · newest sale ${newest || "unavailable"}.`;
+  const locality = comps.length ? comps.every(c => c.distanceKm != null)
+    ? "Distances are supplied for each comparable."
+    : "Some distances are unavailable; neighbourhood matching does not verify street-level proximity." : "";
+  const size = policy.sizeFallbackUsed ? "Size matching was broadened because too few exact-size sales were returned." : "";
+  const generatedMode = report.ai_generation?.provider === "deterministic_fallback"
+    ? "Prepared from structured MLS evidence using the fallback template; an AI-written narrative was unavailable."
+    : "AI-assisted analysis of the supplied MLS facts and sold evidence. Listing claims remain unverified.";
+  const tax = Number(f.annual_tax) > 0 ? Number(f.annual_tax) / 12 : null;
+  const fee = f.maintenance_fee;
+  const feeAmount = fee?.amount != null && Number.isFinite(Number(fee.amount)) && Number(fee.amount) >= 0 ? Number(fee.amount) : null;
+  const frequency = String(fee?.frequency || "").toLowerCase();
+  const monthlyFee = feeAmount == null ? null : /^(month|monthly)$/.test(frequency) ? feeAmount : /^(year|annual|annually|yearly)$/.test(frequency) ? feeAmount / 12 : null;
+  const knownMonthly = tax != null || monthlyFee != null ? (tax || 0) + (monthlyFee || 0) : null;
+  const costs = [
+    tax != null ? `Property tax: about ${cad(tax)}/month${f.tax_year ? ` (${f.tax_year} tax year)` : "; tax year not supplied"}.` : "Property tax: not supplied.",
+    /condo|apartment/i.test(f.property_type || "") ? monthlyFee != null ? `Maintenance fee: ${cad(monthlyFee)}/month. ${fee.included?.length ? `Reported inclusions: ${fee.included.join(", ")}.` : "Confirm inclusions."}` : "Maintenance fee: monthly amount not verified." : null,
+    knownMonthly != null ? `Known recurring subtotal: about ${cad(knownMonthly)}/month. This is incomplete: mortgage, insurance, utilities, repairs and unreported charges are excluded.` : "Monthly ownership costs need confirmation; no total has been estimated."
+  ].filter(Boolean);
+  const checks = reportBuyerChecks(f);
+  const factsRead = [context ? `${context}.` : "Property details need verification.", f.lot ? `Reported lot: ${f.lot}.` : null, f.parking != null ? `${f.parking} reported parking spaces.` : null, active && f.days_on_market != null ? `${f.days_on_market} days on this listing; relistings may extend total time on market.` : null].filter(Boolean).join(" ");
+  const questions = (n.questions_for_realtor || []).filter(x => typeof x === 'string' && x.length < 300 && !/suite|rental income|secondary.unit|rent/i.test(x)).slice(0, 2);
+  const actionTitle = active ? "READY TO SEE IT?" : "WANT A PROPERTY REVIEW?";
+  const action = active ? `Request a showing with ${agent}` : `Request a property review with ${agent}`;
+  const propertyUrl = new URL('https://torontohousemarket.com/');
+  if (f.listing_key) propertyUrl.searchParams.set('listingKey', f.listing_key); else propertyUrl.searchParams.set('q', address);
+  propertyUrl.hash = 'lookup';
+  const actionNote = active ? "Target: as soon as 1 hour to 24 hours, subject to seller and listing availability. Your Realtor must confirm the appointment." : "This report does not imply availability or authorize a showing. Ask for a current status and value review.";
+  const title = active ? "YOUR BUYER DECISION REPORT" : "YOUR PROPERTY REVIEW";
+  const label = t => `<p style="margin:0 0 8px;color:#75612d;font-size:12px;font-weight:700;letter-spacing:1px">${html(t)}</p>`;
+  const paragraph = t => `<p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#374151">${html(t)}</p>`;
+  const bullets = values => `<ul style="margin:0;padding-left:20px;color:#374151;font-size:16px;line-height:1.65">${values.map(x => `<li style="margin-bottom:8px">${html(x)}</li>`).join('')}</ul>`;
+  const section = (name, body) => `<tr><td style="padding:22px 26px;border-bottom:1px solid #e5e7eb">${label(name)}${body}</td></tr>`;
+  const compRows = comps.map((c,i) => `<tr><td style="padding:12px 0;border-bottom:1px solid #e5e7eb">${paragraph(`${i+1}. ${c.address || "MLS comparable"}`)}<p style="margin:0;font-size:14px;line-height:1.6">${html([cad(c.soldPrice), c.soldDate, c.propertySubType, c.beds != null ? `${c.beds} bd` : null, c.baths != null ? `${c.baths} ba` : null, c.livingAreaRange, c.cityRegion, c.distanceKm != null ? `${Number(c.distanceKm).toFixed(2)} km` : 'Distance unavailable'].filter(Boolean).join(' · '))}</p></td></tr>`).join('');
+  const disclaimer = "Preliminary decision support, not an appraisal or guarantee of value. Confirm listing status, measurements, taxes, legal use and sold evidence with your Realtor before relying on them.";
+  const textParts = [title,address,status,context,`Prepared ${generated}`,"BOTTOM LINE",verdict,reason,`Modelled sold-evidence range: ${range}`,`Evidence confidence: ${confidence}`,rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : `Value rating unavailable. ${rating.reason || "More reliable evidence is needed."}`,"QUICK READ",factsRead,"Recent comparable sales",evidence,`Observed sold prices: ${observedRange}. This may differ from the modelled range.`,locality,size,...comps.map((c,i)=>`${i+1}. ${c.address} · ${cad(c.soldPrice)} · ${c.soldDate} · ${c.distanceKm != null ? `${c.distanceKm} km` : 'Distance unavailable'}`),"WHAT THE NUMBERS SAY",v.basis,"KNOWN MONTHLY COSTS",...costs,"CHECK BEFORE AN OFFER",...checks,...questions,actionTitle,action,propertyUrl.toString(),actionNote,generatedMode,disclaimer];
+  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>${html(title)}</title></head><body style="margin:0;background:#f1f3f5;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} · ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 10px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden"><tr><td style="padding:28px 26px;background:#101827;color:#fff">${label(title)}<h1 style="font-size:26px;line-height:1.25;margin:8px 0 12px">${html(address)}</h1><p style="font-size:16px;line-height:1.5;margin:0;color:#e5e7eb">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section('BOTTOM LINE',`<h2 style="font-size:23px;line-height:1.3;margin:0 0 12px">${html(verdict)}</h2>${paragraph(reason)}${paragraph(`Modelled sold-evidence range: ${range}`)}${paragraph(`Evidence confidence: ${confidence}`)}${paragraph(rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : `Value rating unavailable. ${rating.reason || 'More reliable evidence is needed.'}`)}`)}${section('QUICK READ',paragraph(factsRead))}${section('Recent comparable sales',paragraph(evidence)+paragraph(`Observed sold prices: ${observedRange}. The modelled range may differ because it weights the selected sales.`)+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>`+paragraph([locality,size].filter(Boolean).join(' ')))}${section('WHAT THE NUMBERS SAY',paragraph(v.basis || reason))}${section('KNOWN MONTHLY COSTS',bullets(costs))}${section('CHECK BEFORE AN OFFER',bullets(checks)+(questions.length ? label('QUESTIONS FOR YOUR REALTOR')+bullets(questions) : ''))}${section(actionTitle,`<p style="margin:0 0 16px"><a href="${html(propertyUrl.toString())}" style="display:inline-block;padding:15px 18px;background:#101827;color:#fff;text-decoration:none;border-radius:9px;font-size:16px;font-weight:700">${html(action)}</a></p>${paragraph(actionNote)}`)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6">${html(generatedMode)}<br><br>${html(disclaimer)}<br><br>Toronto House Market · ${html(agent)}</td></tr></table></td></tr></table></body></html>`;
+  return {subject:`AI Property Report Ready: ${address} | ${rating.available ? `Value Rating ${rating.score}/10` : active ? 'Realtor Review' : 'Property Review'}`,html:htmlBody,text:textParts.filter(Boolean).join('\n\n')};
 }
 __name(propertyReportEmail, "propertyReportEmail");
+
 function propertyReportPdf(address, agentData, report) {
   report = reportWithoutUnsupportedRating(report);
   const facts = report.facts || {}, v = report.valuation || {}, n = report.narrative || {}, policy = report.comparable_policy || {}, comps = Array.isArray(report.comparables) ? report.comparables.slice(0, 3) : [];
-  const rating = report.value_rating || buildValueRating(facts, v, policy, comps.length), agent = agentData?.display_name || "your assigned Realtor";
+  const rating = report.value_rating || buildValueRating(facts, v, policy, comps.length), agent = reportAgentName(agentData);
   const pages = [[], []], navy = [0.06, 0.09, 0.18], ink = [0.08, 0.11, 0.18], muted = [0.36, 0.41, 0.51], gold = [0.79, 0.71, 0.47], green = [0.08, 0.48, 0.34], amber = [0.64, 0.36, 0.09], red = [0.65, 0.2, 0.22], light = [0.96, 0.97, 0.98];
   const rect = /* @__PURE__ */ __name((p, x, y2, w, h, c) => pages[p].push(`${c.join(" ")} rg ${x} ${y2} ${w} ${h} re f`), "rect");
   const line = /* @__PURE__ */ __name((p, x1, y1, x2, y2, c, w = 1) => pages[p].push(`${c.join(" ")} RG ${w} w ${x1} ${y1} m ${x2} ${y2} l S`), "line");
@@ -4866,7 +4886,7 @@ function propertyReportPdf(address, agentData, report) {
     y -= 65;
   }
   if (policy.expandedWindow) {
-    text(0, "EVIDENCE WINDOW EXPANDED TO 300 DAYS", 42, y, 9, true, amber);
+    text(0, `EVIDENCE WINDOW EXPANDED TO ${policy.windowDays || 300} DAYS`, 42, y, 9, true, amber);
     y -= 22;
   }
   text(0, "THE 30-SECOND READ", 42, y, 9, true, [0.19, 0.33, 0.8]);
@@ -5063,6 +5083,10 @@ export {
   queryPropertyCount,
   mergeCurrentIdxWithVow,
   numberOrNull,
+  buildPropertyReport,
+  buildValueRating,
+  reportWithoutUnsupportedRating,
+  reportBuyerChecks,
   propertyReportEmail,
   propertyReportPdf,
   publicListingFacts,

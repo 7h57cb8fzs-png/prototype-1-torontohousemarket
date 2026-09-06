@@ -43,10 +43,10 @@ img{display:block;max-width:100%}
   radial-gradient(circle at 78% 14%,rgba(49,85,245,.13),transparent 25%),
   radial-gradient(circle at 24% 88%,rgba(13,141,102,.10),transparent 28%),
   linear-gradient(180deg,#fff 0%,#f8faff 100%);border-bottom:1px solid var(--line)}
-.hero-inner{padding:82px 0 66px;text-align:center}
+.hero-inner{padding:48px 0 38px;text-align:center}
 .speed-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid #d8def7;background:#fff;border-radius:999px;color:#263b9f;font-size:12px;font-weight:900;letter-spacing:.08em;box-shadow:var(--shadow-soft)}
 .live-dot{width:8px;height:8px;border-radius:50%;background:#18b879;box-shadow:0 0 0 5px rgba(24,184,121,.11)}
-.hero h1{max-width:860px;margin:22px auto 18px;font-size:clamp(52px,7vw,88px);line-height:.96;letter-spacing:-.065em;font-weight:900}
+.hero h1{max-width:900px;margin:22px auto 18px;font-size:clamp(38px,5.5vw,66px);line-height:1.08;letter-spacing:-.045em;font-weight:900}
 .hero h1 span{color:var(--blue)}
 .hero-copy{max-width:720px;margin:0 auto;color:#414a5f;font-size:20px;line-height:1.55}
 .search-box{max-width:880px;margin:34px auto 0;padding:8px;background:#fff;border:1px solid #dce1ea;border-radius:20px;display:grid;grid-template-columns:1fr auto;gap:8px;box-shadow:var(--shadow)}
