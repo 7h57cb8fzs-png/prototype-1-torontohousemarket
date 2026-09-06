@@ -23,12 +23,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           PREVIEW_ONLY: "true"
-          EXPECTED_ACTIVE_SHA: a98e62f39b0e095caf5157131d4e5ba44b9353879dbb944d5ffd3631bf5fa8cc
+          EXPECTED_ACTIVE_SHA: 435e10fc26871a58d13a9c95c3b6d7d2a1f2042240c848660fbfcab6ec568240
         run: node .github/scripts/ten-property-audit.mjs
       - name: Promote verified report path fix with rollback guards
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          EXPECTED_BEFORE_SHA: a98e62f39b0e095caf5157131d4e5ba44b9353879dbb944d5ffd3631bf5fa8cc
+          EXPECTED_BEFORE_SHA: 435e10fc26871a58d13a9c95c3b6d7d2a1f2042240c848660fbfcab6ec568240
         run: |
           node --input-type=module -e 'import fs from "node:fs"; process.env.CANDIDATE_VERSION_ID=JSON.parse(fs.readFileSync("audit-output/release.json")).candidate; await import("./.github/scripts/promote-buyer-tools.mjs");'

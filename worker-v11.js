@@ -3017,7 +3017,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-report-evidence-audit-v102-20260906";
+var VERSION4 = "stage4-report-evidence-audit-v103-20260906";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -4223,7 +4223,7 @@ async function updateAgent(request, env, id) {
 }
 __name(updateAgent, "updateAgent");
 function supabase(env, path, init = {}) {
-  return fetch(`${env.SUPABASE_URL || "https://pwbtxyavjjotxtvegrqe.supabase.co"}${path}`, { ...init, headers: { "Content-Type": "application/json", apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, ...init.headers || {} } });
+  return fetch(`${env.SUPABASE_URL || "https://pwbtxyavjjotxtvegrqe.supabase.co"}${path}`, { ...init, signal: init.signal || AbortSignal.timeout(10000), headers: { "Content-Type": "application/json", apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, ...init.headers || {} } });
 }
 __name(supabase, "supabase");
 async function runScheduledNotifications(env) {
@@ -4251,6 +4251,7 @@ async function processReportJobs(env, limit = 3) {
   let completed = 0, failed = 0;
   for (const job of Array.isArray(jobs) ? jobs : []) {
     const requestId = `report-job-${job.id}`;
+    const stopHeartbeat = startReportHeartbeat(env, job);
     diagnosticLog("log", "report_generation_status", { request_id: requestId, report_id: job.report_id, job_id: job.id, report_generation_status: "started" });
     try {
       const lead = await loadLeadForReport(env, job.lead_id);
@@ -4266,11 +4267,24 @@ async function processReportJobs(env, limit = 3) {
       await rpc(env, "fail_report_job", { p_job_id: job.id, p_report_id: job.report_id, p_error: message }).catch(() => {
       });
       diagnosticLog("error", "report_generation_status", { request_id: requestId, report_id: job.report_id, job_id: job.id, report_generation_status: "failed", error_category: diagnosticErrorCategory(error) });
+    } finally {
+      stopHeartbeat();
     }
   }
   return { claimed: Array.isArray(jobs) ? jobs.length : 0, completed, failed };
 }
 __name(processReportJobs, "processReportJobs");
+function startReportHeartbeat(env, job) {
+  // Refresh only this active attempt. A crashed Worker stops heartbeating and
+  // remains recoverable by the existing interrupted-job policy.
+  const timer = setInterval(() => {
+    supabase(env, `/rest/v1/automation_jobs?id=eq.${job.id}&status=eq.processing&attempts=eq.${job.attempts}`, {
+      method: "PATCH", signal: AbortSignal.timeout(5000),
+      headers: { Prefer: "return=minimal" }, body: JSON.stringify({locked_at:new Date().toISOString()})
+    }).then(response => response.arrayBuffer()).catch(error => diagnosticLog("warn", "report_heartbeat_failed", {job_id:job.id,error_category:diagnosticErrorCategory(error)}));
+  }, 30000);
+  return () => clearInterval(timer);
+}
 async function loadLeadForReport(env, id) {
   const select = "id,name,email,lead_mode,resolved_address,showing_timing,property_snapshot,metadata,created_at,vow_user_id";
   const response = await supabase(env, `/rest/v1/leads?id=eq.${id}&select=${encodeURIComponent(select)}&limit=1`), rows = await response.json().catch(() => []);
@@ -5106,6 +5120,7 @@ export {
   buildPropertyReport,
   loadPropertyForReport,
   deliverEmailJob,
+  startReportHeartbeat,
   buildValueRating,
   reportWithoutUnsupportedRating,
   reportBuyerChecks,

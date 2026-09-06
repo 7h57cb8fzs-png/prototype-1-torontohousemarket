@@ -1,9 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { loadPropertyForReport, deliverEmailJob } from "../worker-v11.js";
+import { loadPropertyForReport, deliverEmailJob, startReportHeartbeat } from "../worker-v11.js";
 
 const source = readFileSync(new URL("../worker-v11.js", import.meta.url), "utf8");
+
+test("active report attempts keep their lease and stop renewing after completion", async t => {
+  t.mock.timers.enable({apis:['setInterval']});
+  const originalFetch=globalThis.fetch, calls=[];
+  globalThis.fetch=async(input,init)=>{calls.push({url:String(input),init});return new Response(null,{status:204});};
+  const stop=startReportHeartbeat({SUPABASE_SERVICE_ROLE_KEY:'test'},{id:77,attempts:2});
+  try {
+    t.mock.timers.tick(30000);
+    await Promise.resolve();
+    assert.equal(calls.length,1);
+    assert.match(calls[0].url,/id=eq.77&status=eq.processing&attempts=eq.2/);
+    assert.ok(Date.parse(JSON.parse(calls[0].init.body).locked_at));
+    assert.ok(calls[0].init.signal);
+    stop();t.mock.timers.tick(120000);await Promise.resolve();
+    assert.equal(calls.length,1);
+  } finally {stop();globalThis.fetch=originalFetch;t.mock.timers.reset();}
+});
 
 test("lost delivery acknowledgement is retried without sending a second email", async () => {
   const originalFetch=globalThis.fetch;
