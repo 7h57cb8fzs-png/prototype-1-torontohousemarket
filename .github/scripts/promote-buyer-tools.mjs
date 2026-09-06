@@ -47,7 +47,14 @@ const previewOrigin = `https://${candidate.slice(0, 8)}-${worker}.7h57cb8fzs.wor
 for (const path of ["index.html", "app.js", "styles.css"]) {
   const url = path === "index.html" ? "/" : `/${path}`;
   const response = await fetch(`${previewOrigin}${url}?release=${process.env.GITHUB_SHA}`);
-  check(response.ok && hash(Buffer.from(await response.arrayBuffer())) === hash(expectedAsset(path)), `Preview asset mismatch before promotion: ${path}`);
+  const actual = Buffer.from(await response.arrayBuffer());
+  const expected = expectedAsset(path);
+  if (hash(actual) !== hash(expected)) {
+    const a = actual.toString("utf8"), e = expected.toString("utf8");
+    let first = 0; while (first < Math.min(a.length, e.length) && a[first] === e[first]) first++;
+    console.log(JSON.stringify({ asset: path, status: response.status, contentType: response.headers.get("content-type"), actualBytes: actual.length, expectedBytes: expected.length, firstDifference: first, actualExcerpt: a.slice(Math.max(0, first - 50), first + 300), expectedExcerpt: e.slice(Math.max(0, first - 50), first + 300) }));
+  }
+  check(response.ok && hash(actual) === hash(expected), `Preview asset mismatch before promotion: ${path}`);
 }
 const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
 let attempted = false;
