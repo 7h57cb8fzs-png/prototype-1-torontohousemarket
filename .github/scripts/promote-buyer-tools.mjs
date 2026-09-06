@@ -80,7 +80,8 @@ async function checkWhitburn(base) {
   const ai = await fetch(`${base}/api/home-assistant`, {method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({listingKey:'W13676100',topic:'overview'})});
   const brief = await ai.json();
   check(ai.ok && brief.ok && brief.summary && brief.facts.length && brief.checks.length, 'Whitburn automatic snapshot failed');
-  console.log(JSON.stringify({whitburnSnapshot:{mode:brief.mode,summary:brief.summary}}));
+  console.log(JSON.stringify({whitburnSnapshot:{mode:brief.mode,summary:brief.summary,aiStatus:brief.aiStatus}}));
+  check(brief.mode === 'ai', 'Whitburn AI must pass in preview before release');
 }
 await checkWhitburn(previewOrigin);
 await checkAvenueAddress(previewOrigin);
