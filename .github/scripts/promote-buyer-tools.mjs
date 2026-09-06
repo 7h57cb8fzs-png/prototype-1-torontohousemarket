@@ -126,9 +126,16 @@ try {
   }
   const p = await (await fetch(`${origin}/api/property?listingKey=${listingKey}`)).json();
   check(p.property?.forSale && p.property?.publicListing && !p.property.comparableContext.available, "Public snapshot verification failed");
-  const ai = await fetch(`${origin}/api/home-assistant`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ listingKey, topic: "costs" }) });
-  const answer = await ai.json();
-  check(ai.ok && answer.mode === "ai" && answer.facts?.length, "Live AI assistant verification failed");
+  let ai, answer;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    ai = await fetch(`${origin}/api/home-assistant`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ listingKey, topic: "costs" }) });
+    answer = await ai.json();
+    console.log(JSON.stringify({liveAssistantCheck:{attempt:attempt+1,status:ai.status,mode:answer.mode,facts:answer.facts?.length,error:answer.error}}));
+    if (ai.ok && answer.mode === 'ai' && answer.facts?.length) break;
+    // Factual fallbacks are cached for 30 seconds; allow recovery, not a weaker gate.
+    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 32000));
+  }
+  check(ai.ok && answer.mode === "ai" && answer.facts?.length, "Live AI assistant verification failed after three attempts");
   await checkWhitburn(origin);
   await checkAvenueAddress(origin);
   await checkBedroomPricing(origin);
