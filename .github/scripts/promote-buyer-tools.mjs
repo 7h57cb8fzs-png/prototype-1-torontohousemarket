@@ -65,7 +65,6 @@ async function checkAvenueAddress(base) {
     const response = await fetch(`${base}/api/property?q=${encodeURIComponent(query)}`);
     const data = await response.json();
     const property = data.property;
-    if (!property?.listingKey && base.includes('.workers.dev')) console.log(JSON.stringify({ providerAddressDiagnostic: await (await fetch(`${base}/api/property?q=${encodeURIComponent(query)}&address_debug=1`)).json() }));
     console.log(JSON.stringify({ addressDiagnostic: { query, status: response.status, ok: data.ok, error: data.error, listingKey: property?.listingKey, address: property?.address, resolvedFromAddress: property?.resolvedFromAddress, inputValidation: property?.inputValidation, resolution: property?.resolution } }));
     check(response.ok && data.ok && property?.listingKey && property.resolvedFromAddress && /^981 Avenue (Road|Rd)\b/i.test(property.address), `Address search failed: ${query}`);
     check(!matchedKey || matchedKey === property.listingKey, 'Address variants resolve to different listings');
@@ -73,6 +72,17 @@ async function checkAvenueAddress(base) {
     console.log(JSON.stringify({ addressSearch: { query, listingKey: matchedKey, address: property.address, forSale: property.forSale } }));
   }
 }
+async function checkWhitburn(base) {
+  const response = await fetch(`${base}/api/price-check?listingKey=W13676100`);
+  const p = await response.json();
+  console.log(JSON.stringify({ whitburn: p }));
+  check(response.ok && p.ok && p.criteria && !p.reason.includes('supported home type'), 'Whitburn type matching failed');
+  const ai = await fetch(`${base}/api/home-assistant`, {method:'POST',headers:{Origin:base,'Content-Type':'application/json'},body:JSON.stringify({listingKey:'W13676100',topic:'overview'})});
+  const brief = await ai.json();
+  check(ai.ok && brief.ok && brief.summary && brief.facts.length && brief.checks.length, 'Whitburn automatic snapshot failed');
+  console.log(JSON.stringify({whitburnSnapshot:{mode:brief.mode,summary:brief.summary}}));
+}
+await checkWhitburn(previewOrigin);
 await checkAvenueAddress(previewOrigin);
 await checkBedroomPricing(previewOrigin);
 const positivePreview = await (await fetch(`${previewOrigin}/api/price-check?listingKey=N13519308`)).json();
@@ -119,6 +129,7 @@ try {
   const ai = await fetch(`${origin}/api/home-assistant`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ listingKey, topic: "costs" }) });
   const answer = await ai.json();
   check(ai.ok && answer.mode === "ai" && answer.facts?.length, "Live AI assistant verification failed");
+  await checkWhitburn(origin);
   await checkAvenueAddress(origin);
   await checkBedroomPricing(origin);
   const priceResponse = await fetch(`${origin}/api/price-check?listingKey=N13519308`);

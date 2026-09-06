@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import worker, { homeBriefCandidates, generateHomeBrief } from "../worker-v11.js";
 
 const candidates = homeBriefCandidates({ listPrice: 900000, beds: 3, baths: 2, parkingTotal: 1, details: { annualTax: 4800 }, maintenanceFee: { amount: 400, frequency: "month" }, isCondominium: true }, "costs");
+test('buyer snapshot flags unusual parking and includes verified lot context', () => {
+  const p = homeBriefCandidates({parkingTotal:10,lotWidth:30,lotDepth:140,publicListing:{lotUnits:'Feet'},propertySubType:'Semi-Detached',cityRegion:'Downsview-Roding-CFB'}, 'overview');
+  assert.ok(p.checks.some(c => c.id === 'parking_count' && c.text.includes('10')));
+  assert.ok(p.facts.some(f => f.id === 'lot' && f.text.includes('30 × 140 Feet')));
+});
 test("AI returns only server-defined facts and check IDs", async () => {
   const result = await generateHomeBrief({ AI: { run: async () => ({ response: '{"facts":["fee","tax"],"checks":["condo","costs"]}' }) } }, candidates, "costs");
   assert.equal(result.ai, true);

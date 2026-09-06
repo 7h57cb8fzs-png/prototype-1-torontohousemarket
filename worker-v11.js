@@ -2555,10 +2555,7 @@ var worker_v10_default = {
         if (!env.AMPRE_TOKEN) return json6({ ok: false, error: "IDX connection is not configured." }, 503);
         const parsed = parseAddress5(addressQuery);
         if (parsed.number && parsed.name) {
-          const addressDiagnostics = [];
-          const debugAddress = url.hostname.endsWith('.workers.dev') && url.searchParams.get('address_debug') === '1';
-          const match = await resolveAddress3(parsed, debugAddress ? { ...env, addressDiagnostics } : env);
-          if (debugAddress) return json6({ ok: true, parsed, match, addressDiagnostics });
+          const match = await resolveAddress3(parsed, env);
           if (match?.ListingKey) {
             const direct = new URL(url.origin + "/api/property");
             forwardPublicSnapshot(url, direct);
@@ -2739,12 +2736,8 @@ async function runQuery2(filter, env, top, orderby = "") {
     const response = await fetch(`${AMPRE4}/Property?${params.toString().replace(/\+/g, "%20")}`, {
       headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }
     });
-    if (!response.ok) {
-      if (env.addressDiagnostics) env.addressDiagnostics.push({ filter, status: response.status, error: (await response.text()).slice(0, 500) });
-      return [];
-    }
+    if (!response.ok) return [];
     const body = await response.json();
-    if (env.addressDiagnostics) env.addressDiagnostics.push({ filter, status: response.status, rows: (body.value || []).filter(r => String(r.StreetNumber) === '981').slice(0, 10) });
     return Array.isArray(body.value) ? body.value : [];
   } catch {
     return [];
@@ -3034,7 +3027,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-address-name-fix-v104-20260906";
+var VERSION4 = "stage4-first-page-snapshot-v105-20260906";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3143,7 +3136,7 @@ function forwardPublicSnapshot(source, target) {
 
 // Public asking-price position. This never calls the sold-comparable engine,
 // generates a report, or substitutes a VOW credential for IDX.
-const PRICE_CHECK_VERSION = "asking-position-2-bedroom-layout";
+const PRICE_CHECK_VERSION = "asking-position-3-normalized-types";
 const priceCheckBudget = new Map();
 function priceCheckArea(row) {
   const match = String(row?.LivingAreaRange || "").replace(/,/g, "").match(/^\s*(\d+)\s*[-–]\s*(\d+)\s*$/);
@@ -3156,10 +3149,14 @@ function priceCheckIdentity(row) {
     : row.UnparsedAddress || "";
   return normalizeText(address).replace(/\broad\b/g, "rd").replace(/\bavenue\b/g, "ave").replace(/\bstreet\b/g, "st").replace(/\bdrive\b/g, "dr").replace(/\bcrescent\b/g, "cres");
 }
+function priceCheckType(row) {
+  const key = String(row.PropertySubType || '').toLowerCase().replace(/[^a-z]/g, '');
+  return Object.values(DISCOVERY_TYPES).find(types => types?.some(type => type.toLowerCase().replace(/[^a-z]/g, '') === key));
+}
 function priceCheckSelection(subject, records) {
   const result = { available: false, signal: "unavailable", label: "More evidence needed", count: 0, medianAsk: null, differencePct: null, matches: [] };
   if (!publicListingFacts(subject)) return { ...result, reason: "A current listing with public details is required for a Price Check." };
-  const type = Object.values(DISCOVERY_TYPES).find(types => types?.includes(subject.PropertySubType));
+  const type = priceCheckType(subject);
   const area = priceCheckArea(subject), beds = numberOrNull(subject.BedroomsTotal), baths = numberOrNull(subject.BathroomsTotalInteger);
   const primaryBeds = numberOrNull(subject.BedroomsAboveGrade), extraBeds = numberOrNull(subject.BedroomsBelowGrade);
   const city = normalizeText(subject.City), community = normalizeText(subject.CityRegion), asking = numberOrNull(subject.ListPrice);
@@ -3168,21 +3165,26 @@ function priceCheckSelection(subject, records) {
   const seen = new Set([priceCheckIdentity(subject)]);
   const seenKeys = new Set([String(subject.ListingKey)]);
   const matches = [];
+  const relatedMatches = [];
   const sorted = [...records].sort((a, b) => (dateMs(b.ModificationTimestamp || b.OriginalEntryTimestamp) - dateMs(a.ModificationTimestamp || a.OriginalEntryTimestamp)) || String(a.ListingKey).localeCompare(String(b.ListingKey)));
   for (const row of sorted) {
     const key = String(row.ListingKey || ""), identity = priceCheckIdentity(row);
     if (!/^[A-Z]\d{7,9}$/.test(key) || seenKeys.has(key) || !identity || seen.has(identity) || !publicListingFacts(row)) continue;
-    if (!type.includes(row.PropertySubType) || normalizeText(row.City) !== city || normalizeText(row.CityRegion) !== community) continue;
+    if (priceCheckType(row) !== type || normalizeText(row.City) !== city || normalizeText(row.CityRegion) !== community) continue;
     const otherArea = priceCheckArea(row), otherBeds = numberOrNull(row.BedroomsTotal), otherBaths = numberOrNull(row.BathroomsTotalInteger), price = numberOrNull(row.ListPrice);
     if (!otherArea || otherArea.low !== area.low || otherArea.high !== area.high || otherBeds !== beds || otherBaths === null || Math.abs(otherBaths - baths) > 1 || !(price > 0)) continue;
     if (primaryBeds !== null && numberOrNull(row.BedroomsAboveGrade) !== primaryBeds || extraBeds !== null && numberOrNull(row.BedroomsBelowGrade) !== extraBeds) continue;
     const parking = numberOrNull(subject.ParkingTotal), otherParking = numberOrNull(row.ParkingTotal);
-    if (parking !== null && otherParking !== null && ((parking === 0) !== (otherParking === 0) || Math.abs(parking - otherParking) > 1)) continue;
+    if (parking !== null && otherParking !== null && ((parking === 0) !== (otherParking === 0) || Math.abs(parking - otherParking) > 1)) {
+      if (relatedMatches.length < 5) relatedMatches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName), difference: `${otherParking} reported parking spaces versus this home's ${parking}. Not used to score the asking price.` });
+      seen.add(identity); seenKeys.add(key);
+      continue;
+    }
     seen.add(identity);
     seenKeys.add(key);
     matches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, bedroomLayout: primaryBeds !== null && extraBeds !== null ? `${primaryBeds}+${extraBeds}` : null, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName) });
   }
-  result.matches = matches; result.count = matches.length;
+  result.matches = matches; result.count = matches.length; result.relatedMatches = relatedMatches;
   const layout = primaryBeds !== null && extraBeds !== null ? `${primaryBeds}+${extraBeds} reported bedroom layout` : `${beds} bedrooms`;
   result.criteria = `${cleanText(subject.CityRegion)} · ${cleanText(subject.PropertySubType)} · ${area.label} · ${layout} · bathrooms within 1`;
   if (matches.length < 3) return { ...result, reason: `Only ${matches.length} matching active listing${matches.length === 1 ? " was" : "s were"} found in the data checked. At least 3 are needed; this does not mean there are no comparable sold homes.` };
@@ -3255,14 +3257,14 @@ async function publicPriceCheck(request, env, ctx) {
     if (subject.ListingKey !== listingKey) throw new Error("Listing mismatch");
     const initial = priceCheckSelection(subject, []);
     const scan = initial.criteria ? await priceCheckRows(subject, env) : { rows: [], coverage: { scanned: 0, partial: false } };
-    const result = json7({ ok: true, listingKey, ...priceCheckSelection(subject, scan.rows), coverage: scan.coverage, checkedAt: new Date().toISOString(),
+    const result = json7({ ok: true, listingKey, reportedType: cleanText(subject.PropertySubType), ...priceCheckSelection(subject, scan.rows), coverage: scan.coverage, checkedAt: new Date().toISOString(),
       note: "Public IDX asking prices, not sold prices or an appraisal. A sample, not the full market. Condition, renovations, lot differences and offer strategy can change value. Confirm them with your Realtor." }, 200, { "Cache-Control": "public, max-age=60, s-maxage=300" });
     if (cache && ctx?.waitUntil) ctx.waitUntil(cache.put(cacheKey, result.clone()));
     return result;
   } catch { return json7({ ok: false, error: "We could not verify the comparison data just now. No price label has been assigned. Try again shortly." }, 502); }
 }
 
-const HOME_AI_VERSION = "home-brief-20260906";
+const HOME_AI_VERSION = "home-snapshot-v105-20260906";
 const homeAiBudget = new Map();
 function homeBriefCandidates(p, topic) {
   const money = value => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 }).format(value);
@@ -3272,6 +3274,8 @@ function homeBriefCandidates(p, topic) {
   if (p.beds != null && p.baths != null) add("rooms", "Room count", `${p.beds} bedrooms and ${p.baths} bathrooms reported by MLS. Confirm the layout at your visit.`);
   if (p.livingAreaRange) add("size", "Listed size", `${p.livingAreaRange} sq ft is the MLS size range, not a measured floor plan.`);
   if (p.parkingTotal != null) add("parking", "Parking", `${p.parkingTotal} parking spaces reported. Confirm which spaces are included and usable.`);
+  if (p.lotWidth > 0 && p.lotDepth > 0) add("lot", "Lot dimensions", `${p.lotWidth} × ${p.lotDepth}${p.publicListing?.lotUnits ? ` ${p.publicListing.lotUnits}` : ' (units not reported)'}. Confirm the survey, usable yard and access.`);
+  if (p.propertySubType && p.cityRegion) add("setting", "Home & neighbourhood", `${p.propertySubType} in ${p.cityRegion}. Compare the same home type locally before interpreting the asking price.`);
   if (Number.isFinite(p.daysLive)) add("timing", "Listing age", `${p.daysLive} days on this MLS listing. This does not establish total time on market across relistings.`);
   if (p.details?.annualTax != null) add("tax", "Property tax", `${money(p.details.annualTax)} per year${p.details.taxYear ? ` (${p.details.taxYear})` : " as reported"}. Confirm the current tax bill.`);
   const fee = p.maintenanceFee;
@@ -3288,7 +3292,8 @@ function homeBriefCandidates(p, topic) {
   ];
   if (p.isCondominium) checks.unshift({ id: "condo", title: "Condo documents", text: "Ask about planned building work, extra charges and a professional review of the status certificate." });
   if (p.kitchensTotal > 1 || /separate entrance|apartment|legal|permit/i.test(p.remarks || "")) checks.unshift({ id: "legal", title: "Additional unit", text: "Ask a qualified professional to verify any additional unit’s permits, permitted use and safety. A listing mention is not proof of legality." });
-  const priority = topic === "costs" ? ["fee", "tax", "reduction", "asking"] : topic === "visit" ? ["rooms", "size", "parking", "timing"] : ["rooms", "size", "reduction", "asking", "parking"];
+  if (p.parkingTotal >= 6) checks.unshift({ id: "parking_count", title: "Verify the parking count", text: `MLS reports ${p.parkingTotal} parking spaces. Confirm dimensions, tandem spaces and legal use; this unusual count can limit automated like-for-like comparisons.` });
+  const priority = topic === "costs" ? ["fee", "tax", "reduction", "asking"] : topic === "visit" ? ["rooms", "size", "parking", "timing"] : ["setting", "reduction", "lot", "size", "rooms", "asking", "parking"];
   const defaults = priority.filter(id => facts.some(f => f.id === id)).slice(0, 3);
   return { facts, checks, defaults: { facts: defaults.length ? defaults : facts.slice(0, 3).map(f => f.id), checks: topic === "costs" ? ["costs", ...(p.isCondominium ? ["condo"] : ["condition"])] : checks.slice(0, 2).map(c => c.id) } };
 }
@@ -3344,6 +3349,7 @@ async function publicHomeAssistant(request, env, ctx) {
   const result = json7({ ok: true, listingKey: body.listingKey, topic: body.topic,
     mode: selection.ai ? "ai" : "listing_checklist",
     label: selection.ai ? "AI-selected listing brief" : "Listing checklist · AI unavailable",
+    summary: selection.facts.slice(0, 2).map(id => candidates.facts.find(f => f.id === id)?.text).filter(Boolean).join(' '),
     facts: selection.facts.map(id => candidates.facts.find(f => f.id === id)),
     checks: selection.checks.map(id => candidates.checks.find(c => c.id === id)),
     note: "Based on this public MLS listing. Verify material facts with your Realtor. No sold-price analysis or value rating is provided here.",

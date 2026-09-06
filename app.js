@@ -116,6 +116,7 @@ analysisForm.addEventListener("submit", async (event) => {
     renderListing(liveListing);
     showResult();
     loadPriceCheck(liveListing);
+    loadHomeAssistant('overview');
 
     const verification = liveListing.inputValidation?.label || "Property checked.";
     setInputStatus("ok", verification);
@@ -681,6 +682,7 @@ function renderPriceCheck(data) {
   $("priceCheckNumbers").innerHTML = available ? `<div><span>THIS ASKING PRICE</span><strong>${money(data.asking)}</strong></div><div><span>MATCHED MEDIAN ASK</span><strong>${money(data.medianAsk)}</strong></div><div><span>ACTIVE MATCHES</span><strong>${data.count}</strong></div>` : "";
   $("priceCheckCriteria").textContent = data.criteria ? `Matched on: ${data.criteria}. Parking is also checked when reported for both homes.` : "";
   $("priceCheckMatches").innerHTML = (data.matches || []).map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.bedroomLayout || home.beds)} bed · ${escapeHtml(home.baths)} bath · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
+  if (data.relatedMatches?.length) $("priceCheckMatches").innerHTML += `<h4>Related homes worth comparing</h4><p>Same home type, neighbourhood, size band and bedroom count. These differ in parking and are not included in the price signal.</p>${data.relatedMatches.map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.beds)} bed · ${escapeHtml(home.baths)} bath<br>${escapeHtml(home.difference)}<br>MLS ${escapeHtml(home.listingKey)} · ${escapeHtml(home.listingOffice || 'Listing office not reported')}</small></span><b>${money(home.asking)}</b></a>`).join('')}`;
   $("priceCheckCoverage").textContent = `${data.note || "Public IDX asking prices; not the entire market."}${data.coverage?.partial ? " The search reached its scan limit." : ""}${data.checkedAt ? ` Checked ${formatDate(data.checkedAt)}; may be cached for up to 5 minutes.` : ""}`;
   $("priceCheckDetails").classList.toggle("hidden", !data.criteria);
 }
@@ -718,26 +720,28 @@ function resetHomeAssistant() {
   $("homeAiStatus").textContent = "Choose a question. No sign-up needed.";
   for (const button of document.querySelectorAll("[data-home-topic]")) { button.disabled = false; button.removeAttribute("aria-pressed"); }
 }
-for (const button of document.querySelectorAll("[data-home-topic]")) {
-  button.addEventListener("click", async () => {
-    if (!liveListing?.listingKey || !liveListing.forSale || loading) return;
+async function loadHomeAssistant(topic, button = null) {
+    if (!liveListing?.listingKey || !liveListing.forSale || liveListing.displayRestricted) return;
     resetHomeAssistant();
     const sequence = homeAiSequence;
     const listingKey = liveListing.listingKey;
     homeAiController = new AbortController();
     const controller = homeAiController;
     const timer = window.setTimeout(() => controller.abort(), 25000);
-    button.setAttribute("aria-pressed", "true");
+    button?.setAttribute("aria-pressed", "true");
     for (const question of document.querySelectorAll("[data-home-topic]")) question.disabled = true;
-    $("homeAiStatus").textContent = "Reading this home’s listing facts…";
+    $("homeAiStatus").textContent = "Preparing your buyer snapshot from this listing…";
+    const p = liveListing;
+    $("homeAiAnswer").innerHTML = `<div><h4>Your first look</h4><p>${escapeHtml([p.propertySubType, p.livingAreaRange ? `${p.livingAreaRange} sq ft` : null, p.cityRegion].filter(Boolean).join(' · '))}</p><p>${p.listPrice > 0 ? `${money(p.listPrice)} asking. ` : ''}Comparisons and property-specific checks are loading.</p></div><div><h4>Before an offer</h4><p>Check the asking-price evidence below. Asking prices are not achieved sale prices; condition and legal use still need verification.</p></div>`;
+    $("homeAiAnswer").classList.remove("hidden");
     try {
-      const response = await fetch("/api/home-assistant", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ listingKey, topic: button.dataset.homeTopic }), signal: controller.signal });
+      const response = await fetch("/api/home-assistant", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ listingKey, topic }), signal: controller.signal });
       const data = await response.json();
       if (sequence !== homeAiSequence || liveListing?.listingKey !== listingKey) return;
       if (!response.ok || !data.ok || data.listingKey !== listingKey) throw new Error(data.error || "The assistant is temporarily unavailable. Your listing facts are still below.");
       $("homeAiStatus").textContent = data.label;
       const rows = (items) => (items || []).map(item => `<li><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.text)}</span></li>`).join("");
-      $("homeAiAnswer").innerHTML = `<div><h4>From the listing</h4><ul>${rows(data.facts)}</ul></div><div><h4>Ask your Realtor</h4><ul>${rows(data.checks)}</ul></div><p>${escapeHtml(data.note)}</p>`;
+      $("homeAiAnswer").innerHTML = `${data.summary ? `<div class="home-ai-summary"><h4>The quick read</h4><p>${escapeHtml(data.summary)}</p></div>` : ''}<div><h4>What stands out</h4><ul>${rows(data.facts)}</ul></div><div><h4>What could change your decision</h4><ul>${rows(data.checks)}</ul></div><p>${escapeHtml(data.note)}</p>`;
       $("homeAiAnswer").classList.remove("hidden");
     } catch (error) {
       if (sequence !== homeAiSequence) return;
@@ -746,7 +750,9 @@ for (const button of document.querySelectorAll("[data-home-topic]")) {
       window.clearTimeout(timer);
       if (sequence === homeAiSequence) for (const question of document.querySelectorAll("[data-home-topic]")) question.disabled = false;
     }
-  });
+}
+for (const button of document.querySelectorAll("[data-home-topic]")) {
+  button.addEventListener("click", () => { if (!loading) loadHomeAssistant(button.dataset.homeTopic, button); });
 }
 
 // Discovery only opens public snapshots. It never submits a lead or sends a report.

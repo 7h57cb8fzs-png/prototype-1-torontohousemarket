@@ -119,13 +119,25 @@
         <div><span>TAX</span><strong id="factTax">—</strong></div>
       </div>
 
+      <section id="homeAiPanel" class="home-ai-panel hidden" aria-labelledby="homeAiTitle">
+        <div class="home-ai-head"><div><span class="home-ai-kicker">YOUR BUYER SNAPSHOT</span><h3 id="homeAiTitle">Worth a closer look?</h3><p>What stands out, what to question, and the evidence behind the asking price. No sign-up needed.</p></div><span class="home-ai-mark" aria-hidden="true">✦</span></div>
+        <p id="homeAiStatus" class="home-ai-status" role="status" aria-live="polite">Your snapshot loads automatically when you check a home.</p>
+        <div id="homeAiAnswer" class="home-ai-answer hidden"></div>
+        <div class="home-ai-questions" aria-label="Questions about the selected home">
+          <button type="button" data-home-topic="overview">What stands out?</button>
+          <button type="button" data-home-topic="visit">What should I check?</button>
+          <button type="button" data-home-topic="costs">What costs are listed?</button>
+        </div>
+        <p class="home-ai-note">AI prioritizes verified listing facts and questions. The Price Check below shows active asking-price evidence; it does not predict the eventual sale price.</p>
+      </section>
+
       <section id="priceCheckPanel" class="price-check hidden" aria-labelledby="priceCheckTitle" tabindex="-1">
         <div class="price-check-head">
           <div><span class="panel-kicker">BEFORE THE FULL REPORT</span><h3 id="priceCheckTitle">Price Check</h3></div>
           <span id="priceCheckBadge" class="price-check-badge" role="status" aria-live="polite">Checking similar asking prices…</span>
         </div>
         <p id="priceCheckSummary">We compare this home with similar active listings in its neighbourhood.</p>
-        <details id="priceCheckDetails" class="hidden">
+        <details id="priceCheckDetails" class="hidden" open>
           <summary>See the comparison</summary>
           <div id="priceCheckNumbers" class="price-check-numbers"></div>
           <p id="priceCheckCriteria"></p>
@@ -135,18 +147,6 @@
         </details>
         <button id="priceCheckRetry" class="text-link-btn hidden" type="button">Retry Price Check</button>
         <p class="price-check-note">An asking-price signal, not a market valuation. The full report checks recent sold evidence.</p>
-      </section>
-
-      <section id="homeAiPanel" class="home-ai-panel hidden" aria-labelledby="homeAiTitle">
-        <div class="home-ai-head"><div><span class="home-ai-kicker">AI HOME ASSISTANT</span><h3 id="homeAiTitle">Ask about this home.</h3><p>Get a focused brief from this listing’s public facts.</p></div><span class="home-ai-mark" aria-hidden="true">✦</span></div>
-        <div class="home-ai-questions" aria-label="Questions about the selected home">
-          <button type="button" data-home-topic="overview">What stands out?</button>
-          <button type="button" data-home-topic="visit">What should I check?</button>
-          <button type="button" data-home-topic="costs">What costs are listed?</button>
-        </div>
-        <p id="homeAiStatus" class="home-ai-status" role="status" aria-live="polite">Choose a question. No sign-up needed.</p>
-        <div id="homeAiAnswer" class="home-ai-answer hidden"></div>
-        <p class="home-ai-note">Listing facts can guide a visit. Sold comparables and any supported value rating stay in your private report.</p>
       </section>
 
       <div class="content-grid">

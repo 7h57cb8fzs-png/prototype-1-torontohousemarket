@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 import worker, { priceCheckSelection, priceCheckRows } from '../worker-v11.js';
 const home = (n, fields={}) => ({ ListingKey: `N100000${n}`, StreetNumber: String(n), StreetName: 'Test', StreetSuffix: 'Rd', UnparsedAddress: `${n} Test Rd, Vaughan`, City: 'Vaughan', CityRegion: 'Vellore Village', PostalCode: 'L4H 1A1', PropertySubType: 'Att/Row/Townhouse', LivingAreaRange: '1500-2000', BedroomsTotal: 3, BathroomsTotalInteger: 3, ParkingTotal: 2, ListPrice: 1000000, StandardStatus: 'Active', TransactionType: 'For Sale', ...fields });
 const peers = [home(2), home(3), home(4)];
+test('semi-detached feed spelling variants retain the same supported type', () => {
+  for (const type of ['Semi-Detached ', 'semi-detached', 'Semi Detached', 'Semi–Detached', 'SemiDetached']) {
+    const result = priceCheckSelection(home(1, {PropertySubType:type}), peers.map(p => ({...p,PropertySubType:'Semi-Detached'})));
+    assert.equal(result.count, 3); assert.equal(result.available, true);
+  }
+});
+test('parking differences remain visible as related homes, never as valuation evidence', () => {
+  const result = priceCheckSelection(home(1, {ParkingTotal:10}), peers);
+  assert.equal(result.count, 0); assert.equal(result.available, false); assert.equal(result.medianAsk, null);
+  assert.equal(result.relatedMatches.length, 3);
+  assert.match(result.relatedMatches[0].difference, /2 reported parking spaces.*10/);
+});
 test('price label is based on other matched asking prices, with explicit boundaries', () => {
   for (const [asking, signal] of [[900000,'below'],[950000,'inline'],[1000000,'inline'],[1050000,'inline'],[1100000,'above'],[500000,'review'],[1600000,'review']]) {
     const result = priceCheckSelection(home(1,{ ListPrice: asking }), peers);

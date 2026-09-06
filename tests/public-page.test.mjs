@@ -23,6 +23,18 @@ function page(fetchImpl = async () => { throw new Error("Unexpected network call
   return { elements, context };
 }
 test("public page initializes without fetching a report or missing an element", () => { page(); });
+test('buyer snapshot loads without a question click and renders a quick read', async () => {
+  let calls = 0;
+  const {elements,context} = page(async (url, init) => {
+    calls++; assert.equal(url, '/api/home-assistant'); assert.equal(JSON.parse(init.body).topic, 'overview');
+    return {ok:true,json:async()=>({ok:true,listingKey:'W13676100',label:'AI-selected listing brief',summary:'Verified snapshot.',facts:[{title:'Lot',text:'30 × 140 Feet'}],checks:[{title:'Parking',text:'Verify 10 spaces.'}],note:'Public listing facts.'})};
+  });
+  vm.runInContext("liveListing = {listingKey:'W13676100',forSale:true,listPrice:929900};",context);
+  await vm.runInContext("loadHomeAssistant('overview')",context);
+  assert.equal(calls,1); assert.match(elements.get('homeAiAnswer').innerHTML,/Verified snapshot/);
+  assert.match(script,/loadPriceCheck\(liveListing\);\s*loadHomeAssistant\('overview'\)/);
+  assert.ok(html.indexOf('id="homeAiPanel"') < html.indexOf('id="priceCheckPanel"'));
+});
 test("1+1 condos retain the reported layout without asserting a basement bedroom", () => {
   const { elements, context } = page();
   context.condoFixture = { forSale:true,isCondominium:true,beds:2,baths:2,publicListing:{bedroomsAboveGrade:1,bedroomsBelowGrade:1},remarks:'Luxury apartment',basement:['None'] };

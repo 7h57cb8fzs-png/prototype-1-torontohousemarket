@@ -277,6 +277,9 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
 .home-ai-note{font-size:13px;color:#bac9e6;line-height:1.6;margin:18px 0 0}
 .home-ai-answer{margin-top:22px;padding:24px;background:#fff;color:var(--ink);border-radius:16px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
 .home-ai-answer h4{font-size:18px;margin:0 0 14px}
+.home-ai-summary{grid-column:1/-1;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.home-ai-answer p{margin:0 0 10px;line-height:1.65;color:#46536a}
+.home-ai-summary p{font-size:19px;color:var(--ink)}
 .home-ai-answer ul{list-style:none;padding:0;margin:0;display:grid;gap:16px}
 .home-ai-answer li strong{display:block;font-size:16px;margin-bottom:5px}
 .home-ai-answer li span{display:block;font-size:16px;color:#46536a;line-height:1.6}
