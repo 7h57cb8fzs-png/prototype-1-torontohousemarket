@@ -673,18 +673,19 @@ function renderPriceCheck(data) {
   const recognized = ["below", "inline", "above", "review"].includes(data.signal);
   const available = data.available && recognized && data.count >= 3 && Number.isFinite(data.medianAsk) && data.medianAsk > 0 && Number.isFinite(data.differencePct);
   $("priceCheckBadge").className = `price-check-badge${available ? ` is-${data.signal}` : ""}`;
-  $("priceCheckBadge").textContent = `${available && data.signal === "below" ? "✓ " : ""}${available ? data.label : "More evidence needed"}`;
+  $("priceCheckBadge").textContent = `${available && data.signal === "below" ? "✓ " : ""}${available ? data.label : data.relatedMatches?.length ? `${data.relatedMatches.length} related homes found` : "More evidence needed"}`;
   syncPriceCheckQuickStatus();
   const gap = Math.abs(data.differencePct);
   $("priceCheckSummary").textContent = available
     ? `${gap === 0 ? "At" : `${formatNumber(gap)}% ${data.differencePct < 0 ? "below" : "above"}`} the median asking price of ${data.count} matching active listings. ${data.signal === "review" ? data.reason : ""}`.trim()
-    : data.reason || "There is not enough verified comparison data to assign a price label.";
+    : data.relatedMatches?.length ? `${data.relatedMatches.length} related active homes are shown below. Their parking differs from this listing, so they help you compare options but are not used to assign a price rating.` : data.reason || "There is not enough verified comparison data to assign a price label.";
   $("priceCheckNumbers").innerHTML = available ? `<div><span>THIS ASKING PRICE</span><strong>${money(data.asking)}</strong></div><div><span>MATCHED MEDIAN ASK</span><strong>${money(data.medianAsk)}</strong></div><div><span>ACTIVE MATCHES</span><strong>${data.count}</strong></div>` : "";
   $("priceCheckCriteria").textContent = data.criteria ? `Matched on: ${data.criteria}. Parking is also checked when reported for both homes.` : "";
   $("priceCheckMatches").innerHTML = (data.matches || []).map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.bedroomLayout || home.beds)} bed · ${escapeHtml(home.baths)} bath · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
   if (data.relatedMatches?.length) $("priceCheckMatches").innerHTML += `<h4>Related homes worth comparing</h4><p>Same home type, neighbourhood, size band and bedroom count. These differ in parking and are not included in the price signal.</p>${data.relatedMatches.map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.beds)} bed · ${escapeHtml(home.baths)} bath<br>${escapeHtml(home.difference)}<br>MLS ${escapeHtml(home.listingKey)} · ${escapeHtml(home.listingOffice || 'Listing office not reported')}</small></span><b>${money(home.asking)}</b></a>`).join('')}`;
   $("priceCheckCoverage").textContent = `${data.note || "Public IDX asking prices; not the entire market."}${data.coverage?.partial ? " The search reached its scan limit." : ""}${data.checkedAt ? ` Checked ${formatDate(data.checkedAt)}; may be cached for up to 5 minutes.` : ""}`;
   $("priceCheckDetails").classList.toggle("hidden", !data.criteria);
+  $("priceCheckDetails").open = !!data.criteria;
 }
 async function loadPriceCheck(listing) {
   if (!listing?.forSale || listing.displayRestricted || !listing.listingKey) return;

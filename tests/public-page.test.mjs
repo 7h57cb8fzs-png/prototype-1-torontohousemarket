@@ -23,6 +23,14 @@ function page(fetchImpl = async () => { throw new Error("Unexpected network call
   return { elements, context };
 }
 test("public page initializes without fetching a report or missing an element", () => { page(); });
+test('related homes are visible immediately and not described as zero evidence', () => {
+  const {elements,context} = page();
+  context.related = {available:false,criteria:'Same type and neighbourhood',count:0,relatedMatches:[{listingKey:'W13602036',address:'53 Foxrun Avenue',asking:874900,size:'1100–1500 sq ft',beds:3,baths:2,difference:'Different parking.'}]};
+  vm.runInContext('renderPriceCheck(related)',context);
+  assert.equal(elements.get('priceCheckDetails').open,true);
+  assert.match(elements.get('priceCheckBadge').textContent,/1 related homes found/);
+  assert.match(elements.get('priceCheckMatches').innerHTML,/53 Foxrun/);
+});
 test('buyer snapshot loads without a question click and renders a quick read', async () => {
   let calls = 0;
   const {elements,context} = page(async (url, init) => {
