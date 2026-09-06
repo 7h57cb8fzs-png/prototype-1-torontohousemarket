@@ -43,6 +43,12 @@ for (const b of before.bindings.filter(b => b.type === "plain_text" && b.name !=
   check(next.bindings.some(n => n.name === b.name && n.type === b.type && n.text === b.text), "Existing configuration differs from the preview");
 }
 const schedule = await cf(`/workers/scripts/${worker}/schedules`);
+const previewOrigin = `https://${candidate.slice(0, 8)}-${worker}.7h57cb8fzs.workers.dev`;
+for (const path of ["index.html", "app.js", "styles.css"]) {
+  const url = path === "index.html" ? "/" : `/${path}`;
+  const response = await fetch(`${previewOrigin}${url}?release=${process.env.GITHUB_SHA}`);
+  check(response.ok && hash(Buffer.from(await response.arrayBuffer())) === hash(expectedAsset(path)), `Preview asset mismatch before promotion: ${path}`);
+}
 const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
 let attempted = false;
 try {
