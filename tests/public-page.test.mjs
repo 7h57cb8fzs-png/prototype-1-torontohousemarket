@@ -72,6 +72,7 @@ test('Price Check displays its basis and clears all evidence for the next proper
   context.priceFixture={available:true,signal:'below',label:'Lower asking price',asking:900000,medianAsk:1000000,differencePct:-10,count:3,criteria:'Vellore Village · Townhouse',matches:[{listingKey:'N1000002',address:'<img src=x>',asking:1000000,size:'1500–2000 sq ft',beds:3,baths:3}]};
   vm.runInContext('renderPriceCheck(priceFixture)',context);
   assert.match(elements.get('priceCheckBadge').textContent,/✓ Lower/);
+  assert.equal(elements.get('priceCheckQuickStatus').textContent, elements.get('priceCheckBadge').textContent);
   assert.match(elements.get('priceCheckSummary').textContent,/10% below.*3 matching active/);
   assert.ok(!elements.get('priceCheckMatches').innerHTML.includes('<img'));
   vm.runInContext('renderListing({forSale:true,listingKey:"N1000009",photos:[]})',context);
@@ -79,6 +80,7 @@ test('Price Check displays its basis and clears all evidence for the next proper
   assert.equal(elements.get('priceCheckNumbers').innerHTML,'');
   vm.runInContext('renderPriceCheck({available:false,count:0,reason:"Only 0 matching active listings were found."})',context);
   assert.equal(elements.get('priceCheckBadge').textContent,'More evidence needed');
+  assert.equal(elements.get('priceCheckQuickStatus').textContent,'More evidence needed');
   assert.equal(elements.get('priceCheckNumbers').innerHTML,'');
 });
 test('late Price Check response cannot overwrite a different property snapshot', async () => {
@@ -89,4 +91,5 @@ test('late Price Check response cannot overwrite a different property snapshot',
   finish(Response.json({ok:true,listingKey:'N1000001',available:true,signal:'below',label:'OLD RESULT',count:3,medianAsk:1000000,asking:900000,differencePct:-10}));
   await pending;
   assert.ok(!elements.get('priceCheckBadge').textContent.includes('OLD RESULT'));
+  assert.ok(!elements.get('priceCheckQuickStatus').textContent.includes('OLD RESULT'));
 });

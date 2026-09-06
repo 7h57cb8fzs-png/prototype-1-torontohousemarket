@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=price-check-layout-20260906" />
+  <link rel="stylesheet" href="/styles.css?v=price-check-visible-20260906" />
 </head>
 <body>
 <header class="site-header">
@@ -84,6 +84,11 @@
           <h3 id="liveAddress">—</h3>
           <div id="livePrice" class="listing-price">—</div>
           <div id="liveDetails" class="fact-line">—</div>
+          <a id="priceCheckJump" class="price-check-jump hidden" href="#priceCheckPanel">
+            <span>PRICE CHECK</span>
+            <strong id="priceCheckQuickStatus" class="price-check-badge">Checking similar asking prices…</strong>
+            <small>See the comparison ↓</small>
+          </a>
 
           <div id="activeActionBox" class="speed-action-box hidden">
             <div class="speed-action-top"><span>SHOWING REQUEST</span><small>1–24 HOUR TARGET*</small></div>
@@ -114,7 +119,7 @@
         <div><span>TAX</span><strong id="factTax">—</strong></div>
       </div>
 
-      <section id="priceCheckPanel" class="price-check hidden" aria-labelledby="priceCheckTitle">
+      <section id="priceCheckPanel" class="price-check hidden" aria-labelledby="priceCheckTitle" tabindex="-1">
         <div class="price-check-head">
           <div><span class="panel-kicker">BEFORE THE FULL REPORT</span><h3 id="priceCheckTitle">Price Check</h3></div>
           <span id="priceCheckBadge" class="price-check-badge" role="status" aria-live="polite">Checking similar asking prices…</span>
@@ -299,6 +304,6 @@
   <div id="galleryCounter" class="gallery-counter"></div>
 </div>
 
-<script src="/app.js?v=price-check-layout-20260906" defer></script>
+<script src="/app.js?v=price-check-visible-20260906" defer></script>
 </body>
 </html>

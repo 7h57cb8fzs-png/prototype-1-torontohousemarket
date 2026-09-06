@@ -346,3 +346,10 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
 .price-check-matches a{display:flex;justify-content:space-between;gap:20px;padding:14px 0;border-top:1px solid var(--line);text-decoration:none;color:var(--ink);font-size:15px}
 .price-check-matches a:hover strong{text-decoration:underline}.price-check-matches small{display:block;color:#546076;font-size:12px;line-height:1.5;margin-top:5px}.price-check-matches b{white-space:nowrap}
 @media(max-width:700px){.price-check{padding:22px}.price-check-head{align-items:flex-start;flex-direction:column;gap:14px}.price-check-numbers{grid-template-columns:1fr;gap:18px}.price-check-matches a{flex-direction:column;gap:8px}.price-check-badge{font-size:15px}}
+
+.price-check-jump{display:grid;justify-items:start;gap:8px;margin:18px 0;padding:15px;background:#f7f9fc;border:1px solid #d5dce8;border-radius:14px;text-decoration:none;color:var(--ink)}
+.price-check-jump>span{font-size:11px;font-weight:800;letter-spacing:.07em;color:#46536a}
+.price-check-jump .price-check-badge{font-size:14px;padding:7px 12px}
+.price-check-jump small{font-size:13px;font-weight:700;color:var(--blue-dark)}
+.price-check-jump:hover{border-color:var(--blue)}
+#priceCheckPanel{scroll-margin-top:90px}

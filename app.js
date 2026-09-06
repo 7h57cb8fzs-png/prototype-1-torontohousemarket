@@ -196,6 +196,7 @@ function renderListing(listing) {
   renderDetails(listing);
   $("homeAiPanel").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
   $("priceCheckPanel").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
+  $("priceCheckJump").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
   const updated = listing.publicListing?.updatedAt;
   $("snapshotFreshness").textContent = active ? `${updated ? `Listing updated ${formatDate(updated)}. ` : ""}Public IDX snapshot · may be cached for up to 5 minutes. Confirm availability before visiting.` : "No current for-sale listing verified. Historical details may not describe the property today.";
 }
@@ -643,12 +644,18 @@ function escapeAttr(value) {
   return escapeHtml(value).replace(/`/g, "&#096;");
 }
 
+function syncPriceCheckQuickStatus() {
+  $("priceCheckQuickStatus").textContent = $("priceCheckBadge").textContent;
+  $("priceCheckQuickStatus").className = $("priceCheckBadge").className;
+}
 function resetPriceCheck() {
   priceCheckSequence++;
   priceCheckController?.abort();
   $("priceCheckPanel").classList.add("hidden");
+  $("priceCheckJump").classList.add("hidden");
   $("priceCheckBadge").className = "price-check-badge";
   $("priceCheckBadge").textContent = "Checking similar asking prices…";
+  syncPriceCheckQuickStatus();
   $("priceCheckSummary").textContent = "We compare this home with similar active listings in its neighbourhood.";
   $("priceCheckDetails").open = false;
   $("priceCheckDetails").classList.add("hidden");
@@ -660,6 +667,7 @@ function renderPriceCheck(data) {
   const available = data.available && recognized && data.count >= 3 && Number.isFinite(data.medianAsk) && data.medianAsk > 0 && Number.isFinite(data.differencePct);
   $("priceCheckBadge").className = `price-check-badge${available ? ` is-${data.signal}` : ""}`;
   $("priceCheckBadge").textContent = `${available && data.signal === "below" ? "✓ " : ""}${available ? data.label : "More evidence needed"}`;
+  syncPriceCheckQuickStatus();
   const gap = Math.abs(data.differencePct);
   $("priceCheckSummary").textContent = available
     ? `${gap === 0 ? "At" : `${formatNumber(gap)}% ${data.differencePct < 0 ? "below" : "above"}`} the median asking price of ${data.count} matching active listings. ${data.signal === "review" ? data.reason : ""}`.trim()
@@ -674,6 +682,7 @@ async function loadPriceCheck(listing) {
   if (!listing?.forSale || listing.displayRestricted || !listing.listingKey) return;
   resetPriceCheck();
   $("priceCheckPanel").classList.remove("hidden");
+  $("priceCheckJump").classList.remove("hidden");
   const sequence = priceCheckSequence, listingKey = listing.listingKey;
   priceCheckController = new AbortController();
   const controller = priceCheckController, timer = window.setTimeout(() => controller.abort(), 30000);
@@ -688,6 +697,7 @@ async function loadPriceCheck(listing) {
   } catch (error) {
     if (sequence !== priceCheckSequence) return;
     $("priceCheckBadge").textContent = "Price Check unavailable";
+    syncPriceCheckQuickStatus();
     $("priceCheckSummary").textContent = error.name === "AbortError" ? "The comparison took too long. The listing facts are still available; no price label has been assigned." : error.message;
     $("priceCheckRetry").classList.remove("hidden");
   } finally { window.clearTimeout(timer); }
