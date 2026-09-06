@@ -1,129 +1,40 @@
-name: Deploy guarded VOW comparable fix
-# Retry only after the complete verified Worker source is present on the branch.
-
+name: Promote verified buyer tools with rollback
 on:
   push:
-    branches:
-      - fix/vow-comparable-engine
+    branches: [fix/vow-comparable-engine]
     paths:
-      - .github/workflows/deploy-vow-comparable-fix.yml
+      - worker-v11.js
       - app.js
       - index.html
       - styles.css
-      - .assetsignore
       - wrangler.jsonc
-      - worker-v11.js
-      - tests/comparable-engine.test.mjs
-      - tests/email-copy.test.mjs
-      - tests/job-orchestration.test.mjs
-      - tests/public-discovery.test.mjs
-      - tests/public-page.test.mjs
-
+      - tests/**
+      - .github/workflows/deploy-vow-comparable-fix.yml
+      - .github/scripts/promote-buyer-tools.mjs
 permissions:
   contents: read
-
+concurrency:
+  group: thm-guarded-production
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out audited source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: fix/vow-comparable-engine
-
-      - name: Validate comparable engine
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate complete release
         run: |
-          set -euo pipefail
           node --check worker-v11.js
           node --check app.js
           node --test tests/*.test.mjs
-          grep -q 'See the home.' index.html
-          grep -q 'FULL BUYER REPORT' index.html
-          grep -q 'function renderMarketRead' app.js
-          test "$(sha256sum worker-v11.js | cut -d' ' -f1)" = "0c29ea238668e96591018142bfcaa771fbac3c49f48240d5db7759d5f25f6a42"
-
-      - name: Deploy with source guard and automatic rollback
+      - name: Promote the tested Cloudflare version
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          WORKER_NAME: prototype-1-torontohousemarket
-          PRODUCTION_URL: https://torontohousemarket.com
-          EXPECTED_BEFORE_SHAS: "4a53b56a1f0cf496b0794ebe25c6d1aab499d88d3eb32121510925274f1c694e"
-          EXPECTED_AFTER_SHA: 0c29ea238668e96591018142bfcaa771fbac3c49f48240d5db7759d5f25f6a42
-        run: |
-          set -euo pipefail
-          work_dir="$(mktemp -d)"
-          trap 'rm -rf "${work_dir}"' EXIT
-          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
-          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-
-          curl -fsS -H "${auth}" -o "${work_dir}/deployments-before.json" "${api}/workers/scripts/${WORKER_NAME}/deployments"
-          rollback_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' "${work_dir}/deployments-before.json" | head -1)"
-          test -n "${rollback_id}"
-          test "${rollback_id}" != "null"
-
-          curl -fsS -H "${auth}" -o "${work_dir}/version-before.json" "${api}/workers/workers/${WORKER_NAME}/versions/${rollback_id}?include=modules"
-          jq -r '.result.modules[] | select(.name == "worker-v11.js") | .content_base64' "${work_dir}/version-before.json" | base64 --decode > "${work_dir}/worker-before.js"
-          actual_before_sha="$(sha256sum "${work_dir}/worker-before.js" | cut -d' ' -f1)"
-          echo "Active source SHA-256: ${actual_before_sha}"
-          case " ${EXPECTED_BEFORE_SHAS} " in
-            *" ${actual_before_sha} "*) ;;
-            *) echo "Active source is not one of the two audited pre-deploy versions."; exit 1 ;;
-          esac
-
-          curl -fsS -H "${auth}" -o "${work_dir}/settings-before.json" "${api}/workers/scripts/${WORKER_NAME}/settings"
-          jq -e '.success == true' "${work_dir}/settings-before.json" >/dev/null
-          jq -S '[.result.bindings[] | {name, type}] | sort_by(.name)' "${work_dir}/version-before.json" > "${work_dir}/bindings-before.json"
-          curl -sS -H "${auth}" -o "${work_dir}/schedules-before.json" "${api}/workers/scripts/${WORKER_NAME}/schedules" || true
-
-          rollback() {
-            jq -n --arg version_id "${rollback_id}" '{strategy:"percentage",versions:[{percentage:100,version_id:$version_id}],annotations:{"workers/message":"Automatic rollback after comparable-fix verification failure"}}' > "${work_dir}/rollback.json"
-            curl -sS --request POST -H "${auth}" -H 'Content-Type: application/json' --data-binary @"${work_dir}/rollback.json" "${api}/workers/scripts/${WORKER_NAME}/deployments" >/dev/null || true
-          }
-          trap 'status=$?; if [ "${status}" -ne 0 ]; then rollback; fi; rm -rf "${work_dir}"' EXIT
-
-          # Wrangler uploads the audited Worker and its static assets as one version.
-          # Dashboard-only plain-text settings are passed without logging their values;
-          # configured secrets are preserved by Cloudflare and never read by this job.
-          wrangler_args=()
-          while IFS= read -r encoded; do
-            binding="$(printf '%s' "${encoded}" | base64 --decode)"
-            name="$(printf '%s' "${binding}" | jq -r '.name')"
-            value="$(printf '%s' "${binding}" | jq -r '.text')"
-            wrangler_args+=(--var "${name}:${value}")
-          done < <(jq -r '.result.bindings[] | select(.type == "plain_text") | {name,text} | @base64' "${work_dir}/version-before.json")
-          if ! npx --yes wrangler@4.129.0 deploy --no-bundle "${wrangler_args[@]}" >"${work_dir}/wrangler.log" 2>&1; then
-            echo "Wrangler deployment failed; production will be rolled back."
-            exit 1
-          fi
-
-          active_id="${rollback_id}"
-          for attempt in 1 2 3 4 5; do
-            curl -fsS -H "${auth}" -o "${work_dir}/deployments-after.json" "${api}/workers/scripts/${WORKER_NAME}/deployments"
-            active_id="$(jq -r '.result.deployments[0].versions[] | select(.percentage == 100) | .version_id' "${work_dir}/deployments-after.json" | head -1)"
-            if [ -n "${active_id}" ] && [ "${active_id}" != "${rollback_id}" ]; then break; fi
-            sleep 2
-          done
-          test "${active_id}" != "${rollback_id}"
-          curl -fsS -H "${auth}" -o "${work_dir}/version-after.json" "${api}/workers/workers/${WORKER_NAME}/versions/${active_id}?include=modules"
-          jq -r '.result.modules[] | select(.name == "worker-v11.js") | .content_base64' "${work_dir}/version-after.json" | base64 --decode > "${work_dir}/worker-after.js"
-          test "$(sha256sum "${work_dir}/worker-after.js" | cut -d' ' -f1)" = "${EXPECTED_AFTER_SHA}"
-          jq -S '[.result.bindings[] | select(.name != "ASSETS") | {name, type}] | sort_by(.name)' "${work_dir}/version-before.json" > "${work_dir}/non-asset-bindings-before.json"
-          jq -S '[.result.bindings[] | select(.name != "ASSETS") | {name, type}] | sort_by(.name)' "${work_dir}/version-after.json" > "${work_dir}/non-asset-bindings-after.json"
-          cmp "${work_dir}/non-asset-bindings-before.json" "${work_dir}/non-asset-bindings-after.json"
-          jq -e '[.result.bindings[].name] | index("ASSETS") != null' "${work_dir}/version-after.json" >/dev/null
-
-          curl -sS -H "${auth}" -o "${work_dir}/schedules-after.json" "${api}/workers/scripts/${WORKER_NAME}/schedules" || true
-          if jq -e '.success == true' "${work_dir}/schedules-before.json" >/dev/null 2>&1 && jq -e '.success == true' "${work_dir}/schedules-after.json" >/dev/null 2>&1; then
-            diff -u <(jq -S '[.result[].cron]' "${work_dir}/schedules-before.json") <(jq -S '[.result[].cron]' "${work_dir}/schedules-after.json")
-          fi
-          curl -fsS "${PRODUCTION_URL}/api/version" | jq -e '.ok == true and .vowAccess == true' >/dev/null
-          curl -fsS -H 'Cache-Control: no-cache' "${PRODUCTION_URL}/?restore=${GITHUB_SHA}" -o "${work_dir}/home.html"
-          test "$(wc -c < "${work_dir}/home.html")" -gt 1000
-          grep -q 'See the home.' "${work_dir}/home.html"
-          grep -q 'FULL BUYER REPORT' "${work_dir}/home.html"
-          curl -fsS -H 'Cache-Control: no-cache' "${PRODUCTION_URL}/app.js?v=copy-20260905&restore=${GITHUB_SHA}" -o "${work_dir}/app.js"
-          grep -q 'function renderMarketRead' "${work_dir}/app.js"
-
-          trap - EXIT
-          rm -rf "${work_dir}"
+          EXPECTED_BEFORE_SHA: 0c29ea238668e96591018142bfcaa771fbac3c49f48240d5db7759d5f25f6a42
+          CANDIDATE_VERSION_ID: e71199cb-136e-45af-a1db-9dbef934f088
+        run: node .github/scripts/promote-buyer-tools.mjs
