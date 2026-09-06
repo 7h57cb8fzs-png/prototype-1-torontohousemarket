@@ -328,3 +328,21 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
 @media(max-width:1000px){.discovery-form{grid-template-columns:1fr 1fr}.discovery-results{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){.discovery-shortcuts,.discovery-results{grid-template-columns:1fr}.discovery-tile{padding:22px}.discovery-panel{padding:20px}.discovery-form{grid-template-columns:1fr}.nav-actions{gap:12px}.nav-actions>a{font-size:13px}.discovery-section{padding:38px 0}.discovery-heading p{font-size:16px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{transition:none!important;animation:none!important}}
+
+/* Compact public asking-price check; full evidence is optional to expand. */
+.price-check{margin:24px 0;padding:24px 28px;background:#fff;border:1px solid #d5dce8;border-radius:20px}
+.price-check-head{display:flex;justify-content:space-between;align-items:center;gap:16px}
+.price-check h3{font-size:26px;letter-spacing:-.03em;margin:5px 0 0}
+.price-check-badge{display:inline-flex;align-items:center;border-radius:999px;padding:10px 16px;background:#edf1f7;color:#37455c;font-size:16px;font-weight:750;line-height:1.4}
+.price-check-badge.is-below{background:#e2f5ed;color:#086348}.price-check-badge.is-inline{background:#e8eeff;color:#2542a5}.price-check-badge.is-above,.price-check-badge.is-review{background:#fff1d8;color:#80520a}
+.price-check>p{font-size:16px;color:#46536a;line-height:1.6;margin:14px 0}
+.price-check .price-check-note{font-size:13px;margin-bottom:0;color:#546076}
+.price-check summary{font-size:15px;font-weight:750;color:var(--blue-dark);cursor:pointer;padding:4px 0}
+.price-check-numbers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:20px 0}
+.price-check-numbers span{display:block;font-size:11px;letter-spacing:.03em;color:#546076;margin-bottom:6px;font-weight:700}
+.price-check-numbers strong{font-size:24px;letter-spacing:-.02em}
+.price-check details>p{font-size:14px;line-height:1.6;color:#546076}
+.price-check-matches{display:grid;gap:0;max-height:370px;overflow:auto}
+.price-check-matches a{display:flex;justify-content:space-between;gap:20px;padding:14px 0;border-top:1px solid var(--line);text-decoration:none;color:var(--ink);font-size:15px}
+.price-check-matches a:hover strong{text-decoration:underline}.price-check-matches small{display:block;color:#546076;font-size:12px;line-height:1.5;margin-top:5px}.price-check-matches b{white-space:nowrap}
+@media(max-width:700px){.price-check{padding:22px}.price-check-head{align-items:flex-start;flex-direction:column;gap:14px}.price-check-numbers{grid-template-columns:1fr;gap:18px}.price-check-matches a{flex-direction:column;gap:8px}.price-check-badge{font-size:15px}}

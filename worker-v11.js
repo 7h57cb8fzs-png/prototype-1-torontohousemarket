@@ -3031,6 +3031,7 @@ var worker_v11_default = {
     if (url.pathname === "/api/version") return json7({ ok: true, version: VERSION4, snapshot: "authorized-public-idx-facts", schoolEnrichment: "free-public-nearest-school", schoolAiConfigured: false, comparables: "protected-post-form-sold-evidence", reports: "vow-data-gemini-primary-openrouter-fallback", operations: "admin-and-job-queue", vowAccess: env.VOW_ACCESS_ENABLED === "true" });
     if (url.pathname === "/api/school-enrichment" && request.method === "GET") return schoolEnrichment(request, env);
     if (url.pathname === "/api/property" && request.method === "GET") return publicProperty(request, env, ctx);
+    if (url.pathname === "/api/price-check" && request.method === "GET") return publicPriceCheck(request, env, ctx);
     if (url.pathname === "/api/discovery/config" && request.method === "GET") return json7({ ok: true, enabled: env.PUBLIC_DISCOVERY_ENABLED === "true", cities: DISCOVERY_CITIES }, 200);
     if (url.pathname === "/api/discovery" && request.method === "GET") return publicDiscovery(request, env, ctx);
     if (url.pathname === "/api/home-assistant" && request.method === "POST") return publicHomeAssistant(request, env, ctx);
@@ -3120,6 +3121,118 @@ function forwardPublicSnapshot(source, target) {
     target.searchParams.set("mode", "public_snapshot");
     target.searchParams.set("snapshot_version", source.searchParams.get("snapshot_version") || "public-facts-20260906");
   }
+}
+
+// Public asking-price position. This never calls the sold-comparable engine,
+// generates a report, or substitutes a VOW credential for IDX.
+const PRICE_CHECK_VERSION = "asking-position-1";
+const priceCheckBudget = new Map();
+function priceCheckArea(row) {
+  const match = String(row?.LivingAreaRange || "").replace(/,/g, "").match(/^\s*(\d+)\s*[-–]\s*(\d+)\s*$/);
+  if (!match || +match[1] <= 0 || +match[2] <= +match[1]) return null;
+  return { low: +match[1], high: +match[2], label: `${+match[1]}–${+match[2]} sq ft` };
+}
+function priceCheckIdentity(row) {
+  const address = row.StreetNumber && row.StreetName
+    ? [row.UnitNumber, row.StreetNumber, row.StreetName, row.StreetSuffix, row.StreetDirSuffix].filter(Boolean).join(" ")
+    : row.UnparsedAddress || "";
+  return normalizeText(address).replace(/\broad\b/g, "rd").replace(/\bavenue\b/g, "ave").replace(/\bstreet\b/g, "st").replace(/\bdrive\b/g, "dr").replace(/\bcrescent\b/g, "cres");
+}
+function priceCheckSelection(subject, records) {
+  const result = { available: false, signal: "unavailable", label: "More evidence needed", count: 0, medianAsk: null, differencePct: null, matches: [] };
+  if (!publicListingFacts(subject)) return { ...result, reason: "A current listing with public details is required for a Price Check." };
+  const type = Object.values(DISCOVERY_TYPES).find(types => types?.includes(subject.PropertySubType));
+  const area = priceCheckArea(subject), beds = numberOrNull(subject.BedroomsTotal), baths = numberOrNull(subject.BathroomsTotalInteger);
+  const city = normalizeText(subject.City), community = normalizeText(subject.CityRegion), asking = numberOrNull(subject.ListPrice);
+  if (!type || !area || beds === null || baths === null || !city || !community || !(asking > 0)) return { ...result, reason: "The listing is missing a supported home type, closed size range, room count, neighbourhood, or asking price. We cannot make a reliable price comparison yet." };
+  const seen = new Set([priceCheckIdentity(subject)]);
+  const seenKeys = new Set([String(subject.ListingKey)]);
+  const matches = [];
+  const sorted = [...records].sort((a, b) => (dateMs(b.ModificationTimestamp || b.OriginalEntryTimestamp) - dateMs(a.ModificationTimestamp || a.OriginalEntryTimestamp)) || String(a.ListingKey).localeCompare(String(b.ListingKey)));
+  for (const row of sorted) {
+    const key = String(row.ListingKey || ""), identity = priceCheckIdentity(row);
+    if (!/^[A-Z]\d{7,9}$/.test(key) || seenKeys.has(key) || !identity || seen.has(identity) || !publicListingFacts(row)) continue;
+    if (!type.includes(row.PropertySubType) || normalizeText(row.City) !== city || normalizeText(row.CityRegion) !== community) continue;
+    const otherArea = priceCheckArea(row), otherBeds = numberOrNull(row.BedroomsTotal), otherBaths = numberOrNull(row.BathroomsTotalInteger), price = numberOrNull(row.ListPrice);
+    if (!otherArea || otherArea.low !== area.low || otherArea.high !== area.high || otherBeds !== beds || otherBaths === null || Math.abs(otherBaths - baths) > 1 || !(price > 0)) continue;
+    const parking = numberOrNull(subject.ParkingTotal), otherParking = numberOrNull(row.ParkingTotal);
+    if (parking !== null && otherParking !== null && ((parking === 0) !== (otherParking === 0) || Math.abs(parking - otherParking) > 1)) continue;
+    seen.add(identity);
+    seenKeys.add(key);
+    matches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName) });
+  }
+  result.matches = matches; result.count = matches.length;
+  result.criteria = `${cleanText(subject.CityRegion)} · ${cleanText(subject.PropertySubType)} · ${area.label} · ${beds} bedrooms · bathrooms within 1`;
+  if (matches.length < 3) return { ...result, reason: `Only ${matches.length} matching active listing${matches.length === 1 ? " was" : "s were"} found in the data checked. At least 3 are needed; this does not mean there are no comparable sold homes.` };
+  const prices = matches.map(r => r.asking).sort((a, b) => a - b);
+  const median = medianPrice(prices);
+  // Do not cherry-pick prices around the subject or remove expensive/cheap
+  // matches to manufacture a desirable label. Withhold a widely spread pool.
+  const low = prices[Math.floor((prices.length - 1) * .25)], high = prices[Math.ceil((prices.length - 1) * .75)];
+  if ((high - low) / median > .30) return { ...result, reason: "Similar listings have widely different asking prices. Their condition, lot or other features need a closer review before we label this price." };
+  const difference = (asking - median) / median * 100;
+  const signal = Math.abs(difference) > 25 ? "review" : difference < -5 ? "below" : difference > 5 ? "above" : "inline";
+  return { ...result, available: true, signal, label: { below: "Lower asking price", inline: "In line with similar listings", above: "Higher asking price", review: "Price needs a closer look" }[signal],
+    asking, medianAsk: median, differencePct: Math.round(difference * 10) / 10,
+    reason: signal === "review" ? "The asking price is unusually far from the matched listings. Verify pricing strategy, property condition and listing details before treating the gap as value." : "Compared with the median asking price of the matching active listings checked." };
+}
+async function priceCheckRows(subject, env) {
+  const community = cleanText(subject.CityRegion);
+  const postal = String(subject.PostalCode || "").replace(/\s+/g, "").slice(0, 3);
+  const filters = [`contains(CityRegion,'${odataString(community)}')`];
+  if (/^[A-Z]\d[A-Z]$/i.test(postal)) filters.push(`startswith(PostalCode,'${postal}')`);
+  let countUrl, countBody;
+  for (const filter of filters) {
+    countUrl = new URL(`${AMPRE_BASE}/Property`);
+    countUrl.search = new URLSearchParams({ "$filter": filter, "$count": "true", "$top": "1" });
+    const r = await amplifyFetch(countUrl.href, { AMPRE_TOKEN: env.AMPRE_TOKEN });
+    if (r.status === 400) continue;
+    if (!r.ok) throw new Error("IDX unavailable");
+    countBody = await r.json(); break;
+  }
+  const count = countBody?.["@odata.count"];
+  if (!Number.isSafeInteger(count) || count < 0 || count > 100600) throw new Error("Cannot verify inventory coverage");
+  const skipped = Math.max(0, count - 600);
+  countUrl.searchParams.delete("$count"); countUrl.searchParams.set("$top", "100");
+  if (skipped) countUrl.searchParams.set("$skip", String(skipped));
+  let next = count ? countUrl.href : null, pages = 0;
+  const rows = [], visited = new Set(), started = Date.now();
+  while (next && pages < 6 && Date.now() - started < 18000) {
+    const u = new URL(next, AMPRE_BASE);
+    if (u.origin !== new URL(AMPRE_BASE).origin || u.pathname !== "/odata/Property" || u.username || u.password || u.hash || visited.has(u.href)) throw new Error("Invalid pagination");
+    visited.add(u.href);
+    const r = await amplifyFetch(u.href, { AMPRE_TOKEN: env.AMPRE_TOKEN });
+    if (!r.ok) throw new Error("IDX unavailable");
+    const data = await r.json();
+    if (!Array.isArray(data.value) || data.value.length > 100) throw new Error("Invalid IDX page");
+    rows.push(...data.value); pages++; next = data["@odata.nextLink"] || null;
+  }
+  return { rows, coverage: { scanned: rows.length, partial: skipped > 0 || !!next } };
+}
+async function publicPriceCheck(request, env, ctx) {
+  const url = new URL(request.url), listingKey = url.searchParams.get("listingKey");
+  if (!/^[A-Z]\d{7,9}$/.test(listingKey || "") || [...url.searchParams.keys()].some(key => key !== "listingKey")) return json7({ ok: false, error: "Choose a valid MLS listing." }, 400);
+  if (env.PUBLIC_DISCOVERY_ENABLED !== "true" || !env.AMPRE_TOKEN) return json7({ ok: false, error: "Price Check is temporarily unavailable." }, 503);
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  const cacheKey = new Request(`${url.origin}/api/price-check-cache/${PRICE_CHECK_VERSION}/${listingKey}`);
+  const cached = cache ? await cache.match(cacheKey) : null;
+  if (cached) return cached;
+  const client = request.headers.get("CF-Connecting-IP") || "unknown", now = Date.now(), bucket = priceCheckBudget.get(client);
+  if (bucket && bucket.until > now && bucket.count >= 10) return json7({ ok: false, error: "Please wait a minute before checking more prices." }, 429, { "Retry-After": "60" });
+  if (priceCheckBudget.size >= 2000) priceCheckBudget.clear();
+  priceCheckBudget.set(client, bucket && bucket.until > now ? { count: bucket.count + 1, until: bucket.until } : { count: 1, until: now + 60000 });
+  try {
+    const response = await amplifyFetch(`${AMPRE_BASE}/Property('${listingKey}')`, { AMPRE_TOKEN: env.AMPRE_TOKEN });
+    if (!response.ok) throw new Error("IDX subject unavailable");
+    const subject = await response.json();
+    if (subject.ListingKey !== listingKey) throw new Error("Listing mismatch");
+    const initial = priceCheckSelection(subject, []);
+    const scan = initial.criteria ? await priceCheckRows(subject, env) : { rows: [], coverage: { scanned: 0, partial: false } };
+    const result = json7({ ok: true, listingKey, ...priceCheckSelection(subject, scan.rows), coverage: scan.coverage, checkedAt: new Date().toISOString(),
+      note: "Public IDX asking prices, not sold prices or an appraisal. A sample, not the full market. Condition, renovations, lot differences and offer strategy can change value. Confirm them with your Realtor." }, 200, { "Cache-Control": "public, max-age=60, s-maxage=300" });
+    if (cache && ctx?.waitUntil) ctx.waitUntil(cache.put(cacheKey, result.clone()));
+    return result;
+  } catch { return json7({ ok: false, error: "We could not verify the comparison data just now. No price label has been assigned. Try again shortly." }, 502); }
 }
 
 const HOME_AI_VERSION = "home-brief-20260906";
@@ -4948,6 +5061,8 @@ export {
   discoverySelection,
   homeBriefCandidates,
   generateHomeBrief,
+  priceCheckSelection,
+  priceCheckRows,
   safeAmpreNextLink
 };
 //# sourceMappingURL=worker-v11.js.map

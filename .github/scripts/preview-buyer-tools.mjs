@@ -35,12 +35,14 @@ assert.deepEqual(bindings(after.bindings), bindings(before.bindings));
 assert.equal((await cf(`/workers/scripts/${worker}/deployments`)).deployments[0].versions[0].version_id, active);
 const home = await fetch(preview); assert.equal(home.status, 200); assert.match(await home.text(), /AI HOME ASSISTANT/);
 const checks = [];
+const priceKeys = new Set();
 let aiListingKey;
 for (const city of ["Toronto", "Vaughan"]) for (const mode of ["new", "luxury", "budget"]) {
   const url = new URL("/api/discovery", preview); url.search = new URLSearchParams({ city, mode, maxPrice: mode === "luxury" ? "" : "2000000" });
   const r = await fetch(url); const data = await r.json();
   checks.push({ city, mode, status: r.status, count: data.listings?.length, code: data.code || null });
   if (r.ok && data.listings?.length) {
+    for (const listing of data.listings.slice(0, 2)) if (priceKeys.size < 8) priceKeys.add(listing.listingKey);
     const listing = data.listings[0];
     const p = await (await fetch(new URL(`/api/property?listingKey=${listing.listingKey}`, preview))).json();
     assert.equal(p.property?.listingKey, listing.listingKey); assert.equal(p.property?.forSale, true); assert.equal(p.property?.listPrice, listing.listPrice);
@@ -56,3 +58,15 @@ console.log(JSON.stringify({ assistantStatus: response.status, assistantMode: an
 assert.equal(response.status, 200); assert.equal(answer.mode, "ai");
 assert.ok(checks.every(c => c.status === 200 && c.count > 0), "Live IDX discovery needs correction; production unchanged");
 console.log("Preview verified. Production deployment has not changed. No lead, report or email endpoint invoked.");
+
+const priceChecks = [];
+for (const listingKey of priceKeys) {
+  const r = await fetch(new URL(`/api/price-check?listingKey=${listingKey}`, preview));
+  const data = await r.json();
+  priceChecks.push({ listingKey, status: r.status, signal: data.signal, count: data.count, medianAsk: data.medianAsk, differencePct: data.differencePct, criteria: data.criteria, reason: data.reason || data.error, coverage: data.coverage });
+  assert.equal(r.status, 200); assert.equal(data.listingKey, listingKey);
+  if (data.available) assert.ok(data.count >= 3 && data.medianAsk > 0 && Number.isFinite(data.differencePct));
+  else { assert.equal(data.medianAsk, null); assert.ok(data.reason); }
+}
+console.log(JSON.stringify({ priceChecks }));
+assert.ok(priceChecks.some(c => c.signal !== 'unavailable'), 'No live price signal verified; inspect matching evidence before release');

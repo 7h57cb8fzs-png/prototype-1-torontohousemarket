@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=buyer-tools-20260906" />
+  <link rel="stylesheet" href="/styles.css?v=price-check-20260906" />
 </head>
 <body>
 <header class="site-header">
@@ -113,6 +113,24 @@
         <div><span>PARKING</span><strong id="factParking">—</strong></div>
         <div><span>TAX</span><strong id="factTax">—</strong></div>
       </div>
+
+      <section id="priceCheckPanel" class="price-check hidden" aria-labelledby="priceCheckTitle">
+        <div class="price-check-head">
+          <div><span class="panel-kicker">BEFORE THE FULL REPORT</span><h3 id="priceCheckTitle">Price Check</h3></div>
+          <span id="priceCheckBadge" class="price-check-badge" role="status" aria-live="polite">Checking similar asking prices…</span>
+        </div>
+        <p id="priceCheckSummary">We compare this home with similar active listings in its neighbourhood.</p>
+        <details id="priceCheckDetails" class="hidden">
+          <summary>See the comparison</summary>
+          <div id="priceCheckNumbers" class="price-check-numbers"></div>
+          <p id="priceCheckCriteria"></p>
+          <div id="priceCheckMatches" class="price-check-matches"></div>
+          <p id="priceCheckMethod">Within 5% of the matched median: in line. More than 5% below or above: lower or higher. Gaps over 25% need review. At least 3 distinct matching listings are required.</p>
+          <p id="priceCheckCoverage"></p>
+        </details>
+        <button id="priceCheckRetry" class="text-link-btn hidden" type="button">Retry Price Check</button>
+        <p class="price-check-note">An asking-price signal, not a market valuation. The full report checks recent sold evidence.</p>
+      </section>
 
       <section id="homeAiPanel" class="home-ai-panel hidden" aria-labelledby="homeAiTitle">
         <div class="home-ai-head"><div><span class="home-ai-kicker">AI HOME ASSISTANT</span><h3 id="homeAiTitle">Ask about this home.</h3><p>Get a focused brief from this listing’s public facts.</p></div><span class="home-ai-mark" aria-hidden="true">✦</span></div>
@@ -281,6 +299,6 @@
   <div id="galleryCounter" class="gallery-counter"></div>
 </div>
 
-<script src="/app.js?v=buyer-tools-20260906" defer></script>
+<script src="/app.js?v=price-check-20260906" defer></script>
 </body>
 </html>

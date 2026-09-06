@@ -72,6 +72,8 @@ let currentLeadMode = "showing";
 let loading = false;
 let homeAiSequence = 0;
 let homeAiController = null;
+let priceCheckSequence = 0;
+let priceCheckController = null;
 
 for (const button of document.querySelectorAll("[data-scroll]")) {
   button.addEventListener("click", () => {
@@ -113,6 +115,7 @@ analysisForm.addEventListener("submit", async (event) => {
     liveListing = result.property;
     renderListing(liveListing);
     showResult();
+    loadPriceCheck(liveListing);
 
     const verification = liveListing.inputValidation?.label || "Property checked.";
     setInputStatus("ok", verification);
@@ -140,6 +143,7 @@ function setInputStatus(type, text) {
 
 function hideResult() {
   resetHomeAssistant();
+  resetPriceCheck();
   snapshotSection.classList.add("hidden");
 }
 
@@ -149,6 +153,7 @@ function showResult() {
 
 function renderListing(listing) {
   resetDynamicSections();
+  resetPriceCheck();
 
   const hasMls = listing.foundInMls !== false;
   const active = !!listing.forSale;
@@ -190,6 +195,7 @@ function renderListing(listing) {
   renderMarketRead(listing);
   renderDetails(listing);
   $("homeAiPanel").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
+  $("priceCheckPanel").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
   const updated = listing.publicListing?.updatedAt;
   $("snapshotFreshness").textContent = active ? `${updated ? `Listing updated ${formatDate(updated)}. ` : ""}Public IDX snapshot · may be cached for up to 5 minutes. Confirm availability before visiting.` : "No current for-sale listing verified. Historical details may not describe the property today.";
 }
@@ -636,6 +642,57 @@ function escapeHtml(value) {
 function escapeAttr(value) {
   return escapeHtml(value).replace(/`/g, "&#096;");
 }
+
+function resetPriceCheck() {
+  priceCheckSequence++;
+  priceCheckController?.abort();
+  $("priceCheckPanel").classList.add("hidden");
+  $("priceCheckBadge").className = "price-check-badge";
+  $("priceCheckBadge").textContent = "Checking similar asking prices…";
+  $("priceCheckSummary").textContent = "We compare this home with similar active listings in its neighbourhood.";
+  $("priceCheckDetails").open = false;
+  $("priceCheckDetails").classList.add("hidden");
+  $("priceCheckRetry").classList.add("hidden");
+  for (const id of ["priceCheckNumbers", "priceCheckCriteria", "priceCheckMatches", "priceCheckCoverage"]) $(id).innerHTML = "";
+}
+function renderPriceCheck(data) {
+  const recognized = ["below", "inline", "above", "review"].includes(data.signal);
+  const available = data.available && recognized && data.count >= 3 && Number.isFinite(data.medianAsk) && data.medianAsk > 0 && Number.isFinite(data.differencePct);
+  $("priceCheckBadge").className = `price-check-badge${available ? ` is-${data.signal}` : ""}`;
+  $("priceCheckBadge").textContent = `${available && data.signal === "below" ? "✓ " : ""}${available ? data.label : "More evidence needed"}`;
+  const gap = Math.abs(data.differencePct);
+  $("priceCheckSummary").textContent = available
+    ? `${gap === 0 ? "At" : `${formatNumber(gap)}% ${data.differencePct < 0 ? "below" : "above"}`} the median asking price of ${data.count} matching active listings. ${data.signal === "review" ? data.reason : ""}`.trim()
+    : data.reason || "There is not enough verified comparison data to assign a price label.";
+  $("priceCheckNumbers").innerHTML = available ? `<div><span>THIS ASKING PRICE</span><strong>${money(data.asking)}</strong></div><div><span>MATCHED MEDIAN ASK</span><strong>${money(data.medianAsk)}</strong></div><div><span>ACTIVE MATCHES</span><strong>${data.count}</strong></div>` : "";
+  $("priceCheckCriteria").textContent = data.criteria ? `Matched on: ${data.criteria}. Parking is also checked when reported for both homes.` : "";
+  $("priceCheckMatches").innerHTML = (data.matches || []).map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.beds)} bed · ${escapeHtml(home.baths)} bath · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
+  $("priceCheckCoverage").textContent = `${data.note || "Public IDX asking prices; not the entire market."}${data.coverage?.partial ? " The search reached its scan limit." : ""}${data.checkedAt ? ` Checked ${formatDate(data.checkedAt)}; may be cached for up to 5 minutes.` : ""}`;
+  $("priceCheckDetails").classList.toggle("hidden", !data.criteria);
+}
+async function loadPriceCheck(listing) {
+  if (!listing?.forSale || listing.displayRestricted || !listing.listingKey) return;
+  resetPriceCheck();
+  $("priceCheckPanel").classList.remove("hidden");
+  const sequence = priceCheckSequence, listingKey = listing.listingKey;
+  priceCheckController = new AbortController();
+  const controller = priceCheckController, timer = window.setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(`/api/price-check?listingKey=${encodeURIComponent(listingKey)}`, { headers: { Accept: "application/json" }, signal: controller.signal });
+    const data = await response.json();
+    if (sequence !== priceCheckSequence || liveListing?.listingKey !== listingKey) return;
+    if (!response.ok || !data.ok || data.listingKey !== listingKey) throw new Error(data.error || "Price Check could not verify the comparison data.");
+    // Never attach a comparison based on a changed asking price to an old snapshot.
+    if (data.available && data.asking !== listing.listPrice) throw new Error("The asking price has changed. Check this home again to refresh its snapshot.");
+    renderPriceCheck(data);
+  } catch (error) {
+    if (sequence !== priceCheckSequence) return;
+    $("priceCheckBadge").textContent = "Price Check unavailable";
+    $("priceCheckSummary").textContent = error.name === "AbortError" ? "The comparison took too long. The listing facts are still available; no price label has been assigned." : error.message;
+    $("priceCheckRetry").classList.remove("hidden");
+  } finally { window.clearTimeout(timer); }
+}
+$("priceCheckRetry").addEventListener("click", () => { if (!loading) loadPriceCheck(liveListing); });
 
 function resetHomeAssistant() {
   homeAiSequence++;
