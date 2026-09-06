@@ -3017,7 +3017,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-report-evidence-audit-v101-20260906";
+var VERSION4 = "stage4-report-evidence-audit-v102-20260906";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -4257,7 +4257,7 @@ async function processReportJobs(env, limit = 3) {
       if (!lead) throw new Error("Lead data is unavailable.");
       const property2 = await loadPropertyForReport(env, lead, requestId);
       const report = await buildPropertyReport(env, lead, property2, requestId);
-      await rpc(env, "complete_report_job", { p_job_id: job.id, p_report_id: job.report_id, p_report_payload: report });
+      await completeJob(env, "complete_report_job", { p_job_id: job.id, p_report_id: job.report_id, p_report_payload: report });
       completed++;
       diagnosticLog("log", "report_generation_status", { request_id: requestId, report_id: job.report_id, job_id: job.id, report_generation_status: "ready", confidence: report.valuation?.confidence || "Unavailable" });
     } catch (error) {
@@ -4639,7 +4639,7 @@ async function reconcileRecentEmailDeliveries(env, limit = 5) {
   let updated = 0;
   for (const job of pending) {
     try {
-      const deliveryResponse = await fetch(`https://api.resend.com/emails/${encodeURIComponent(job.payload.provider_id)}`, { headers: { Authorization: `Bearer ${env.RESEND_API_KEY}` } });
+      const deliveryResponse = await fetch(`https://api.resend.com/emails/${encodeURIComponent(job.payload.provider_id)}`, { headers: { Authorization: `Bearer ${env.RESEND_API_KEY}` }, signal: AbortSignal.timeout(5000) });
       const delivery = await deliveryResponse.json().catch(() => ({}));
       if (!deliveryResponse.ok || !delivery?.last_event) continue;
       const event = String(delivery.last_event).toLowerCase();
@@ -4664,10 +4664,10 @@ async function deliverEmailJob(env, job) {
   const message = buildEmail(job, lead);
   const sendPayload = { from: env.RESEND_FROM_EMAIL || "Alireza Golestan | Toronto House Market <notifications@updates.torontohousemarket.com>", to: [job.recipient], reply_to: "alireza.golestan@century21.ca", subject: message.subject, html: message.html, text: message.text };
   if (Array.isArray(message.attachments) && message.attachments.length) sendPayload.attachments = message.attachments;
-  const response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": `thm-job-${job.id}-v1` }, body: JSON.stringify(sendPayload) });
+  const response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": `thm-job-${job.id}-v1` }, body: JSON.stringify(sendPayload), signal: AbortSignal.timeout(10000) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Resend ${response.status}: ${clean5(result?.message || result?.name || "delivery rejected", 300)}`);
-  await rpc(env, "complete_email_job", { p_job_id: job.id, p_provider_id: String(result.id || "") });
+  await completeJob(env, "complete_email_job", { p_job_id: job.id, p_provider_id: String(result.id || "") });
   return result;
 }
 __name(deliverEmailJob, "deliverEmailJob");
@@ -5027,8 +5027,16 @@ function emailDocument(subject, heading, intro, rows, link, linkLabel = "Open le
   return { subject, html: htmlBody, text: textBody };
 }
 __name(emailDocument, "emailDocument");
-async function rpc(env, name, body) {
-  const response = await supabase(env, `/rest/v1/rpc/${name}`, { method: "POST", body: JSON.stringify(body) }), data = await response.json().catch(() => null);
+async function completeJob(env, name, body) {
+  // Completion RPCs are idempotent. Retry their acknowledgement without
+  // generating the report or sending the accepted email again.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { return await rpc(env, name, body, 8000); }
+    catch (error) { if (attempt === 2) throw error; }
+  }
+}
+async function rpc(env, name, body, timeoutMs = null) {
+  const response = await supabase(env, `/rest/v1/rpc/${name}`, { method: "POST", body: JSON.stringify(body), ...(timeoutMs ? {signal: AbortSignal.timeout(timeoutMs)} : {}) }), data = await response.json().catch(() => null);
   if (!response.ok) throw new Error(data?.message || `Database operation ${name} failed.`);
   return data;
 }
@@ -5097,6 +5105,7 @@ export {
   numberOrNull,
   buildPropertyReport,
   loadPropertyForReport,
+  deliverEmailJob,
   buildValueRating,
   reportWithoutUnsupportedRating,
   reportBuyerChecks,

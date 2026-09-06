@@ -1,9 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { loadPropertyForReport } from "../worker-v11.js";
+import { loadPropertyForReport, deliverEmailJob } from "../worker-v11.js";
 
 const source = readFileSync(new URL("../worker-v11.js", import.meta.url), "utf8");
+
+test("lost delivery acknowledgement is retried without sending a second email", async () => {
+  const originalFetch=globalThis.fetch;
+  let sends=0, completions=0;
+  globalThis.fetch=async(input,init={})=>{
+    const url=String(input);
+    if(url.includes('/rest/v1/leads?')) return Response.json([{id:'test-lead',name:'QA',resolved_address:'Test home',metadata:{},property_reports:{status:'ready',report_payload:{generated_at:new Date().toISOString(),facts:{for_sale:false},valuation:{available:false},comparables:[]}}}]);
+    if(url==='https://api.resend.com/emails') {sends++;assert.equal(new Headers(init.headers).get('Idempotency-Key'),'thm-job-1-v1');assert.ok(init.signal);return Response.json({id:'accepted-once'});}
+    if(url.endsWith('/rpc/complete_email_job')) {completions++;assert.ok(init.signal);assert.equal(JSON.parse(init.body).p_provider_id,'accepted-once');if(completions===1)throw new TypeError('connection reset after acceptance');return Response.json(null);}
+    throw new Error('Unexpected request');
+  };
+  try {await deliverEmailJob({SUPABASE_SERVICE_ROLE_KEY:'test',RESEND_API_KEY:'test'},{id:1,lead_id:'test-lead',job_type:'email_buyer',recipient:'qa@example.com'});assert.equal(sends,1);assert.equal(completions,2);}
+  finally {globalThis.fetch=originalFetch;}
+});
 
 test("full report request preserves evidence-only mode through every legacy wrapper", async () => {
   const originalFetch = globalThis.fetch;
