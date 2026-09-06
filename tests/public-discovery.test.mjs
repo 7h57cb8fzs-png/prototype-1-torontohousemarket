@@ -128,6 +128,7 @@ for (const query of ['981 avenue rd', '981 Avenue Road']) {
   test(`public address search resolves ${query} through the complete request path`, async t => {
     const record = home('C1000001', { UnparsedAddress: '981 Avenue Road, Toronto, ON', StreetNumber: '981', StreetName: 'Avenue', StreetSuffix: 'Road', City: 'Toronto', Media: [{ MediaKey: 'photo', MediaType: 'image/jpeg', MediaURL: 'https://example.com/photo.jpg' }] });
     t.mock.method(globalThis, 'fetch', async input => {
+      assert.ok(!String(input).includes('+'), 'OData query spaces must be encoded as %20, not literal plus signs');
       const url = new URL(input);
       if (url.pathname.includes("Property('C1000001')")) return Response.json(record);
       assert.equal(url.pathname, '/odata/Property');

@@ -2735,7 +2735,8 @@ async function runQuery2(filter, env, top, orderby = "") {
     "OriginalEntryTimestamp"
   ].join(","));
   try {
-    const response = await fetch(`${AMPRE4}/Property?${params.toString()}`, {
+    // AMPRE interprets '+' literally in OData expressions; encode spaces as %20.
+    const response = await fetch(`${AMPRE4}/Property?${params.toString().replace(/\+/g, "%20")}`, {
       headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }
     });
     if (!response.ok) {
