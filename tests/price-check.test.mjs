@@ -9,11 +9,11 @@ test('semi-detached feed spelling variants retain the same supported type', () =
     assert.equal(result.count, 3); assert.equal(result.available, true);
   }
 });
-test('parking differences remain visible as related homes, never as valuation evidence', () => {
-  const result = priceCheckSelection(home(1, {ParkingTotal:10}), peers);
-  assert.equal(result.count, 0); assert.equal(result.available, false); assert.equal(result.medianAsk, null);
-  assert.equal(result.relatedMatches.length, 3);
-  assert.match(result.relatedMatches[0].difference, /2 reported parking spaces.*10/);
+test('parking and bathroom differences do not exclude same-community size matches', () => {
+  const result = priceCheckSelection(home(1, {ParkingTotal:10,BathroomsTotalInteger:6}), peers);
+  assert.equal(result.count, 3); assert.equal(result.available, true);
+  assert.equal(result.relatedMatches.length, 0);
+  assert.deepEqual(result.matches[0].differences, ["2 parking", "3 baths"]);
 });
 test('price label is based on other matched asking prices, with explicit boundaries', () => {
   for (const [asking, signal] of [[900000,'below'],[950000,'inline'],[1000000,'inline'],[1050000,'inline'],[1100000,'above'],[500000,'review'],[1600000,'review']]) {
@@ -21,10 +21,10 @@ test('price label is based on other matched asking prices, with explicit boundar
     assert.equal(result.signal, signal); assert.equal(result.medianAsk, 1000000); assert.equal(result.count, 3);
   }
 });
-test('different types, neighbourhoods, cities, sizes, rooms, parking and nonpublic listings cannot earn a tick', () => {
+test('different types, neighbourhoods, cities, sizes, bedroom layouts and nonpublic listings cannot earn a tick', () => {
   const mismatches = [
     {PropertySubType:'Condo Townhouse'}, {CityRegion:'Patterson'}, {City:'Toronto'},
-    {LivingAreaRange:'2500-3000'}, {BedroomsTotal:4}, {BathroomsTotalInteger:6}, {ParkingTotal:0},
+    {LivingAreaRange:'2500-3000'}, {BedroomsTotal:4},
     {StandardStatus:'Sold',ClosePrice:888888}, {TransactionType:'For Lease'},
     {InternetEntireListingDisplayYN:false}, {InternetAddressDisplayYN:'No'}
   ];
@@ -98,3 +98,23 @@ test('1+1 bedroom layouts cannot earn a tick by comparison with 2+0 layouts', ()
   assert.equal(result.count,3); assert.match(result.criteria,/1\+1 reported bedroom layout/);
   assert.equal(result.matches[0].bedroomLayout,'1+1');
 });
+
+ test('district labels cannot substitute for an exact community and neighbouring communities stay excluded', () => {
+  for (const community of ['W05','Toronto W05','']) {
+    const result=priceCheckSelection(home(1,{CityRegion:community}),peers.map(p=>({...p,CityRegion:community})));
+    assert.equal(result.count,0); assert.equal(result.available,false);
+  }
+  const result=priceCheckSelection(home(1,{City:'Toronto W05',CityRegion:'Downsview-Roding-CFB'}),peers.map(p=>({...p,City:'Toronto W05',CityRegion:'Glenfield-Jane Heights'})));
+  assert.equal(result.count,0);
+ });
+ test('small exact-community samples expose observed asks without inventing a valuation', () => {
+  const result=priceCheckSelection(home(1),[home(2,{ListPrice:800000}),home(3,{ListPrice:900000})]);
+  assert.deepEqual(result.observedAsking,{low:800000,high:900000,count:2});
+  assert.equal(result.available,false);assert.equal(result.medianAsk,null);assert.equal(result.community,'Vellore Village');
+ });
+ test('verified lot area refines ranking while unknown units are not assumed', () => {
+  const subject=home(1,{LotWidth:30,LotDepth:100,LotSizeUnits:'Feet'});
+  const result=priceCheckSelection(subject,[home(2,{LotWidth:60,LotDepth:100,LotSizeUnits:'Feet'}),home(3,{LotWidth:30,LotDepth:100,LotSizeUnits:'Feet'}),home(4,{LotWidth:30,LotDepth:100})]);
+  assert.ok(result.matches.find(r=>r.listingKey===home(3).ListingKey).similarity > result.matches.find(r=>r.listingKey===home(2).ListingKey).similarity);
+  assert.ok(!result.matches.find(r=>r.listingKey===home(4).ListingKey).differences.some(d=>d.includes('lot')));
+ });

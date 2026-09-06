@@ -3027,7 +3027,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "stage4-first-page-snapshot-v106-20260906";
+var VERSION4 = "community-market-pulse-v107-20260906";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3136,7 +3136,7 @@ function forwardPublicSnapshot(source, target) {
 
 // Public asking-price position. This never calls the sold-comparable engine,
 // generates a report, or substitutes a VOW credential for IDX.
-const PRICE_CHECK_VERSION = "asking-position-3-normalized-types";
+const PRICE_CHECK_VERSION = "community-size-lot-v107";
 const priceCheckBudget = new Map();
 function priceCheckArea(row) {
   const match = String(row?.LivingAreaRange || "").replace(/,/g, "").match(/^\s*(\d+)\s*[-–]\s*(\d+)\s*$/);
@@ -3153,6 +3153,12 @@ function priceCheckType(row) {
   const key = String(row.PropertySubType || '').toLowerCase().replace(/[^a-z]/g, '');
   return Object.values(DISCOVERY_TYPES).find(types => types?.some(type => type.toLowerCase().replace(/[^a-z]/g, '') === key));
 }
+function comparableLotArea(row) {
+  const width = numberOrNull(row.LotWidth || row.LotFrontage || row.LotSizeFrontage), depth = numberOrNull(row.LotDepth || row.LotSizeDepth);
+  const units = normalizeText(row.LotSizeUnits || row.LotDimensionsUnits);
+  const factor = /^(feet|foot|ft)$/.test(units) ? 1 : /^(metres|meters|metre|meter|m)$/.test(units) ? 10.7639 : null;
+  return width > 0 && depth > 0 && factor ? width * depth * factor : null;
+}
 function priceCheckSelection(subject, records) {
   const result = { available: false, signal: "unavailable", label: "More evidence needed", count: 0, medianAsk: null, differencePct: null, matches: [] };
   if (!publicListingFacts(subject)) return { ...result, reason: "A current listing with public details is required for a Price Check." };
@@ -3160,7 +3166,7 @@ function priceCheckSelection(subject, records) {
   const area = priceCheckArea(subject), beds = numberOrNull(subject.BedroomsTotal), baths = numberOrNull(subject.BathroomsTotalInteger);
   const primaryBeds = numberOrNull(subject.BedroomsAboveGrade), extraBeds = numberOrNull(subject.BedroomsBelowGrade);
   const city = normalizeText(subject.City), community = normalizeText(subject.CityRegion), asking = numberOrNull(subject.ListPrice);
-  const missing = [!type && "a supported home type", !area && "a comparable closed size range", beds === null && "bedrooms", baths === null && "bathrooms", !city && "municipality", !community && "neighbourhood", !(asking > 0) && "asking price"].filter(Boolean);
+  const missing = [!type && "a supported home type", !area && "a comparable closed size range", beds === null && "bedrooms", !city && "municipality", (!community || /^(toronto )?[cew]\d{2}$/.test(community)) && "exact MLS community", !(asking > 0) && "asking price"].filter(Boolean);
   if (missing.length) return { ...result, reason: `We could not verify ${missing.join(", ")} for this listing. There is not enough detail for a reliable price comparison yet.` };
   const seen = new Set([priceCheckIdentity(subject)]);
   const seenKeys = new Set([String(subject.ListingKey)]);
@@ -3172,21 +3178,31 @@ function priceCheckSelection(subject, records) {
     if (!/^[A-Z]\d{7,9}$/.test(key) || seenKeys.has(key) || !identity || seen.has(identity) || !publicListingFacts(row)) continue;
     if (priceCheckType(row) !== type || normalizeText(row.City) !== city || normalizeText(row.CityRegion) !== community) continue;
     const otherArea = priceCheckArea(row), otherBeds = numberOrNull(row.BedroomsTotal), otherBaths = numberOrNull(row.BathroomsTotalInteger), price = numberOrNull(row.ListPrice);
-    if (!otherArea || otherArea.low !== area.low || otherArea.high !== area.high || otherBeds !== beds || otherBaths === null || Math.abs(otherBaths - baths) > 1 || !(price > 0)) continue;
-    if (primaryBeds !== null && numberOrNull(row.BedroomsAboveGrade) !== primaryBeds || extraBeds !== null && numberOrNull(row.BedroomsBelowGrade) !== extraBeds) continue;
+    if (!otherArea || otherBeds === null || Math.abs(otherBeds - beds) > 1 || !(price > 0)) continue;
+    const sizeGap = Math.abs((otherArea.low + otherArea.high) / (area.low + area.high) - 1);
+    if (sizeGap > .25) continue;
+    const sameBedrooms = otherBeds === beds && !(primaryBeds !== null && numberOrNull(row.BedroomsAboveGrade) !== primaryBeds || extraBeds !== null && numberOrNull(row.BedroomsBelowGrade) !== extraBeds);
     const parking = numberOrNull(subject.ParkingTotal), otherParking = numberOrNull(row.ParkingTotal);
-    if (parking !== null && otherParking !== null && ((parking === 0) !== (otherParking === 0) || Math.abs(parking - otherParking) > 1)) {
-      if (relatedMatches.length < 5) relatedMatches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName), difference: `${otherParking} reported parking spaces versus this home's ${parking}. Not used to score the asking price.` });
+    const subjectLot = comparableLotArea(subject), rowLot = comparableLotArea(row);
+    const lotSimilarity = subjectLot && rowLot ? Math.min(subjectLot,rowLot)/Math.max(subjectLot,rowLot) : null;
+    const similarity = Math.round(100 * ((1 - sizeGap) * .60 + (sameBedrooms ? .25 : .10) + (lotSimilarity === null ? 0 : .15 * lotSimilarity)) / (lotSimilarity === null ? .85 : 1));
+    const differences = [parking !== null && otherParking !== null && parking !== otherParking ? `${otherParking} parking` : null, baths !== null && otherBaths !== null && baths !== otherBaths ? `${otherBaths} baths` : null, subjectLot && rowLot ? `${Math.round(rowLot).toLocaleString('en-CA')} sq ft lot` : null].filter(Boolean);
+    if (!sameBedrooms) {
+      if (relatedMatches.length < 5) relatedMatches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName), difference: 'Different bedroom layout; outside the asking-price signal.', differences, similarity });
       seen.add(identity); seenKeys.add(key);
       continue;
     }
     seen.add(identity);
     seenKeys.add(key);
-    matches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, bedroomLayout: primaryBeds !== null && extraBeds !== null ? `${primaryBeds}+${extraBeds}` : null, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName) });
+    matches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, bedroomLayout: primaryBeds !== null && extraBeds !== null ? `${primaryBeds}+${extraBeds}` : null, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName), differences, similarity });
   }
+  matches.sort((a,b) => b.similarity - a.similarity || a.listingKey.localeCompare(b.listingKey));
   result.matches = matches; result.count = matches.length; result.relatedMatches = relatedMatches;
   const layout = primaryBeds !== null && extraBeds !== null ? `${primaryBeds}+${extraBeds} reported bedroom layout` : `${beds} bedrooms`;
-  result.criteria = `${cleanText(subject.CityRegion)} · ${cleanText(subject.PropertySubType)} · ${area.label} · ${layout} · bathrooms within 1`;
+  result.criteria = `${cleanText(subject.CityRegion)} · ${cleanText(subject.PropertySubType)} · similar size · ${layout}`;
+  result.community = cleanText(subject.CityRegion);
+  result.asking = asking;
+  if (matches.length) result.observedAsking = {low:Math.min(...matches.map(r=>r.asking)),high:Math.max(...matches.map(r=>r.asking)),count:matches.length};
   if (matches.length < 3) return { ...result, reason: `Only ${matches.length} matching active listing${matches.length === 1 ? " was" : "s were"} found in the data checked. At least 3 are needed; this does not mean there are no comparable sold homes.` };
   const prices = matches.map(r => r.asking).sort((a, b) => a - b);
   const median = medianPrice(prices);
@@ -3209,7 +3225,7 @@ async function priceCheckRows(subject, env) {
   for (const filter of filters) {
     countUrl = new URL(`${AMPRE_BASE}/Property`);
     countUrl.search = new URLSearchParams({ "$filter": filter, "$count": "true", "$top": "1" });
-    const r = await amplifyFetch(countUrl.href, { AMPRE_TOKEN: env.AMPRE_TOKEN });
+    const r = await amplifyFetch(countUrl.href.replace(/\+/g, "%20"), { AMPRE_TOKEN: env.AMPRE_TOKEN });
     if (r.status === 400) continue;
     if (!r.ok) throw new Error("IDX unavailable");
     countBody = await r.json();
@@ -3230,7 +3246,7 @@ async function priceCheckRows(subject, env) {
     const u = new URL(next, AMPRE_BASE);
     if (u.origin !== new URL(AMPRE_BASE).origin || u.pathname !== "/odata/Property" || u.username || u.password || u.hash || visited.has(u.href)) throw new Error("Invalid pagination");
     visited.add(u.href);
-    const r = await amplifyFetch(u.href, { AMPRE_TOKEN: env.AMPRE_TOKEN });
+    const r = await amplifyFetch(u.href.replace(/\+/g, "%20"), { AMPRE_TOKEN: env.AMPRE_TOKEN });
     if (!r.ok) throw new Error("IDX unavailable");
     const data = await r.json();
     if (!Array.isArray(data.value) || data.value.length > 100) throw new Error("Invalid IDX page");
@@ -3292,7 +3308,7 @@ function homeBriefCandidates(p, topic) {
   ];
   if (p.isCondominium) checks.unshift({ id: "condo", title: "Condo documents", text: "Ask about planned building work, extra charges and a professional review of the status certificate." });
   if (p.kitchensTotal > 1 || /separate entrance|apartment|legal|permit/i.test(p.remarks || "")) checks.unshift({ id: "legal", title: "Additional unit", text: "Ask a qualified professional to verify any additional unit’s permits, permitted use and safety. A listing mention is not proof of legality." });
-  if (p.parkingTotal >= 6) checks.unshift({ id: "parking_count", title: "Verify the parking count", text: `MLS reports ${p.parkingTotal} parking spaces. Confirm dimensions, tandem spaces and legal use; this unusual count can limit automated like-for-like comparisons.` });
+  if (p.parkingTotal >= 6) checks.unshift({ id: "parking_count", title: "Verify the parking count", text: `MLS reports ${p.parkingTotal} parking spaces. Confirm usable spaces and access at the showing.` });
   const priority = topic === "costs" ? ["fee", "tax", "reduction", "asking"] : topic === "visit" ? ["rooms", "size", "parking", "timing"] : ["setting", "reduction", "lot", "size", "rooms", "asking", "parking"];
   const defaults = priority.filter(id => facts.some(f => f.id === id)).slice(0, 3);
   return { facts, checks, defaults: { facts: defaults.length ? defaults : facts.slice(0, 3).map(f => f.id), checks: topic === "costs" ? ["costs", ...(p.isCondominium ? ["condo"] : ["condition"])] : checks.slice(0, 2).map(c => c.id) } };
@@ -3468,7 +3484,7 @@ async function publicDiscovery(request, env, ctx) {
       if (u.origin !== new URL(AMPRE_BASE).origin || u.pathname !== "/odata/Property" || u.username || u.password || u.hash || visited.has(u.href)) throw new Error("Invalid pagination");
       visited.add(u.href);
       // Use only the existing IDX credential. Never substitute AMPRE_VOW_TOKEN.
-      const response = await amplifyFetch(u.href, { AMPRE_TOKEN: env.AMPRE_TOKEN });
+      const response = await amplifyFetch(u.href.replace(/\+/g, "%20"), { AMPRE_TOKEN: env.AMPRE_TOKEN });
       if (response.status === 400 && pages === 0 && u.searchParams.has("$orderby")) {
         // This feed can reject OData sorting. Locate its bounded tail from the
         // current count; do not use fixed historical offsets or call it a full
@@ -3477,7 +3493,7 @@ async function publicDiscovery(request, env, ctx) {
         countUrl.searchParams.delete("$orderby");
         countUrl.searchParams.set("$count", "true");
         countUrl.searchParams.set("$top", "1");
-        const countResponse = await amplifyFetch(countUrl.href, { AMPRE_TOKEN: env.AMPRE_TOKEN });
+        const countResponse = await amplifyFetch(countUrl.href.replace(/\+/g, "%20"), { AMPRE_TOKEN: env.AMPRE_TOKEN });
         if (!countResponse.ok) throw new Error("IDX count unavailable");
         const countBody = await countResponse.json();
         const total = countBody["@odata.count"];

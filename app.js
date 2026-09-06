@@ -667,22 +667,30 @@ function resetPriceCheck() {
   $("priceCheckDetails").open = false;
   $("priceCheckDetails").classList.add("hidden");
   $("priceCheckRetry").classList.add("hidden");
-  for (const id of ["priceCheckNumbers", "priceCheckCriteria", "priceCheckMatches", "priceCheckCoverage"]) $(id).innerHTML = "";
+  for (const id of ["priceCheckNumbers", "priceCheckRange", "priceCheckCriteria", "priceCheckMatches", "priceCheckCoverage"]) $(id).innerHTML = "";
+}
+function renderAskingRange(data) {
+  const range = data.observedAsking, target = $("priceCheckRange");
+  if (!range || !(range.low > 0) || !(range.high >= range.low) || !(data.asking > 0)) { target.innerHTML = ""; return; }
+  const low = Math.min(range.low, data.asking), high = Math.max(range.high, data.asking);
+  const x = value => high === low ? 50 : 8 + 84 * (value - low) / (high - low);
+  target.innerHTML = `<div class="asking-range-label"><strong>Same-community asking prices</strong><span>● This home</span></div><svg viewBox="0 0 100 14" role="img" aria-label="${escapeHtml(`${data.count} matched listings: ${money(range.low)} to ${money(range.high)}. This home: ${money(data.asking)}. Asking prices, not sold values.`)}"><line x1="8" y1="7" x2="92" y2="7" stroke="#d9e6e1" stroke-width="2"/><line x1="${x(range.low)}" y1="7" x2="${x(range.high)}" y2="7" stroke="#41ae91" stroke-width="4" stroke-linecap="round"/><circle cx="${x(data.asking)}" cy="7" r="2.5" fill="#132f3b" stroke="white" stroke-width="1"/></svg><div class="asking-range-label"><span>${money(low)}</span><span>${money(high)}</span></div>`;
 }
 function renderPriceCheck(data) {
   const recognized = ["below", "inline", "above", "review"].includes(data.signal);
   const available = data.available && recognized && data.count >= 3 && Number.isFinite(data.medianAsk) && data.medianAsk > 0 && Number.isFinite(data.differencePct);
   $("priceCheckBadge").className = `price-check-badge${available ? ` is-${data.signal}` : ""}`;
-  $("priceCheckBadge").textContent = `${available && data.signal === "below" ? "✓ " : ""}${available ? data.label : data.relatedMatches?.length ? `${data.relatedMatches.length} related homes found` : "More evidence needed"}`;
+  $("priceCheckBadge").textContent = `${available && data.signal === "below" ? "✓ " : ""}${available ? data.label : data.count ? `${data.count} community matches` : data.relatedMatches?.length ? `${data.relatedMatches.length} related homes found` : "More evidence needed"}`;
   syncPriceCheckQuickStatus();
   const gap = Math.abs(data.differencePct);
   $("priceCheckSummary").textContent = available
     ? `${gap === 0 ? "At" : `${formatNumber(gap)}% ${data.differencePct < 0 ? "below" : "above"}`} the median asking price of ${data.count} matching active listings. ${data.signal === "review" ? data.reason : ""}`.trim()
-    : data.relatedMatches?.length ? `${data.relatedMatches.length} related active homes are shown below. Their parking differs from this listing, so they help you compare options but are not used to assign a price rating.` : data.reason || "There is not enough verified comparison data to assign a price label.";
-  $("priceCheckNumbers").innerHTML = available ? `<div><span>THIS ASKING PRICE</span><strong>${money(data.asking)}</strong></div><div><span>MATCHED MEDIAN ASK</span><strong>${money(data.medianAsk)}</strong></div><div><span>ACTIVE MATCHES</span><strong>${data.count}</strong></div>` : "";
-  $("priceCheckCriteria").textContent = data.criteria ? `Matched on: ${data.criteria}. Parking is also checked when reported for both homes.` : "";
-  $("priceCheckMatches").innerHTML = (data.matches || []).map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.bedroomLayout || home.beds)} bed · ${escapeHtml(home.baths)} bath · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
-  if (data.relatedMatches?.length) $("priceCheckMatches").innerHTML += `<h4>Related homes worth comparing</h4><p>Same home type, neighbourhood, size band and bedroom count. These differ in parking and are not included in the price signal.</p>${data.relatedMatches.map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.beds)} bed · ${escapeHtml(home.baths)} bath<br>${escapeHtml(home.difference)}<br>MLS ${escapeHtml(home.listingKey)} · ${escapeHtml(home.listingOffice || 'Listing office not reported')}</small></span><b>${money(home.asking)}</b></a>`).join('')}`;
+    : data.count ? `${data.count} similar active homes in ${data.community || "this community"}. Compare their asking prices below; more evidence is needed for a price rating.` : data.relatedMatches?.length ? `${data.relatedMatches.length} same-community homes with different bedroom layouts. Shown for context; excluded from the price rating.` : data.reason || "There is not enough verified comparison data to assign a price label.";
+  $("priceCheckNumbers").innerHTML = available ? `<div><span>THIS ASKING PRICE</span><strong>${money(data.asking)}</strong></div><div><span>MATCHED MEDIAN ASK</span><strong>${money(data.medianAsk)}</strong></div><div><span>ACTIVE MATCHES</span><strong>${data.count}</strong></div>` : data.observedAsking ? `<div><span>THIS ASKING PRICE</span><strong>${money(data.asking)}</strong></div><div><span>COMMUNITY ASKING RANGE</span><strong>${money(data.observedAsking.low)}–${money(data.observedAsking.high)}</strong></div><div><span>ACTIVE MATCHES</span><strong>${data.count}</strong></div>` : "";
+  renderAskingRange(data);
+  $("priceCheckCriteria").textContent = data.criteria ? `Same community · ${data.criteria}` : "";
+  $("priceCheckMatches").innerHTML = (data.matches || []).map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.bedroomLayout || home.beds)} bed · ${escapeHtml(home.baths ?? "—")} bath${home.differences?.length ? ` · ${escapeHtml(home.differences.join(" · "))}` : ""} · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
+  if (data.relatedMatches?.length) $("priceCheckMatches").innerHTML += `<h4>Related homes worth comparing</h4><p>Same community and home type, similar size. Different bedroom layouts; excluded from the price signal.</p>${data.relatedMatches.map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.beds)} bed · ${escapeHtml(home.baths)} bath<br>${escapeHtml(home.difference)}<br>MLS ${escapeHtml(home.listingKey)} · ${escapeHtml(home.listingOffice || 'Listing office not reported')}</small></span><b>${money(home.asking)}</b></a>`).join('')}`;
   $("priceCheckCoverage").textContent = `${data.note || "Public IDX asking prices; not the entire market."}${data.coverage?.partial ? " The search reached its scan limit." : ""}${data.checkedAt ? ` Checked ${formatDate(data.checkedAt)}; may be cached for up to 5 minutes.` : ""}`;
   $("priceCheckDetails").classList.toggle("hidden", !data.criteria);
   $("priceCheckDetails").open = !!data.criteria;

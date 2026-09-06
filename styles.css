@@ -356,3 +356,5 @@ footer{background:#0b1020;color:#d7dceb;padding:28px 0}
 .price-check-jump small{font-size:13px;font-weight:700;color:var(--blue-dark)}
 .price-check-jump:hover{border-color:var(--blue)}
 #priceCheckPanel{scroll-margin-top:90px}
+
+.asking-range:empty{display:none}.asking-range{padding:16px;background:#f4f9f7;border-radius:14px;margin:16px 0;color:#132f3b}.asking-range svg{display:block;width:100%;max-height:86px}.asking-range-label{display:flex;justify-content:space-between;gap:12px;font-size:12px}.price-method{margin-top:16px;font-size:12px}.price-method summary{cursor:pointer}.price-check-numbers strong{overflow-wrap:anywhere}@media(max-width:600px){.asking-range-label{font-size:11px}.price-check-numbers{grid-template-columns:1fr!important}}

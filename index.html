@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=price-check-visible-20260906" />
+  <link rel="stylesheet" href="/styles.css?v=community-first-20260906" />
 </head>
 <body>
 <header class="site-header">
@@ -137,13 +137,14 @@
           <span id="priceCheckBadge" class="price-check-badge" role="status" aria-live="polite">Checking similar asking prices…</span>
         </div>
         <p id="priceCheckSummary">We compare this home with similar active listings in its neighbourhood.</p>
+        <div id="priceCheckRange" class="asking-range"></div>
         <details id="priceCheckDetails" class="hidden" open>
           <summary>See the comparison</summary>
           <div id="priceCheckNumbers" class="price-check-numbers"></div>
           <p id="priceCheckCriteria"></p>
           <div id="priceCheckMatches" class="price-check-matches"></div>
-          <p id="priceCheckMethod">Within 5% of the matched median: in line. More than 5% below or above: lower or higher. Gaps over 25% need review. At least 3 distinct matching listings are required.</p>
-          <p id="priceCheckCoverage"></p>
+          <details class="price-method"><summary>How comparisons work</summary><p>Exact MLS community and home type. Size leads the match; bedroom layout and verified lot size refine it. Parking and bathrooms are shown as differences.</p><p id="priceCheckMethod">Within 5% of the matched median: in line. More than 5% below or above: lower or higher. Gaps over 25% need review. At least 3 distinct matching listings are required.</p>
+          <p id="priceCheckCoverage"></p></details>
         </details>
         <button id="priceCheckRetry" class="text-link-btn hidden" type="button">Retry Price Check</button>
         <p class="price-check-note">An asking-price signal, not a market valuation. The full report checks recent sold evidence.</p>
@@ -304,6 +305,6 @@
   <div id="galleryCounter" class="gallery-counter"></div>
 </div>
 
-<script src="/app.js?v=price-check-visible-20260906" defer></script>
+<script src="/app.js?v=community-first-20260906" defer></script>
 </body>
 </html>
