@@ -93,7 +93,7 @@ async function checkPhase5(base) {
   let photoOk=false;
   for(const home of data.listings.slice(0,3)){
     const image=await fetch(`${base}${home.photoUrl}`,{signal:AbortSignal.timeout(20000)});
-    const bytes=await image.arrayBuffer();if(image.ok && image.headers.get('Content-Type')?.startsWith('image/') && bytes.byteLength>1000){photoOk=true;break;}
+    const bytes=await image.arrayBuffer();console.log(JSON.stringify({shortlistPhoto:{listingKey:home.listingKey,status:image.status,type:image.headers.get('Content-Type'),bytes:bytes.byteLength}}));if(image.ok && image.headers.get('Content-Type')?.startsWith('image/') && bytes.byteLength>1000){photoOk=true;break;}
   }
   check(photoOk,'No working photo in the checked shortlist');
   console.log(JSON.stringify({phase5:{selectionMode:data.selectionMode,count:data.listings.length,photoOk,protectedRoutes:true}}));

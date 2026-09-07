@@ -3509,7 +3509,8 @@ async function discoveryPhoto(request,env,ctx){
   const key=new URL(request.url).searchParams.get('listingKey');if(!/^[A-Z]\d{7,9}$/.test(key||''))return new Response(null,{status:400});
   const url=new URL('/api/property',request.url);url.searchParams.set('listingKey',key);
   const response=await publicProperty(new Request(url),env,ctx),p=(await response.json().catch(()=>null))?.property;
-  const photo=p?.photos?.[0],path=photo?.fallbackUrl || photo?.url;
+  const photo=p?.photos?.[0];
+  const path=photo?.fallbackUrl?.startsWith('/api/media?')?photo.fallbackUrl:/^[A-Za-z0-9._:-]{1,200}$/.test(String(photo?.key||''))?`/api/media?key=${encodeURIComponent(photo.key)}`:photo?.url;
   if(!response.ok || !p?.forSale || p.displayRestricted || !path?.startsWith('/api/media?'))return new Response(null,{status:404});
   return new Response(null,{status:302,headers:{Location:new URL(path,request.url).toString(),'Cache-Control':'public, max-age=60'}});
 }

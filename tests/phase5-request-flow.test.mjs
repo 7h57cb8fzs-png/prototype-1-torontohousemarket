@@ -77,6 +77,11 @@ test('AI shortlist accepts verified IDs only and labels failures as matched resu
   assert.equal(invalid.mode,'matched');assert.equal(invalid.homes[0],homes[0]);
   assert.equal((await selectDiscoveryHomes({},homes,{})).mode,'matched');
 });
+test('shortlist photos use the verified media key when legacy normalization drops the proxy URL',async t=>{
+  t.mock.method(globalThis,'fetch',async url=>{assert.match(String(url),/Property/);return Response.json({ListingKey:'N1000001',City:'Toronto',UnparsedAddress:'Test property',StandardStatus:'Active',TransactionType:'For Sale',PropertySubType:'Detached',ListPrice:1000000,Media:[{MediaKey:'verified-photo-key',MediaType:'image/jpeg',MediaURL:'https://example.com/photo.jpg'}]});});
+  const response=await worker.fetch(new Request('https://example.com/api/discovery-photo?listingKey=N1000001'),{AMPRE_TOKEN:'idx-fixture',PUBLIC_DISCOVERY_ENABLED:'true'},{});
+  assert.equal(response.status,302);assert.equal(response.headers.get('Location'),'https://example.com/api/media?key=verified-photo-key');
+});
 test('buyer emails distinguish report-only, requested and confirmed showing states',()=>{
   const lead={resolved_address:'Test home',showing_requested:false,showing_timing:'report'};
   assert.match(buildEmail({payload:{reason:'buyer_request_confirmation'}},lead).text,/no showing requested/);
