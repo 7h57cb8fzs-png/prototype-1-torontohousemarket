@@ -40,7 +40,7 @@ for (const b of before.bindings.filter(b => b.type === "plain_text" && b.name !=
 }
 const schedule = await cf(`/workers/scripts/${worker}/schedules`);
 const previewOrigin = `https://${candidate.slice(0, 8)}-${worker}.7h57cb8fzs.workers.dev`;
-for (const path of ["index.html", "app.js", "styles.css"]) {
+for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js"]) {
   const url = path === "index.html" ? "/" : `/${path}`;
   const response = await fetch(`${previewOrigin}${url}?release=${process.env.GITHUB_SHA}`);
   const actual = Buffer.from(await response.arrayBuffer());
@@ -83,6 +83,22 @@ async function checkWhitburn(base) {
   console.log(JSON.stringify({whitburnSnapshot:{mode:brief.mode,summary:brief.summary,aiStatus:brief.aiStatus}}));
   check(brief.mode === 'ai', 'Whitburn AI must pass in preview before release');
 }
+async function checkPhase5(base) {
+  for(const [path,method] of [['/api/admin/leads','POST'],['/api/admin/leads/11111111-2222-4333-8444-555555555555','DELETE'],['/api/appointments','GET']]){
+    const r=await fetch(`${base}${path}`,{method});check([401,403].includes(r.status),`Unauthenticated route was not protected: ${path}`);
+  }
+  const response=await fetch(`${base}/api/recommendations?city=Toronto&mode=new&type=any`),data=await response.json();
+  check(response.ok && data.ok && data.listings?.length && data.listings.length<=6,'Photo shortlist unavailable');
+  check(data.listings.every(h=>h.selectionReason && h.photoUrl?.startsWith('/api/discovery-photo?listingKey=')),'Shortlist details or photos missing');
+  let photoOk=false;
+  for(const home of data.listings.slice(0,3)){
+    const image=await fetch(`${base}${home.photoUrl}`,{signal:AbortSignal.timeout(20000)});
+    const bytes=await image.arrayBuffer();if(image.ok && image.headers.get('Content-Type')?.startsWith('image/') && bytes.byteLength>1000){photoOk=true;break;}
+  }
+  check(photoOk,'No working photo in the checked shortlist');
+  console.log(JSON.stringify({phase5:{selectionMode:data.selectionMode,count:data.listings.length,photoOk,protectedRoutes:true}}));
+}
+await checkPhase5(previewOrigin);
 await checkWhitburn(previewOrigin);
 await checkAvenueAddress(previewOrigin);
 await checkBedroomPricing(previewOrigin);
@@ -98,7 +114,7 @@ try {
   for (let i = 0; i < 6; i++) { current = await activeVersion(); if (current === candidate) break; await new Promise(r => setTimeout(r, 2000)); }
   check(current === candidate, "Candidate did not become active");
   check(isDeepStrictEqual(schedule, await cf(`/workers/scripts/${worker}/schedules`)), "Cron schedule changed");
-  for (const path of ["index.html", "app.js", "styles.css"]) {
+  for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js"]) {
     const url = path === "index.html" ? "/" : `/${path}`;
     let matched = false, actual, status;
     for (let attempt = 0; attempt < 12; attempt++) {
@@ -115,6 +131,7 @@ try {
     }
     check(matched, `Live asset mismatch after propagation window: ${path}`);
   }
+  await checkPhase5(origin);
   const health = await (await fetch(`${origin}/api/version`)).json();
   check(health.ok && health.vowAccess, "Version or VOW configuration health failed");
   let listingKey;

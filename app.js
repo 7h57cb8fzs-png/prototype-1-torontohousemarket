@@ -120,6 +120,7 @@ analysisForm.addEventListener("submit", async (event) => {
     loadPriceCheck(liveListing);
     loadHomeAssistant('overview');
     loadSchoolSnapshot(liveListing);
+    if (new URLSearchParams(window.location.search).get('showing')==='1') openLeadModal('buyer_report',true);
 
     const verification = liveListing.inputValidation?.label || "Property checked.";
     setInputStatus("ok", verification);
@@ -441,20 +442,26 @@ remarksToggle.addEventListener("click", () => {
 });
 
 $("headerReportButton").addEventListener("click", () => {
-  if (!loading && liveListing?.forSale && !liveListing.displayRestricted) return openLeadModal("showing");
+  if (!loading && liveListing?.forSale && !liveListing.displayRestricted) return openLeadModal("buyer_report");
   document.getElementById("lookup").scrollIntoView({behavior:"smooth",block:"start"}); propertyInput.focus({preventScroll:true});
 });
-seeHomeButton.addEventListener("click", () => openLeadModal("showing"));
-for (const id of ["briefShowingButton", "mobileShowingButton"]) $(id).addEventListener("click", () => openLeadModal("showing"));
+seeHomeButton.addEventListener("click", () => openLeadModal("buyer_report"));
+for (const id of ["briefShowingButton", "mobileShowingButton"]) $(id).addEventListener("click", () => openLeadModal("buyer_report"));
 deepReportButton.addEventListener("click", () => openLeadModal("buyer_offmarket"));
 sellerReportButton.addEventListener("click", () => openLeadModal("seller"));
 
-function openLeadModal(mode) {
+let leadRequestKey = null;
+function openLeadModal(mode, includeShowing = false) {
   if (!liveListing) return;
-  if (mode === "showing" && !liveListing.forSale) return;
+  if (["showing","buyer_report"].includes(mode) && !liveListing.forSale) return;
 
   currentLeadMode = mode;
   leadForm.reset();
+  leadRequestKey = crypto.randomUUID();
+  $("showingChoice").checked = includeShowing;
+  $("showingChoiceWrap").classList.toggle("hidden", !["buyer_report","showing"].includes(mode));
+  $("showingOptions").classList.add("hidden");
+  $("showingCalendarFields").classList.add("hidden");
   leadError.classList.add("hidden");
   leadError.textContent = "";
   leadFormPanel.classList.remove("hidden");
@@ -466,13 +473,17 @@ function openLeadModal(mode) {
   modalPropertyDisplay.value = liveListing.address || activePropertyInput;
   leadMode.value = mode;
 
-  if (mode === "showing") {
+  if (["showing","buyer_report"].includes(mode)) {
     modalEyebrow.textContent = "SHOWING + AI BUYER REPORT";
-    modalTitle.textContent = "Your showing. Your AI report.";
-    modalCopy.textContent = "Choose your showing time. This request also starts your AI buyer report with sold comparisons, a supported price window and key checks—emailed when ready.";
+    modalTitle.textContent = "Your AI report starts here.";
+    modalCopy.textContent = "We’ll email your sold comparisons, price guidance and key checks. Tick the box below if you’d also like to see the home.";
     nextStepLabel.textContent = "WHEN DO YOU WANT TO SEE IT?";
-    showingTiming.innerHTML = `<option value="asap">As soon as possible</option><option value="today">Today, if available</option><option value="within_24h">Within 24 hours</option>`;
-    leadSubmit.textContent = "Request showing + AI report";
+    showingTiming.innerHTML = `<option value="asap">Earliest available</option><option value="preferred_time">Choose a date &amp; time</option>`;
+    $("showingTime").innerHTML = Array.from({length:24},(_,i)=>{const hour=9+Math.floor(i/2), minute=i%2?"30":"00",value=`${String(hour).padStart(2,"0")}:${minute}`;return `<option value="${value}">${hour>12?hour-12:hour}:${minute} ${hour>=12?"PM":"AM"}</option>`;}).join("");
+    $("showingDate").min = new Date().toLocaleDateString("en-CA",{timeZone:"America/Toronto"});
+    $("showingDate").max = new Date(Date.now()+29*86400000).toLocaleDateString("en-CA",{timeZone:"America/Toronto"});
+    leadSubmit.textContent = "Get my AI report";
+    syncShowingChoice();
     serviceNote.textContent = "Realtor response target: within 5 minutes, 9 AM–9 PM. Showing target: 1–24 hours, subject to availability.";
   } else if (mode === "seller") {
     modalEyebrow.textContent = "SELLER VALUE REVIEW";
@@ -497,6 +508,19 @@ function openLeadModal(mode) {
   document.body.classList.add("modal-open");
   window.setTimeout(() => leadForm.querySelector('input[name="name"]')?.focus(), 80);
 }
+
+function syncShowingChoice() {
+  if(!['buyer_report','showing'].includes(currentLeadMode)) return;
+  const showing=$('showingChoice').checked;
+  currentLeadMode=showing?'showing':'buyer_report'; leadMode.value=currentLeadMode;
+  $('showingOptions').classList.toggle('hidden',!showing);
+  const calendar=showing && showingTiming.value==='preferred_time';
+  $('showingCalendarFields').classList.toggle('hidden',!calendar);
+  $('showingDate').required=calendar; $('showingTime').required=calendar;
+  leadSubmit.textContent=showing?'Get report + request showing':'Get my AI report';
+}
+$('showingChoice').addEventListener('change',syncShowingChoice);
+showingTiming.addEventListener('change',syncShowingChoice);
 
 function hideLeadModal() {
   leadModal.classList.add("hidden");
@@ -525,7 +549,8 @@ leadForm.addEventListener("submit", async (event) => {
   if (!email) return showLeadError("Please enter your email address.");
   if (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email)) return showLeadError("Please enter a valid email address.");
 
-  let timing = String(form.get("showing_timing") || "asap");
+  let timing = currentLeadMode === "showing" ? showingTiming.value || "asap" : "report";
+  if (currentLeadMode === "showing" && timing === "preferred_time" && (!$("showingDate").value || !$("showingTime").value)) return showLeadError("Choose your preferred showing date and time.");
   if (currentLeadMode === "seller") timing = sellerTimeline.value || "seller_curious";
 
   leadSubmit.disabled = true;
@@ -542,6 +567,10 @@ leadForm.addEventListener("submit", async (event) => {
     email,
     website,
     showing_timing: timing,
+    showing_requested: currentLeadMode === "showing",
+    showing_date: currentLeadMode === "showing" ? $("showingDate").value : null,
+    showing_time: currentLeadMode === "showing" ? $("showingTime").value : null,
+    request_key: leadRequestKey,
     lead_mode: currentLeadMode,
     page_url: location.href,
     referrer: document.referrer || null,
@@ -570,6 +599,7 @@ leadForm.addEventListener("submit", async (event) => {
 
     leadFormPanel.classList.add("hidden");
     leadSuccessPanel.classList.remove("hidden");
+    if (currentLeadMode === "showing" && result.showing_requested === false) currentLeadMode = "buyer_report";
     renderLeadSuccess(result);
   } catch (error) {
     showLeadError(error instanceof Error ? error.message : "Unable to send the request right now.");
@@ -588,6 +618,11 @@ function renderLeadSuccess(result) {
       : "A Realtor will contact you to confirm the earliest appointment available from the listing side.";
     successStepOne.textContent = "Showing request routed";
     successStepOneNote.textContent = afterHours ? "We will respond in the next 9 AM–9 PM service window." : "Realtor response target: within 5 minutes.";
+  } else if (currentLeadMode === "buyer_report") {
+    successTitle.textContent = "Your AI report is on its way.";
+    successCopy.textContent = "Your request is saved. We’ll email the report when it is ready.";
+    successStepOne.textContent = "No showing requested";
+    successStepOneNote.textContent = "Choose a time from your report whenever you’re ready.";
   } else if (currentLeadMode === "seller") {
     successTitle.textContent = "Seller review requested.";
     successCopy.textContent = "Your private property review is now being prepared.";
@@ -716,9 +751,7 @@ function resetPriceCheck() {
 function renderAskingRange(data) {
   const range = data.observedAsking, target = $("priceCheckRange");
   if (!range || !(range.low > 0) || !(range.high >= range.low) || !(data.asking > 0)) { target.innerHTML = ""; return; }
-  const low = Math.min(range.low, data.asking), high = Math.max(range.high, data.asking);
-  const x = value => high === low ? 50 : 5 + 90 * (value - low) / (high - low);
-  target.innerHTML = `<div class="range-head"><div><span>SIMILAR HOMES ARE ASKING</span><strong>${money(range.low)}${range.high !== range.low ? `–${money(range.high)}` : ''}</strong></div><div><span>THIS HOME</span><strong>${money(data.asking)}</strong></div></div><div class="range-track" role="img" aria-label="${escapeHtml(`${data.count} matched listings ask ${money(range.low)} to ${money(range.high)}. This home asks ${money(data.asking)}. Not a sold-price estimate.`)}"><span class="range-base"></span><span class="range-band" style="left:${x(range.low)}%;width:${Math.max(0.5,x(range.high)-x(range.low))}%"></span><span class="range-dot" style="left:${x(data.asking)}%"></span></div><div class="range-legend"><span><i></i>Similar homes</span><span>● This home’s asking price</span></div>`;
+  target.innerHTML = `<div class="price-picture"><div class="price-picture-subject"><span>THIS HOME IS ASKING</span><strong>${money(data.asking)}</strong></div><div class="price-picture-market"><span>${data.count} SIMILAR HOMES · ASKING PRICES</span><div class="price-endpoints"><div><small>Lowest</small><strong>${money(range.low)}</strong></div><div><small>Highest</small><strong>${money(range.high)}</strong></div></div></div></div><p class="price-picture-note">These homes are still for sale. Your email report compares completed sales.</p>`;
 }
 function renderPriceCheck(data) {
   const recognized = ["below", "inline", "above", "review"].includes(data.signal);
@@ -811,9 +844,9 @@ for (const button of document.querySelectorAll("[data-home-topic]")) {
 
 // Discovery only opens public snapshots. It never submits a lead or sends a report.
 const discoveryModes = {
-  new: { title: "Just Listed", description: "Active homes entered on this MLS listing in the past 7 days. A relisting is not necessarily new to the market." },
-  luxury: { title: "Luxury Homes", description: "Explore active homes asking $2 million or more, highest asking price first. Open a home for the listing facts and showing options." },
-  budget: { title: "Search by Budget", description: "Active homes at or below your asking-price cap, lowest asking price first. This is not a mortgage affordability assessment." }
+  new: { title: "Just Listed", description: "A fresh shortlist from the past 7 days. Choose a home for its AI snapshot." },
+  luxury: { title: "Luxury Homes", description: "A selection of homes asking $2 million or more. Refine the city and home type." },
+  budget: { title: "Search by Budget", description: "Homes within your asking-price limit. Adjust the budget to make this shortlist yours." }
 };
 let discoveryMode = "new";
 let discoveryController = null;
@@ -823,10 +856,10 @@ function resetDiscoveryResults() {
   discoverySequence++;
   discoveryController?.abort();
   $("discoverySubmit").disabled = false;
-  $("discoverySubmit").textContent = "Find homes";
+  $("discoverySubmit").textContent = "Find my shortlist";
   $("discoveryResults").innerHTML = "";
   $("discoveryCoverage").textContent = "";
-  $("discoveryStatus").textContent = "Choose your filters, then find homes.";
+  $("discoveryStatus").textContent = "Refine your search or choose a collection above.";
 }
 function openDiscovery(mode, focus = true) {
   if (!discoveryModes[mode]) return;
@@ -849,6 +882,8 @@ for (const tile of document.querySelectorAll("[data-discovery]")) {
     event.preventDefault();
     history.pushState(null, "", tile.getAttribute("href"));
     openDiscovery(tile.dataset.discovery);
+    if (tile.dataset.discovery === "budget" && !$("discoveryBudget").value) $("discoveryBudget").value = "1500000";
+    discoveryForm.requestSubmit();
   });
 }
 discoveryForm.addEventListener("input", resetDiscoveryResults);
@@ -860,30 +895,31 @@ discoveryForm.addEventListener("submit", async (event) => {
   const sequence = discoverySequence;
   discoveryController = new AbortController();
   const controller = discoveryController;
-  const timer = window.setTimeout(() => controller.abort(), 20000);
+  const timer = window.setTimeout(() => controller.abort(), 30000);
   const params = new URLSearchParams({ mode: discoveryMode, city: $("discoveryCity").value, type: $("discoveryType").value });
   if ($("discoveryBudget").value) params.set("maxPrice", $("discoveryBudget").value);
   $("discoverySubmit").disabled = true;
   $("discoverySubmit").textContent = "Checking…";
   $("discoveryStatus").textContent = "Checking public listings…";
   try {
-    const response = await fetch(`/api/discovery?${params}`, { headers: { Accept: "application/json" }, signal: controller.signal });
+    const response = await fetch(`/api/recommendations?${params}`, { headers: { Accept: "application/json" }, signal: controller.signal });
     const data = await response.json();
     if (sequence !== discoverySequence) return;
     if (!response.ok || !data.ok || !Array.isArray(data.listings)) throw new Error(data.error || "Listing search is temporarily unavailable.");
-    $("discoveryStatus").textContent = data.listings.length ? `${data.listings.length} home${data.listings.length === 1 ? "" : "s"} to explore. Open a home to recheck its facts.` : "No matches in the listings checked. This is not a full-market search. Try another type or budget, or check an address directly.";
+    $("discoveryStatus").textContent = data.listings.length ? `${data.selectionMode === "ai" ? "AI shortlist" : "Matched shortlist"} · ${data.listings.length} home${data.listings.length === 1 ? "" : "s"}. Open a home to explore.` : "No matches in the listings checked. This is not a full-market search. Try another type or budget, or check an address directly.";
     $("discoveryResults").innerHTML = data.listings.map((home) => {
       const badge = discoveryMode === "luxury" ? "Asking $2M+" : home.daysLive != null ? `${home.daysLive} days on this listing` : "Active listing";
       const facts = [home.propertySubType, home.beds != null ? `${home.bedroomLayout || home.beds} bed` : null, home.baths != null ? `${home.baths} bath` : null].filter(Boolean).join(" · ");
-      return `<article class="discovery-home"><span class="home-badge">${escapeHtml(badge)}</span><strong class="home-price">${money(home.listPrice)}</strong><h4>${escapeHtml(home.address)}</h4><p>${escapeHtml(facts)}</p><small>${escapeHtml(home.listingOffice || "Listing office not reported")} · MLS ${escapeHtml(home.listingKey)}</small><a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">View property →</a></article>`;
+      const photo = typeof home.photoUrl === 'string' && home.photoUrl.startsWith('/api/discovery-photo?listingKey=') ? `<img src="${escapeAttr(home.photoUrl)}" alt="${escapeAttr(home.address)}" loading="lazy" decoding="async" />` : '';
+      return `<article class="discovery-home"><a class="discovery-photo" href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}" aria-label="Explore ${escapeAttr(home.address)}"><span class="photo-fallback">Photo unavailable · explore the home</span>${photo}<span class="home-badge">${escapeHtml(badge)}</span></a><div class="discovery-home-content"><strong class="home-price">${money(home.listPrice)}</strong><h4>${escapeHtml(home.address)}</h4><p>${escapeHtml(facts)}</p>${home.selectionReason ? `<p class="selection-reason"><span aria-hidden="true">✦</span> ${escapeHtml(home.selectionReason)}</p>` : ''}<small>${escapeHtml(home.listingOffice || "Listing office not reported")} · MLS ${escapeHtml(home.listingKey)}</small><a class="discovery-open" href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">Explore this home →</a></div></article>`;
     }).join("");
-    $("discoveryCoverage").textContent = `${data.note || "Results are a selection, not the full market."} ${data.coverage?.partial ? "The search reached its scan limit. " : ""}${data.coverage?.moreMatches ? "Showing the first 12 matches. Narrow your filters for more focused results. " : ""}${data.checkedAt ? `Checked ${formatDate(data.checkedAt)}; results may be cached for up to 5 minutes.` : ""}`;
+    $("discoveryCoverage").textContent = `${data.note || "Results are a selection, not the full market."} ${data.coverage?.partial ? "The search reached its scan limit. " : ""}${data.coverage?.moreMatches ? "Refine your filters to explore another shortlist. " : ""}${data.checkedAt ? `Checked ${formatDate(data.checkedAt)}; results may be cached for up to 5 minutes.` : ""}`;
   } catch (error) {
     if (sequence !== discoverySequence) return;
     $("discoveryStatus").textContent = error.name === "AbortError" ? "The search took too long. Try again, or check an address directly." : error.message || "Unable to check listings. Please try again.";
   } finally {
     window.clearTimeout(timer);
-    if (sequence === discoverySequence) { $("discoverySubmit").disabled = false; $("discoverySubmit").textContent = "Find homes"; }
+    if (sequence === discoverySequence) { $("discoverySubmit").disabled = false; $("discoverySubmit").textContent = "Find my shortlist"; }
   }
 });
 $("discoveryResults").addEventListener("click", (event) => {
@@ -891,6 +927,7 @@ $("discoveryResults").addEventListener("click", (event) => {
   if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
   if (loading) return;
+  history.pushState(null, "", `/?listingKey=${encodeURIComponent(link.dataset.openListing)}#lookup`);
   propertyInput.value = link.dataset.openListing;
   analysisForm.requestSubmit();
 });
@@ -906,4 +943,10 @@ if (linkedMls && /^[A-Z]\d{7,9}$/.test(linkedMls)) { propertyInput.value = linke
 else {
   const linkedQuery = new URLSearchParams(window.location.search).get("q");
   if (linkedQuery && linkedQuery.length <= 500) { propertyInput.value = linkedQuery; analysisForm.requestSubmit(); }
+}
+
+$("discoveryResults").addEventListener("error", event => {if(event.target?.tagName==='IMG'){event.target.style.display='none';}},true);
+if(typeof IntersectionObserver!=='undefined'){
+  const shortlistObserver=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){shortlistObserver.disconnect();if(!$("discoveryResults").innerHTML && !$("discoverySubmit").disabled){openDiscovery(discoveryMode,false);discoveryForm.requestSubmit();}}},{rootMargin:'250px'});
+  shortlistObserver.observe($("explore"));
 }

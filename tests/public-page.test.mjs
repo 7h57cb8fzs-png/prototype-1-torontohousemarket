@@ -12,17 +12,31 @@ function page(fetchImpl = async () => { throw new Error("Unexpected network call
     textContent: "", innerHTML: "", value: "", disabled: false, handlers: {}, dataset: {},
     addEventListener(name, handler) { this.handlers[name] = handler; },
     classList: { add() {}, remove() {}, toggle() {}, contains() { return true; } },
-    querySelectorAll() { return []; }, focus() {}, scrollIntoView() {}, reportValidity() { return true; },
+    querySelectorAll() { return []; }, querySelector(){return {focus(){}};}, reset(){}, focus() {}, scrollIntoView() {}, reportValidity() { return true; },
     requestSubmit() { this.submitted = true; }
   }]));
   const context = vm.createContext({ document: {
     getElementById(id) { assert.ok(elements.has(id), `HTML element ${id} exists`); return elements.get(id); },
     querySelectorAll() { return []; }, addEventListener() {}, body: { classList: { add() {}, remove() {} } }
-  }, window: { location: { search: "", hash: "" }, addEventListener() {}, setTimeout, clearTimeout }, history: { pushState() {} }, URLSearchParams, AbortController, fetch: fetchImpl, console });
+  }, window: { location: { search: "", hash: "" }, addEventListener() {}, setTimeout, clearTimeout }, history: { pushState() {} }, crypto:globalThis.crypto, URLSearchParams, AbortController, fetch: fetchImpl, console });
   vm.runInContext(script, context);
   return { elements, context };
 }
 test("public page initializes without fetching a report or missing an element", () => { page(); });
+test('the report modal defaults to no showing and the checkbox controls calendar intent',()=>{
+  const {elements,context}=page();
+  vm.runInContext("liveListing={listingKey:'N1000001',forSale:true,address:'Test home'};activePropertyInput='N1000001';openLeadModal('buyer_report')",context);
+  assert.equal(elements.get('showingChoice').checked,false);
+  assert.equal(vm.runInContext('currentLeadMode',context),'buyer_report');
+  assert.equal(elements.get('leadSubmit').textContent,'Get my AI report');
+  elements.get('showingChoice').checked=true;elements.get('showingChoice').handlers.change();
+  assert.equal(vm.runInContext('currentLeadMode',context),'showing');
+  elements.get('showingTiming').value='preferred_time';elements.get('showingTiming').handlers.change();
+  assert.equal(elements.get('showingDate').required,true);
+  elements.get('showingChoice').checked=false;elements.get('showingChoice').handlers.change();
+  assert.equal(vm.runInContext('currentLeadMode',context),'buyer_report');
+  assert.equal(elements.get('showingDate').required,false);
+});
 test('related homes are visible immediately and not described as zero evidence', () => {
   const {elements,context} = page();
   context.related = {available:false,criteria:'Same type and neighbourhood',count:0,relatedMatches:[{listingKey:'W13602036',address:'53 Foxrun Avenue',asking:874900,size:'1100–1500 sq ft',beds:3,baths:2,difference:'Different parking.'}]};
@@ -72,7 +86,7 @@ test("discovery empty, error and escaped result states use only the discovery en
   const paths = [];
   const { elements, context } = page(async url => {
     paths.push(url);
-    assert.ok(url.startsWith("/api/discovery?"));
+    assert.ok(url.startsWith("/api/recommendations?"));
     if (mode === "error") return Response.json({ ok: false, error: "IDX unavailable" }, { status: 502 });
     return Response.json({ ok: true, listings: mode === "empty" ? [] : [{ listingKey: "N1000001", address: '<img src=x onerror="alert(1)">', listPrice: 900000, propertySubType: "Detached", daysLive: 1 }], coverage: { partial: true }, note: "Not the full market." });
   });

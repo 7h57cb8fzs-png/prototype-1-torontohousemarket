@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=showing-report-v110-20260906" />
+  <link rel="stylesheet" href="/styles.css?v=phase5-v111-20260907" />
 </head>
 <body>
 <header class="site-header">
@@ -30,7 +30,7 @@
     <div class="wrap hero-inner">
       <div class="speed-chip"><span class="live-dot"></span> FAST SHOWING + AI BUYER REPORT</div>
       <h1>See the home.<br><span>Get the AI report.</span></h1>
-      <p class="hero-copy">One request gets you a fast showing and a private AI buyer report. Understand the price, compare recent sales and know what to check before an offer.</p>
+      <p class="hero-copy">Get the AI buyer report for a home you like. See the sold comparisons, understand the price and add a fast showing whenever you’re ready.</p>
 
       <form id="analysisForm" class="search-box" novalidate>
         <div class="search-input-wrap">
@@ -40,10 +40,10 @@
         <button id="lookupButton" class="primary-btn hero-cta" type="submit">Preview this home →</button>
       </form>
       <div id="inputStatus" class="input-status" aria-live="polite">Free property preview · No sign-up</div>
-      <p class="hero-ai-note"><strong>Your showing request starts your full AI report.</strong> It is emailed when ready.</p>
+      <p class="hero-ai-note"><strong>Your AI report. A showing if you want one.</strong> One short form. Your report arrives by email.</p>
 
       <div class="hero-included" id="reportIncluded">
-        <article><span class="included-icon" aria-hidden="true">↗</span><div><strong>See it sooner</strong><p>Earliest available showing · 1–24 hour target*</p></div></article>
+        <article><span class="included-icon" aria-hidden="true">↗</span><div><strong>Add a showing</strong><p>Earliest available showing · 1–24 hour target*</p></div></article>
         <article><span class="included-icon" aria-hidden="true">✦</span><div><strong>Your AI buyer report</strong><p>Sold comparisons · price window · confidence · key checks</p></div></article>
       </div>
       <p class="speed-disclaimer">*Target only. Actual showing time depends on listing, seller and property-access availability.</p>
@@ -91,10 +91,10 @@
 
           <div id="activeActionBox" class="speed-action-box hidden">
             <div class="speed-action-top"><span>SHOWING + AI REPORT</span><small>1–24 HOUR TARGET*</small></div>
-            <strong>See it. Understand it.</strong>
-            <p>Your Realtor confirms the earliest available time.</p>
-            <button id="seeHomeButton" class="showing-btn" type="button">Request showing + AI report</button>
-            <small class="ai-after">Your full AI buyer report is generated after this request and emailed when ready.</small>
+            <strong>Understand it. Then see it.</strong>
+            <p>Get your report first. Add a showing with one checkbox.</p>
+            <button id="seeHomeButton" class="showing-btn" type="button">Get my AI report</button>
+            <small class="ai-after">Your report is included. A showing is your choice.</small>
           </div>
 
           <div id="offMarketActionBox" class="offmarket-action-box hidden">
@@ -154,7 +154,7 @@
             <button type="button" data-home-topic="costs">Running costs</button>
           </div>
         </div>
-        <div class="brief-next"><div><strong>Like what you see?</strong><span>One request starts your showing and full AI report.</span></div><button id="briefShowingButton" class="primary-btn" type="button">Get showing + AI report</button></div>
+        <div class="brief-next"><div><strong>Like what you see?</strong><span>Get the report. Choose a showing now or later.</span></div><button id="briefShowingButton" class="primary-btn" type="button">Get my AI report</button></div>
       </section>
 
       <details class="extra-facts"><summary>More listing details &amp; costs</summary>
@@ -201,24 +201,24 @@
     <div class="wrap">
       <div class="section-head discovery-heading">
         <span class="section-label">BROWSE THE MARKET</span>
-        <h2 id="exploreTitle">Explore GTA listings.</h2>
-        <p>Choose a starting point. Find something worth seeing.</p>
+        <h2 id="exploreTitle">A few homes worth opening.</h2>
+        <p>Live listings, selected around your search. Open a home for its AI snapshot.</p>
       </div>
       <nav class="discovery-shortcuts" aria-label="Ways to explore homes">
         <a class="discovery-tile" href="#browse-new" data-discovery="new"><span class="tile-icon" aria-hidden="true">✦</span><strong>Just Listed</strong><span>Listed in the past 7 days</span></a>
         <a class="discovery-tile" href="#browse-luxury" data-discovery="luxury"><span class="tile-icon" aria-hidden="true">◇</span><strong>Luxury Homes</strong><span>Explore homes asking $2M+</span></a>
         <a class="discovery-tile" href="#browse-budget" data-discovery="budget"><span class="tile-icon" aria-hidden="true">$</span><strong>Search by Budget</strong><span>Your price cap. Your home type.</span></a>
       </nav>
-      <section id="discoveryPanel" class="discovery-panel hidden" aria-labelledby="discoveryTitle">
+      <section id="discoveryPanel" class="discovery-panel" aria-labelledby="discoveryTitle">
         <h3 id="discoveryTitle" tabindex="-1">Just Listed</h3>
         <p id="discoveryDescription"></p>
         <form id="discoveryForm" class="discovery-form">
           <label>City<select id="discoveryCity" name="city"><option>Toronto</option><option>Vaughan</option><option>Richmond Hill</option><option>Markham</option><option>Aurora</option><option>Newmarket</option><option>King</option><option>Whitchurch-Stouffville</option><option>Mississauga</option><option>Brampton</option><option>Caledon</option><option>Oakville</option><option>Burlington</option><option>Milton</option><option>Pickering</option><option>Ajax</option><option>Whitby</option><option>Oshawa</option></select></label>
           <label>Home type<select id="discoveryType" name="type"><option value="any">Any supported type</option><option value="detached">Detached</option><option value="semi">Semi-detached</option><option value="freehold_town">Freehold townhouse</option><option value="condo">Condo apartment</option><option value="condo_town">Condo townhouse</option><option value="duplex">Duplex</option></select></label>
           <label>Maximum asking price<input id="discoveryBudget" name="maxPrice" type="number" min="100000" max="20000000" step="1" inputmode="numeric" placeholder="e.g. 1,200,000" /></label>
-          <button id="discoverySubmit" class="primary-btn" type="submit">Find homes</button>
+          <button id="discoverySubmit" class="primary-btn" type="submit">Find my shortlist</button>
         </form>
-        <p id="discoveryStatus" class="discovery-status" role="status" aria-live="polite">Choose your search above.</p>
+        <p id="discoveryStatus" class="discovery-status" role="status" aria-live="polite">Choosing homes to explore…</p>
         <div id="discoveryResults" class="discovery-results"></div>
         <p id="discoveryCoverage" class="discovery-coverage"></p>
         <a href="#lookup" class="lookup-return">Have an address or MLS number? Check it directly ↑</a>
@@ -226,26 +226,18 @@
     </div>
   </section>
 
-  <section class="how">
-    <div class="wrap">
-      <div class="section-head">
-        <span class="section-label">HOW IT WORKS</span>
-        <h2>One request. Two useful outcomes.</h2>
-        <p>We help you see the home sooner and understand the price before you make a decision.</p>
-      </div>
-      <div class="steps">
-        <article><span>01</span><h3>Preview the home</h3><p>Enter an MLS number, street address, or listing URL.</p></article>
-        <article><span>02</span><h3>Request a showing</h3><p>Choose your showing time. The same request starts your AI report.</p></article>
-        <article><span>03</span><h3>Get the buyer report</h3><p>Receive sold comparisons, a supported price window and key checks by email.</p></article>
-      </div>
+  <section class="how buyer-path">
+    <div class="wrap buyer-path-inner">
+      <div><span class="section-label">AI INSIGHT. A REAL TEAM.</span><h2>Explore with clarity.<br>Move when you’re ready.</h2><p>Start with the report. We’re one call away when you want a second opinion or a closer look.</p><a class="team-call" href="tel:+16478904704">Ask Golestan Team · 647-890-4704 ↗</a></div>
+      <div class="buyer-path-options"><article><span aria-hidden="true">✦</span><div><h3>Get the full picture</h3><p>Sold comparisons, a supported price range and the questions that matter.</p><small>Included in every report request</small></div></article><article><span aria-hidden="true">↗</span><div><h3>See it for yourself</h3><p>Add a showing now, or choose a time from your email later.</p><small>Optional · confirmed by Golestan Team</small></div></article></div>
     </div>
   </section>
 </main>
 
-<footer>
+<footer class="team-footer">
   <div class="wrap footer-grid">
-    <p><strong>Toronto House Market</strong> · Toronto + York + Peel + Durham + Halton.</p>
-    <p class="legal-disclosure">Real estate services through CENTURY 21 Leading Edge Realty Inc., Brokerage. Showing times are not guaranteed and depend on listing/seller availability.</p>
+    <div><strong>Toronto House Market</strong><p>Toronto · York · Peel · Durham · Halton</p><a href="tel:+16478904704">Talk to Golestan Team<br><b>647-890-4704</b></a></div>
+    <div class="team-credentials"><p><strong>Alireza Golestan &amp; Mehrdad Golestan</strong><br>Sales Representatives</p><p><strong>CENTURY 21 Leading Edge Realty Inc., Brokerage</strong></p><small>Showing times are confirmed with the listing side. Property analysis is preliminary decision support and does not replace an appraisal or professional advice.</small></div>
   </div>
 </footer>
 
@@ -267,15 +259,12 @@
           <label>NAME<input name="name" autocomplete="name" required maxlength="160" /></label>
           <label>MOBILE<input name="mobile" autocomplete="tel" inputmode="tel" required maxlength="50" /></label>
         </div>
-        <div class="two-col">
-          <label>EMAIL<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required /></label>
-          <label><span id="nextStepLabel">WHEN DO YOU WANT TO SEE IT?</span>
-            <select id="showingTiming" name="showing_timing">
-              <option value="asap">As soon as possible</option>
-              <option value="today">Today, if available</option>
-              <option value="within_24h">Within 24 hours</option>
-            </select>
-          </label>
+        <label>EMAIL<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required /></label>
+        <label id="showingChoiceWrap" class="showing-choice"><input id="showingChoice" type="checkbox" /><span><strong>I’d also like a showing</strong><small>Optional. Your AI report is included either way.</small></span></label>
+        <div id="showingOptions" class="hidden showing-options">
+          <label><span id="nextStepLabel">PREFERRED TIMING</span><select id="showingTiming" name="showing_timing"><option value="asap">Earliest available</option><option value="preferred_time">Choose a date &amp; time</option></select></label>
+          <div id="showingCalendarFields" class="two-col hidden"><label>DATE<input id="showingDate" type="date" /></label><label>TIME · TORONTO<select id="showingTime"></select></label></div>
+          <small>We’ll confirm the time with the listing side. It is not booked until confirmed.</small>
         </div>
         <div id="sellerTimelineWrap" class="hidden">
           <label>SELLING TIMELINE
@@ -288,7 +277,7 @@
           </label>
         </div>
         <p id="leadError" class="form-error hidden" aria-live="polite"></p>
-        <button id="leadSubmit" class="primary-btn full" type="submit">Showing + AI report</button>
+        <button id="leadSubmit" class="primary-btn full" type="submit">Get my AI report</button>
         <small id="serviceNote" class="service-note">Realtor response target: within 5 minutes, 9 AM–9 PM. Showing target: 1–24 hours, subject to availability.</small>
       </form>
     </div>
@@ -314,7 +303,7 @@
   <div id="galleryCounter" class="gallery-counter"></div>
 </div>
 
-<div id="mobileShowing" class="mobile-showing hidden"><div><small>SHOWING + AI REPORT</small><strong id="mobileAsking"></strong></div><button id="mobileShowingButton" class="primary-btn" type="button">Showing + AI report</button></div>
-<script src="/app.js?v=showing-report-v110-20260906" defer></script>
+<div id="mobileShowing" class="mobile-showing hidden"><div><small>AI REPORT · SHOWING OPTIONAL</small><strong id="mobileAsking"></strong></div><button id="mobileShowingButton" class="primary-btn" type="button">Get my AI report</button></div>
+<script src="/app.js?v=phase5-v111-20260907" defer></script>
 </body>
 </html>

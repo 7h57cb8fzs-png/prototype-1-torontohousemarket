@@ -22,8 +22,8 @@ test('specific price suggestions require fresh exact-community evidence and esta
   const r=priceFixture();change(r);assert.equal(reportPriceSuggestion(r).available,false);assert.equal(reportPriceSuggestion(r).price,null);
  }
 });
-test('email explains pricing freshness and opens a user-controlled request for updated analysis',()=>{
- const message=propertyReportEmail('Example Road',{email:'agent@example.com'},priceFixture());
- assert.match(message.html,/Request a fresh price analysis/);assert.match(message.html,/mailto:agent@example.com/);
- assert.match(message.text,/Calculated 2026-09-06/);assert.match(message.text,/Price reference to discuss: \$1,000,000/);assert.match(message.text,/email is a snapshot/);
+test('email makes calling and showing choices clear without the removed refresh request',()=>{
+ const message=propertyReportEmail('Example', {email:'agent@example.com'},priceFixture());
+ assert.match(message.html,/Choose a showing time/);assert.match(message.html,/tel:\+16478904704/);
+ assert.ok(!message.html.includes('Request a fresh price analysis'));assert.match(message.text,/Toronto time/);
 });

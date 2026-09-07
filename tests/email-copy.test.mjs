@@ -46,7 +46,7 @@ test("buyer report email leads with a clear decision and showing action", () => 
 
   // Recompute from the supplied facts; a stored score must not override evidence.
   assert.equal(message.subject, "AI Property Report Ready: 331 Davos Road, Vaughan, ON L4H 0M8 | Value Rating 2.7/10");
-  for (const label of ["YOUR BUYER DECISION REPORT", "BOTTOM LINE", "Recent comparable sales", "WHAT THE NUMBERS SAY", "READY TO SEE IT?", "Request a showing with Alireza"]) {
+  for (const label of ["YOUR BUYER DECISION REPORT", "YOUR PRICE PICTURE", "Recent comparable sales", "WHAT THE NUMBERS SAY", "YOUR NEXT MOVE", "Choose a showing time", "tel:+16478904704"]) {
     assert.ok(message.html.includes(label), `missing ${label}`);
   }
   assert.ok(!message.html.includes("THM BUYER INTELLIGENCE"));
