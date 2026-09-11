@@ -36,3 +36,16 @@ for (const [query, name, suffix, direction, unit] of [
     assert.equal(p.unit, unit);
   });
 }
+
+for (const query of ['2 Dogleg Crt', '2 Dogleg Court', '2 DOGLEG CRT.', '2 Dogleg Ct, Toronto']) {
+  test(`Court abbreviations resolve to the same street: ${query}`, () => {
+    const p = context.parseAddress5(query);
+    assert.equal(p.number, '2');
+    assert.equal(p.name, 'dogleg');
+    assert.equal(p.suffix, 'court');
+    assert.equal(p.unit, null);
+    const fallback = context.parseAddress(query);
+    assert.equal(fallback.streetName.toLowerCase(), 'dogleg');
+    assert.equal(fallback.streetSuffix, 'Court');
+  });
+}

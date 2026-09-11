@@ -136,7 +136,7 @@ analysisForm.addEventListener("submit", async (event) => {
     if (new URLSearchParams(window.location.search).get('showing')==='1') openLeadModal('buyer_report',true);
 
     const verification = liveListing.inputValidation?.label || "Property checked.";
-    setInputStatus("ok", verification);
+    setInputStatus(liveListing.foundInMls === false ? "error" : "ok", verification);
     snapshotSection.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     liveListing = null;
@@ -186,11 +186,11 @@ function renderListing(listing) {
   snapshotMeta.textContent = buildSnapshotMeta(listing);
 
   if (listing.inputValidation?.label) {
-    linkValidationBadge.textContent = `✓ ${listing.inputValidation.label}`;
+    linkValidationBadge.textContent = `${hasMls ? "✓ " : ""}${listing.inputValidation.label}`;
     linkValidationBadge.classList.remove("hidden");
   }
 
-  marketStatusPill.textContent = active ? "FOR SALE" : "NOT FOR SALE";
+  marketStatusPill.textContent = active ? "FOR SALE" : hasMls ? "NOT FOR SALE" : "STATUS UNCONFIRMED";
   marketStatusPill.className = `market-status-pill ${active ? "is-live" : "is-off"}`;
   mlsBadge.textContent = listing.listingKey ? `MLS ${listing.listingKey}` : hasMls ? "MLS HISTORY" : "NO MLS MATCH";
 
@@ -206,8 +206,8 @@ function renderListing(listing) {
       offMarketTitle.textContent = "Not listed — but the property still has useful history.";
       offMarketCopy.textContent = "Request a deeper review using available MLS history and current local market context.";
     } else {
-      offMarketTitle.textContent = "No current MLS listing found.";
-      offMarketCopy.textContent = "Choose a buyer property review — or, if you own it, a seller value review.";
+      offMarketTitle.textContent = "We couldn’t match this address.";
+      offMarketCopy.textContent = "Try the MLS number or add the city. An unmatched address does not mean the home is off market.";
     }
   }
 
@@ -242,12 +242,13 @@ function buildSnapshotMeta(listing) {
     if (typeof listing.daysLive === "number") bits.push(listing.daysLive === 0 ? "listed today" : `${listing.daysLive} day${listing.daysLive === 1 ? "" : "s"} live`);
     return bits.join(" · ");
   }
-  if (listing.foundInMls === false) return "Not for sale on MLS · buyer and seller review options available";
+  if (listing.foundInMls === false) return "Address not matched · listing status is unconfirmed";
   const count = listing.historySummary?.appearanceCount || 0;
   return `Not currently listed${count ? ` · ${count} MLS appearance${count === 1 ? "" : "s"} found in 10 years` : ""}`;
 }
 
 function renderPrice(listing) {
+  if (listing.foundInMls === false) return `<span class="price-caption">STATUS</span>Listing status unconfirmed`;
   if (listing.forSale) {
     return listing.listPrice ? money(listing.listPrice) : `<span class="price-caption">ACTIVE LISTING</span>Price unavailable`;
   }
@@ -280,6 +281,9 @@ function renderPhotos(items, listing) {
     } else if (listing.forSale) {
       photoPlaceholderTitle.textContent = "Listing found — photos unavailable";
       photoPlaceholderText.textContent = "The property details are live. The MLS media feed did not return displayable photos for this listing.";
+    } else if (listing.foundInMls === false) {
+      photoPlaceholderTitle.textContent = "Try the MLS number or add the city";
+      photoPlaceholderText.textContent = "We couldn’t confirm a listing for this address. Its availability is unknown.";
     } else {
       photoPlaceholderTitle.textContent = "No active listing photos";
       photoPlaceholderText.textContent = "Off-market properties do not use old listing photos in the public result.";

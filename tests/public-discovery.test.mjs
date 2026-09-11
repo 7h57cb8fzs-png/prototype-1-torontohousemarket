@@ -169,3 +169,33 @@ test("unsupported sorting uses the current count, never a fixed historical offse
   assert.equal(response.status, 200); assert.equal(data.listings.length, 1);
   assert.equal(data.coverage.partial, true); assert.equal(calls.length, 3);
 });
+
+for (const query of ['2 Dogleg Crt', '2 Dogleg Court', '2 DOGLEG CRT.', '2 Dogleg Ct, Toronto']) {
+  test(`full request resolves Court spelling: ${query}`, async t => {
+    const record = home('W13681762', {UnparsedAddress:'2 Dogleg Court, Toronto, ON M3J 3E7',StreetNumber:'2',StreetName:'Dogleg',StreetSuffix:'Court',City:'Toronto',Media:[{MediaKey:'photo',MediaType:'image/jpeg',MediaURL:'https://example.com/photo.jpg'}]});
+    t.mock.method(globalThis,'fetch',async input => {
+      const url = new URL(input);
+      if (url.pathname.includes("Property('W13681762')")) return Response.json(record);
+      assert.equal(url.pathname,'/odata/Property');
+      return Response.json({value:[record]});
+    });
+    const response = await worker.fetch(new Request(`https://example.com/api/property?q=${encodeURIComponent(query)}`),{AMPRE_TOKEN:'fixture'},{waitUntil(){}});
+    const data = await response.json();
+    assert.equal(response.status,200);
+    assert.equal(data.property.listingKey,'W13681762');
+    assert.equal(data.property.forSale,true);
+    assert.equal(data.property.resolvedFromAddress,true);
+    assert.ok(data.property.photos.length);
+  });
+}
+
+test('an unmatched address is unknown, not verified off market',async t => {
+  t.mock.method(globalThis,'fetch',async()=>Response.json({value:[]}));
+  const r=await worker.fetch(new Request('https://example.com/api/property?q=999999%20Missing%20Court'),{AMPRE_TOKEN:'fixture'},{waitUntil(){}});
+  const p=(await r.json()).property;
+  assert.equal(p.foundInMls,false);
+  assert.equal(p.forSale,null);
+  assert.equal(p.status,'Unknown');
+  assert.equal(p.inputValidation.label,'Address not matched');
+  assert.equal(p.offerTiming.type,'unknown');
+});

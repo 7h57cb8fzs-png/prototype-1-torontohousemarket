@@ -91,7 +91,7 @@ async function handleProperty(request, env) {
     if (!found.subject) {
       return json({
         ok: true,
-        property: buildNoMlsProperty(input.queryText || rawQuery, input.type === "link" ? "Listing URL checked" : "Address checked")
+        property: buildNoMlsProperty(input.queryText || rawQuery, "Address not matched")
       });
     }
     subject = found.subject.ListingKey ? await fetchPropertyByKey(found.subject.ListingKey, env, !reportEvidence) || found.subject : found.subject;
@@ -139,10 +139,10 @@ function buildNoMlsProperty(address, validationLabel) {
     city: null,
     cityRegion: null,
     postalCode: null,
-    forSale: false,
+    forSale: null,
     foundInMls: false,
-    marketStatus: "Not currently listed",
-    status: "Off market",
+    marketStatus: "Listing status unconfirmed",
+    status: "Unknown",
     transactionType: null,
     propertyType: null,
     propertySubType: null,
@@ -164,8 +164,8 @@ function buildNoMlsProperty(address, validationLabel) {
     historySummary: { years: 10, appearanceCount: 0, lastStatus: null, lastListPrice: null, lastSeenDate: null, latestSold: null },
     comparableContext: { available: false, matchCount: 0, confidence: "Unavailable", basis: "No matching MLS record was found for this address." },
     priceOpinion: { available: false, label: "Property review available", note: "Request a buyer or seller review for the next step." },
-    offerTiming: { type: "not_for_sale", label: "Not for sale", note: "No active for-sale listing was found." },
-    showingFocus: { title: "Not for sale on MLS", note: "Request a buyer property review or, if you own it, a seller value review." },
+    offerTiming: { type: "unknown", label: "Listing status unconfirmed", note: "We could not match this address. Try the MLS number or add the city." },
+    showingFocus: { title: "Address not matched", note: "Request a buyer property review or, if you own it, a seller value review." },
     details: {},
     displayRestricted: false,
     resolution: "no_mls_match"
@@ -264,6 +264,7 @@ function parseAddress(input) {
     ["cres", "Crescent"],
     ["court", "Court"],
     ["ct", "Court"],
+    ["crt", "Court"],
     ["boulevard", "Boulevard"],
     ["blvd", "Boulevard"],
     ["lane", "Lane"],
@@ -1023,13 +1024,13 @@ function comparableAddressParts(record) {
   if (structuredName) return { number: structuredNumber, street: `${structuredName} ${structuredSuffix}`.trim(), query: structuredName };
   let raw = cleanText(record?.UnparsedAddress || buildAddress(record));
   if (!raw) return { number: null, street: null, query: null };
-  raw = raw.split(",")[0].replace(/\s+(?:unit|suite|apt)\s*[#-]?\s*[a-z0-9-]+$/i, "").replace(/\s+#\s*[a-z0-9-]+$/i, "").replace(/\b(road|rd|avenue|ave|street|st|drive|dr|crescent|cres|court|ct|boulevard|blvd|lane|ln|trail|trl|way)\.?\s+[a-z0-9-]+$/i, "$1").trim();
+  raw = raw.split(",")[0].replace(/\s+(?:unit|suite|apt)\s*[#-]?\s*[a-z0-9-]+$/i, "").replace(/\s+#\s*[a-z0-9-]+$/i, "").replace(/\b(road|rd|avenue|ave|street|st|drive|dr|crescent|cres|court|ct|crt|boulevard|blvd|lane|ln|trail|trl|way)\.?\s+[a-z0-9-]+$/i, "$1").trim();
   const unitFirst = raw.match(/^\s*(?:unit\s*)?[a-z0-9]+\s*[-–]\s*(\d+[a-z]?)\s+(.+)$/i);
   const normal = raw.match(/^\s*(\d+[a-z]?)\s+(.+)$/i);
   const match = unitFirst || normal;
-  if (!match) return { number: null, street: raw, query: raw.replace(/\b(?:road|rd|avenue|ave|street|st|drive|dr|crescent|cres|court|ct|boulevard|blvd|lane|ln|trail|trl|way)\.?$/i, "").trim() };
+  if (!match) return { number: null, street: raw, query: raw.replace(/\b(?:road|rd|avenue|ave|street|st|drive|dr|crescent|cres|court|ct|crt|boulevard|blvd|lane|ln|trail|trl|way)\.?$/i, "").trim() };
   const street = match[2].replace(/\s+#\s*[a-z0-9-]+$/i, "").trim();
-  const query = street.replace(/\b(?:road|rd|avenue|ave|street|st|drive|dr|crescent|cres|court|ct|boulevard|blvd|lane|ln|trail|trl|way)\.?$/i, "").trim();
+  const query = street.replace(/\b(?:road|rd|avenue|ave|street|st|drive|dr|crescent|cres|court|ct|crt|boulevard|blvd|lane|ln|trail|trl|way)\.?$/i, "").trim();
   return { number: match[1], street, query };
 }
 __name(comparableAddressParts, "comparableAddressParts");
@@ -1736,7 +1737,7 @@ function parseAddress2(raw) {
   const first = String(raw || "").replace(/\s+/g, " ").trim().split(",")[0].trim();
   const m = first.match(/^(\d+[A-Za-z]?)\s+(.+)$/);
   if (!m) return {};
-  const aliases = { street: "street", st: "street", road: "road", rd: "road", avenue: "avenue", ave: "avenue", drive: "drive", dr: "drive", crescent: "crescent", cres: "crescent", court: "court", ct: "court", boulevard: "boulevard", blvd: "boulevard", lane: "lane", ln: "lane", way: "way", trail: "trail", tr: "trail", place: "place", pl: "place", terrace: "terrace", terr: "terrace", circle: "circle", cir: "circle", gardens: "gardens", gdns: "gardens", gate: "gate", grove: "grove", heights: "heights", hts: "heights" };
+  const aliases = { street: "street", st: "street", road: "road", rd: "road", avenue: "avenue", ave: "avenue", drive: "drive", dr: "drive", crescent: "crescent", cres: "crescent", court: "court", ct: "court", crt: "court", boulevard: "boulevard", blvd: "boulevard", lane: "lane", ln: "lane", way: "way", trail: "trail", tr: "trail", place: "place", pl: "place", terrace: "terrace", terr: "terrace", circle: "circle", cir: "circle", gardens: "gardens", gdns: "gardens", gate: "gate", grove: "grove", heights: "heights", hts: "heights" };
   const t = m[2].trim().split(/\s+/), last = (t[t.length - 1] || "").replace(/\./g, "").toLowerCase();
   const suffix = aliases[last] || null;
   if (suffix) t.pop();
@@ -2203,6 +2204,7 @@ function parseAddress3(raw) {
     ["cres", "Crescent"],
     ["court", "Court"],
     ["ct", "Court"],
+    ["crt", "Court"],
     ["boulevard", "Boulevard"],
     ["blvd", "Boulevard"],
     ["lane", "Lane"],
@@ -2400,6 +2402,7 @@ function parseAddress4(raw) {
     ["cres", "crescent"],
     ["court", "court"],
     ["ct", "court"],
+    ["crt", "court"],
     ["boulevard", "boulevard"],
     ["blvd", "boulevard"],
     ["lane", "lane"],
@@ -2653,7 +2656,7 @@ function parseRealtorAddress(raw) {
     const url = new URL(raw);
     if (!/(^|\.)realtor\.ca$/i.test(url.hostname)) return "";
     const decoded = decodeURIComponent(url.pathname).replace(/^\/(?:real-estate|immobilier)\/\d{6,12}\//i, "").replace(/[-_+\/]+/g, " ").replace(/\s+/g, " ").trim();
-    const match = decoded.match(/\b(\d+[A-Za-z]?)\s+([A-Za-z0-9.' ]{2,80}?)\s+(street|st|road|rd|avenue|ave|drive|dr|crescent|cres|court|ct|boulevard|blvd|lane|ln|way|trail|tr|place|pl|parkway|pkwy)\b/i);
+    const match = decoded.match(/\b(\d+[A-Za-z]?)\s+([A-Za-z0-9.' ]{2,80}?)\s+(street|st|road|rd|avenue|ave|drive|dr|crescent|cres|court|ct|crt|boulevard|blvd|lane|ln|way|trail|tr|place|pl|parkway|pkwy)\b/i);
     return match ? `${match[1]} ${match[2]} ${match[3]}`.replace(/\s+/g, " ").trim() : "";
   } catch {
     return "";
@@ -2886,7 +2889,7 @@ var STREET_TYPE_ALIASES = new Map(Object.entries({
   concession: "concession",
   corners: "corners",
   court: "court",
-  ct: "court",
+  ct: "court", crt: "court",
   cove: "cove",
   crescent: "crescent",
   cres: "crescent",
@@ -3066,7 +3069,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "buyer-refinement-condo-size-v112-20260911";
+var VERSION4 = "address-court-alias-v113-20260911";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3699,7 +3702,7 @@ async function resolveFreeCoordinates(address) {
   if (!address) return null;
   const match = address.match(/^\s*(\d+[A-Za-z]?)\s+([^,]+)/);
   if (match) {
-    const number = match[1].replace(/'/g, "''"), street = match[2].replace(/\b(?:street|st|road|rd|avenue|ave|drive|dr|boulevard|blvd|court|ct|crescent|cres|lane|ln|trail|trl|place|pl)\.?\b.*$/i, "").trim().replace(/'/g, "''");
+    const number = match[1].replace(/'/g, "''"), street = match[2].replace(/\b(?:street|st|road|rd|avenue|ave|drive|dr|boulevard|blvd|court|ct|crt|crescent|cres|lane|ln|trail|trl|place|pl)\.?\b.*$/i, "").trim().replace(/'/g, "''");
     if (street) {
       const params = new URLSearchParams({ f: "json", where: `ADDRESS_NUMBER='${number}' AND upper(LINEAR_NAME_FULL) LIKE upper('${street}%')`, outFields: "LATITUDE,LONGITUDE", returnGeometry: "false", resultRecordCount: "1" });
       try {

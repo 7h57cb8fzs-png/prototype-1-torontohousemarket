@@ -188,3 +188,14 @@ test('one asking-price comparison never becomes an artificial market range',()=>
  const html=elements.get('priceCheckRange').innerHTML;
  assert.match(html,/1 SIMILAR HOME IS ASKING/);assert.match(html,/31,000 less/);assert.ok(!html.includes('Below range'));assert.match(html,/not a market range/);
 });
+
+test('an unmatched address never displays a verified not-for-sale status',()=>{
+  const {context,elements}=page();
+  context.unmatched={address:'999999 Missing Court',foundInMls:false,forSale:null,inputValidation:{label:'Address not matched'},photos:[]};
+  vm.runInContext('renderListing(unmatched)',context);
+  assert.equal(elements.get('marketStatusPill').textContent,'STATUS UNCONFIRMED');
+  assert.equal(elements.get('linkValidationBadge').textContent,'Address not matched');
+  assert.match(elements.get('livePrice').innerHTML,/Listing status unconfirmed/);
+  assert.doesNotMatch(elements.get('snapshotMeta').textContent,/Not for sale/);
+  assert.match(elements.get('offMarketCopy').textContent,/Try the MLS number or add the city/);
+});

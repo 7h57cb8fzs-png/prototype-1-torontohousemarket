@@ -82,6 +82,19 @@ async function checkAvenueAddress(base) {
     console.log(JSON.stringify({ addressSearch: { query, listingKey: matchedKey, address: property.address, forSale: property.forSale } }));
   }
 }
+async function checkDoglegAddress(base) {
+  let matchedKey;
+  for (const query of ['2 Dogleg Crt', '2 Dogleg Court', '2 DOGLEG CRT.', '2 Dogleg Ct, Toronto']) {
+    const response = await fetch(`${base}/api/property?q=${encodeURIComponent(query)}`);
+    const data = await response.json();
+    const p = data.property;
+    check(response.ok && data.ok && p?.listingKey && p.forSale && /^2 Dogleg Court\b/i.test(p.address), `Dogleg address search failed: ${query}`);
+    check(!matchedKey || matchedKey === p.listingKey, 'Dogleg variants resolved to different listings');
+    matchedKey = p.listingKey;
+    check(p.photos?.length > 0, 'Dogleg photos missing');
+    console.log(JSON.stringify({doglegAddress:{query,listingKey:p.listingKey,address:p.address,forSale:p.forSale,photoCount:p.photos.length}}));
+  }
+}
 async function checkWhitburn(base) {
   const response = await fetch(`${base}/api/price-check?listingKey=W13676100`);
   const p = await response.json();
@@ -111,6 +124,7 @@ async function checkPhase5(base) {
 await checkPhase5(previewOrigin);
 await checkWhitburn(previewOrigin);
 await checkAvenueAddress(previewOrigin);
+await checkDoglegAddress(previewOrigin);
 await checkBedroomPricing(previewOrigin);
 await checkCondoSize(previewOrigin);
 const positivePreview = await (await fetch(`${previewOrigin}/api/price-check?listingKey=N13519308`)).json();
@@ -174,6 +188,7 @@ try {
   } else console.log(JSON.stringify({schoolCardCheck:{name:schoolProperty.property?.schoolSummary?.name,tokenAvailable:false}}));
   await checkWhitburn(origin);
   await checkAvenueAddress(origin);
+  await checkDoglegAddress(origin);
   await checkBedroomPricing(origin);
   await checkCondoSize(origin);
   const priceResponse = await fetch(`${origin}/api/price-check?listingKey=N13519308`);
