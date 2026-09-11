@@ -82,7 +82,7 @@ async function handleProperty(request, env) {
   const directKey = /^[A-Z]\d{7,9}$/.test(listingKeyParam) ? listingKeyParam : input.listingKey;
   if (directKey) {
     subject = await fetchPropertyByKey(directKey, env, !reportEvidence);
-    if (!subject) return json({ ok: false, error: "That MLS listing could not be found." }, 404);
+    if (!subject) return json({ ok: false, error: "We couldn’t retrieve this MLS listing from our connected feed. It may still be listed elsewhere. Contact the team to check it." }, 404);
     history = publicSnapshot || reportEvidence ? [subject] : await findSameAddressHistory(subject, env);
     resolution = input.type === "link" ? "link_mls" : "mls";
     validationLabel = input.type === "link" ? `Listing URL matched to MLS ${subject.ListingKey}` : `MLS ${subject.ListingKey} verified`;
@@ -91,7 +91,7 @@ async function handleProperty(request, env) {
     if (!found.subject) {
       return json({
         ok: true,
-        property: buildNoMlsProperty(input.queryText || rawQuery, "Address not matched")
+        property: buildNoMlsProperty(input.queryText || rawQuery, "Not found in connected feed")
       });
     }
     subject = found.subject.ListingKey ? await fetchPropertyByKey(found.subject.ListingKey, env, !reportEvidence) || found.subject : found.subject;

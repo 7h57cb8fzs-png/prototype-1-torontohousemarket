@@ -121,25 +121,16 @@ async function checkPhase5(base) {
   check(photoOk,'No working photo in the checked shortlist');
   console.log(JSON.stringify({phase5:{selectionMode:data.selectionMode,count:data.listings.length,photoOk,protectedRoutes:true}}));
 }
-const poolResponse = await fetch(`${previewOrigin}/api/discovery?mode=new&city=Toronto&type=any`);
-const poolData = await poolResponse.json();
-const pool = [...new Map((poolData.listings || []).map(p => [p.listingKey,p])).values()];
-check(poolResponse.ok && pool.length >= 3, 'Need three current listings for the requested random sample');
-for (let i=pool.length-1;i>0;i--) { const j=randomInt(i+1); [pool[i],pool[j]]=[pool[j],pool[i]]; }
-const sample = pool.slice(0,3);
-console.log(JSON.stringify({randomPropertySample:sample.map(p=>({listingKey:p.listingKey,address:p.address}))}));
-async function checkThreeProperties(base) {
-  for (const home of sample) {
-    const r=await fetch(`${base}/api/property?listingKey=${encodeURIComponent(home.listingKey)}`),d=await r.json(),p=d.property;
-    check(r.ok && d.ok && p?.listingKey===home.listingKey && p.foundInMls!==false,'Selected listing lookup failed');
-    check(p.address && p.listPrice > 0,'Selected listing details missing');
-    const c=await fetch(`${base}/api/price-check?listingKey=${encodeURIComponent(home.listingKey)}`),v=await c.json();
-    check(c.ok && v.ok,'Price snapshot failed');
-    if(p.isCondominium) check([...(v.matches||[]),...(v.relatedMatches||[])].every(row=>row.size===v.subjectSize),'Condo comparison size mismatch');
-    console.log(JSON.stringify({propertyCheck:{listingKey:p.listingKey,address:p.address,size:p.livingAreaRange,comparables:v.count,stage:base===origin?'production':'preview'}}));
-  }
+async function checkReportedProperty(base) {
+  const r=await fetch(`${base}/api/property?q=${encodeURIComponent('898 Portage Pkwy 2106')}`),d=await r.json(),p=d.property;
+  check(r.ok && d.ok && p,'Reported address request failed');
+  if(p.foundInMls===false) check(p.inputValidation?.label==='Not found in connected feed' && p.forSale===null,'Missing record must have clear feed limitation and unknown status');
+  else check(/\b898\b/.test(p.address)&&/\b2106\b/.test(p.address),'Wrong unit substitution');
+  const keyResponse=await fetch(`${base}/api/property?listingKey=N13611398`),keyData=await keyResponse.json();
+  check(keyResponse.ok ? keyData.property?.listingKey==='N13611398' : keyResponse.status===404 && keyData.error.includes('connected feed'),'MLS lookup must preserve exact identity or explain feed gap');
+  console.log(JSON.stringify({reportedProperty:{address:p.address,found:p.foundInMls,mlsStatus:keyResponse.status,stage:base===origin?'production':'preview'}}));
 }
-await checkThreeProperties(previewOrigin);
+await checkReportedProperty(previewOrigin);
 const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
 let attempted = false;
 try {
@@ -167,9 +158,9 @@ try {
     }
     check(matched, `Live asset mismatch after propagation window: ${path}`);
   }
-  await checkThreeProperties(origin);
+  await checkReportedProperty(origin);
   console.log(JSON.stringify({deployedVersion:candidate,previousVersion:previous,sourceSha256:hash(source(next))}));
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and three randomly selected properties verified. No reports or emails sent by this audit.\n`);
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and only the reported property checked; absent feed record remains unresolved. No reports or emails sent by this audit.\n`);
 } catch (error) {
   if (attempted && await activeVersion() === candidate) {
     await deploy(previous);

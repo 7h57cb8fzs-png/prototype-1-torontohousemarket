@@ -212,8 +212,8 @@ function renderListing(listing) {
       offMarketTitle.textContent = "Not listed — but the property still has useful history.";
       offMarketCopy.textContent = "Request a deeper review using available MLS history and current local market context.";
     } else {
-      offMarketTitle.textContent = "We couldn’t match this address.";
-      offMarketCopy.textContent = "Try the MLS number or add the city. An unmatched address does not mean the home is off market.";
+      offMarketTitle.textContent = "This listing needs a team check.";
+      offMarketCopy.textContent = "Check the unit and city, or try the MLS number. If it is listed elsewhere, our feed may not include it. Contact the team to confirm availability.";
     }
   }
 
@@ -249,7 +249,7 @@ function buildSnapshotMeta(listing) {
     if (typeof listing.daysLive === "number") bits.push(listing.daysLive === 0 ? "listed today" : `${listing.daysLive} day${listing.daysLive === 1 ? "" : "s"} live`);
     return bits.join(" · ");
   }
-  if (listing.foundInMls === false) return "Address not matched · listing status is unconfirmed";
+  if (listing.foundInMls === false) return "Not found in our connected MLS feed · sale or lease status unconfirmed";
   const count = listing.historySummary?.appearanceCount || 0;
   return `Not currently listed${count ? ` · ${count} MLS appearance${count === 1 ? "" : "s"} found in 10 years` : ""}`;
 }
