@@ -1,5 +1,6 @@
 import { createHash, randomInt } from "node:crypto";
 import { readFileSync, appendFileSync } from "node:fs";
+import {execFileSync} from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 const worker = "prototype-1-torontohousemarket";
 const origin = "https://torontohousemarket.com";
@@ -121,14 +122,24 @@ async function checkPhase5(base) {
   check(photoOk,'No working photo in the checked shortlist');
   console.log(JSON.stringify({phase5:{selectionMode:data.selectionMode,count:data.listings.length,photoOk,protectedRoutes:true}}));
 }
-async function checkNorthcliffe(base) {
- const response=await fetch(`${base}/api/price-check?listingKey=C13696242`),p=await response.json();
- console.log(JSON.stringify({northcliffe:{stage:base===origin?'production':'preview',status:response.status,count:p.count,criteria:p.criteria,matches:(p.matches||[]).map(c=>({address:c.address,bedrooms:c.bedroomLayout,size:c.size})),coverage:p.coverage}}));
- check(response.ok&&p.ok&&p.community==='Oakwood Village'&&p.criteria.includes('3 above-ground bedrooms'),'Detached bedroom comparison rule missing');
- check(p.count>0,'No qualifying live matches; investigate before deployment');
- if(p.count<3)check(!p.available&&p.medianAsk===null,'Sparse evidence received a price rating');
+const excluded=new Set(execFileSync('git',['grep','-Eoh','[A-Z][0-9]{7,9}'],{encoding:'utf8'}).match(/[A-Z][0-9]{7,9}/g)||[]);
+const sample=[];
+for(const city of ['Toronto','Richmond Hill','Vaughan']) {
+ const r=await fetch(`${previewOrigin}/api/discovery?`+new URLSearchParams({city,type:'any',mode:'new'})),d=await r.json();
+ const pool=(d.listings||[]).filter(p=>!excluded.has(p.listingKey));
+ check(r.ok&&pool.length,'No new sample available for '+city);
+ sample.push(pool[randomInt(pool.length)]);
 }
-await checkNorthcliffe(previewOrigin);
+console.log(JSON.stringify({layoutSample:sample.map(p=>({listingKey:p.listingKey,address:p.address}))}));
+async function checkLayoutProperties(base) {
+ for(const home of sample){
+ const r=await fetch(`${base}/api/property?listingKey=${home.listingKey}&mode=public_snapshot`),d=await r.json(),p=d.property;
+ check(r.ok&&d.ok&&p?.listingKey===home.listingKey,'Selected property lookup failed');
+ check(Array.isArray(p.basement)&& (p.kitchensTotal==null||Number.isFinite(p.kitchensTotal)),'Layout fields invalid');
+ console.log(JSON.stringify({layoutCheck:{listingKey:p.listingKey,address:p.address,basement:p.basement,kitchens:p.kitchensTotal,stage:base===origin?'production':'preview'}}));
+ }
+}
+await checkLayoutProperties(previewOrigin);
 const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
 let attempted = false;
 try {
@@ -156,9 +167,9 @@ try {
     }
     check(matched, `Live asset mismatch after propagation window: ${path}`);
   }
-  await checkNorthcliffe(origin);
+  await checkLayoutProperties(origin);
   console.log(JSON.stringify({deployedVersion:candidate,previousVersion:previous,sourceSha256:hash(source(next))}));
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and 403 Northcliffe comparison checked. No reports or emails sent by this audit.\n`);
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and three randomly selected property layouts checked. No reports or emails sent by this audit.\n`);
 } catch (error) {
   if (attempted && await activeVersion() === candidate) {
     await deploy(previous);

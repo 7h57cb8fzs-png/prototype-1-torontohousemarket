@@ -221,6 +221,7 @@ function renderListing(listing) {
   renderQuickFacts(listing);
   renderAiBrief(listing);
   renderMarketRead(listing);
+  renderLayoutEssentials(listing);
   renderBuyerEssentials(listing);
   renderDetails(listing);
   $("mobileShowing").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
@@ -403,6 +404,24 @@ function renderMarketRead(listing) {
   $("snapshotPossessionNote").textContent = "Possession is separate from your showing date.";
   $("snapshotCommunityValue").textContent = current ? listing.cityRegion || listing.city || "Not reported" : "Not verified";
   $("snapshotCommunityNote").textContent = d.crossStreet ? `Near ${d.crossStreet}` : "Check the exact location and your commute.";
+}
+
+function renderLayoutEssentials(listing) {
+  const visible = (listing.forSale || listing.forLease) && !listing.displayRestricted;
+  $("layoutEssentials").classList.toggle("hidden", !visible);
+  const apartment = /condo (?:apartment|apt)/i.test(listing.propertySubType || "");
+  $("basementFactCard").classList.toggle("hidden", apartment);
+  $("entranceFactCard").classList.toggle("hidden", apartment);
+  const tags = (Array.isArray(listing.basement) ? listing.basement : []).map(v => String(v).replace(/([a-z])([A-Z])/g, "$1 $2").trim()).filter(Boolean);
+  const noBasement = tags.some(v => /^(none|no basement)$/i.test(v));
+  $("basementFact").textContent = noBasement ? "No basement" : tags.filter(v => !/separate.*entrance/i.test(v)).join(" · ") || "Not reported";
+  const explicitEntry = tags.some(v => /separate.*entrance/i.test(v) && !/no |not |without /i.test(v));
+  const entrySentences = String(listing.remarks || "").split(/[.!?\n]+/).filter(v => /separate(?:\s+(?:basement|side|rear))?\s+entrance/i.test(v));
+  const uncertainEntry = entrySentences.some(v => /\b(?:potential|possible|could|proposed|future|option|may|can be|subject to)\b/i.test(v));
+  const deniedEntry = tags.some(v => /(?:no|not|without).*separate.*entrance/i.test(v)) || entrySentences.some(v => /\b(?:no|not|without)\b[^,;]{0,45}separate(?:\s+(?:basement|side|rear))?\s+entrance/i.test(v));
+  $("entranceFact").textContent = deniedEntry ? explicitEntry ? "Needs confirmation" : "Not available, per listing" : explicitEntry ? "Reported" : uncertainEntry ? "Potential — confirm" : entrySentences.length ? "Reported in remarks" : "Not reported";
+  const kitchens = listing.kitchensTotal;
+  $("kitchenFact").textContent = kitchens != null && Number.isInteger(Number(kitchens)) && Number(kitchens) >= 0 ? `${kitchens} ${Number(kitchens) === 1 ? "kitchen" : "kitchens"}` : "Not reported";
 }
 
 function renderBuyerEssentials(listing) {

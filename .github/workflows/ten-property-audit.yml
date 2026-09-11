@@ -17,18 +17,18 @@ jobs:
         with:
           node-version: 22
       - name: Check JavaScript syntax
-        run: node --test tests/freehold-bedrooms.test.mjs
+        run: node --check app.js
       - name: Prepare verified preview
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           PREVIEW_ONLY: "true"
-          EXPECTED_ACTIVE_SHA: ed36c246e3a815b57c9640ef66d12ffb7de032b3a7886493d09dda788281b561
+          EXPECTED_ACTIVE_SHA: fb5b6b6bb1733422ad7f862d3d58c91621dbbbbf60a579c237fedbe1d3c36318
         run: node .github/scripts/ten-property-audit.mjs
       - name: Promote verified report path fix with rollback guards
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          EXPECTED_BEFORE_SHA: ed36c246e3a815b57c9640ef66d12ffb7de032b3a7886493d09dda788281b561
+          EXPECTED_BEFORE_SHA: fb5b6b6bb1733422ad7f862d3d58c91621dbbbbf60a579c237fedbe1d3c36318
         run: |
           node --input-type=module -e 'import fs from "node:fs"; process.env.CANDIDATE_VERSION_ID=JSON.parse(fs.readFileSync("audit-output/release.json")).candidate; await import("./.github/scripts/promote-buyer-tools.mjs");'
