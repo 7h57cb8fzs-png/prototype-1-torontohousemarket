@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { readFileSync, appendFileSync } from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 const worker = "prototype-1-torontohousemarket";
@@ -121,14 +121,25 @@ async function checkPhase5(base) {
   check(photoOk,'No working photo in the checked shortlist');
   console.log(JSON.stringify({phase5:{selectionMode:data.selectionMode,count:data.listings.length,photoOk,protectedRoutes:true}}));
 }
-async function checkFocusedProperty(base) {
-  const r=await fetch(`${base}/api/property?q=${encodeURIComponent('1410 - 10 YORK STREET')}`),d=await r.json(),p=d.property;
-  check(r.ok && d.ok && p,'Unit search unavailable');
-  check(p.foundInMls===false || /(?:\b1410\b)/.test(p.address),'Unit search silently substituted another apartment');
-  check(!p.foundInMls || (p.forLease && !p.forSale),'Expected exact rental listing or an explicit no-match');
-  console.log(JSON.stringify({unitSearch:{address:p.address,listingKey:p.listingKey,forLease:p.forLease,foundInMls:p.foundInMls}}));
+const poolResponse = await fetch(`${previewOrigin}/api/discovery?mode=new&city=Toronto&type=any`);
+const poolData = await poolResponse.json();
+const pool = [...new Map((poolData.listings || []).map(p => [p.listingKey,p])).values()];
+check(poolResponse.ok && pool.length >= 3, 'Need three current listings for the requested random sample');
+for (let i=pool.length-1;i>0;i--) { const j=randomInt(i+1); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+const sample = pool.slice(0,3);
+console.log(JSON.stringify({randomPropertySample:sample.map(p=>({listingKey:p.listingKey,address:p.address}))}));
+async function checkThreeProperties(base) {
+  for (const home of sample) {
+    const r=await fetch(`${base}/api/property?listingKey=${encodeURIComponent(home.listingKey)}`),d=await r.json(),p=d.property;
+    check(r.ok && d.ok && p?.listingKey===home.listingKey && p.foundInMls!==false,'Selected listing lookup failed');
+    check(p.address && p.listPrice > 0,'Selected listing details missing');
+    const c=await fetch(`${base}/api/price-check?listingKey=${encodeURIComponent(home.listingKey)}`),v=await c.json();
+    check(c.ok && v.ok,'Price snapshot failed');
+    if(p.isCondominium) check([...(v.matches||[]),...(v.relatedMatches||[])].every(row=>row.size===v.subjectSize),'Condo comparison size mismatch');
+    console.log(JSON.stringify({propertyCheck:{listingKey:p.listingKey,address:p.address,size:p.livingAreaRange,comparables:v.count,stage:base===origin?'production':'preview'}}));
+  }
 }
-await checkFocusedProperty(previewOrigin);
+await checkThreeProperties(previewOrigin);
 const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
 let attempted = false;
 try {
@@ -156,9 +167,9 @@ try {
     }
     check(matched, `Live asset mismatch after propagation window: ${path}`);
   }
-  await checkFocusedProperty(origin);
+  await checkThreeProperties(origin);
   console.log(JSON.stringify({deployedVersion:candidate,previousVersion:previous,sourceSha256:hash(source(next))}));
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and exact-unit lookup verified. No reports or emails sent by this audit.\n`);
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and three randomly selected properties verified. No reports or emails sent by this audit.\n`);
 } catch (error) {
   if (attempted && await activeVersion() === candidate) {
     await deploy(previous);

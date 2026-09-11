@@ -182,7 +182,10 @@ function renderListing(listing) {
   const restricted = !!listing.displayRestricted;
 
   resultEyebrow.textContent = active ? "PUBLIC MLS SNAPSHOT" : "PROPERTY REVIEW";
-  snapshotProperty.textContent = listing.address || activePropertyInput;
+  const fullAddress = listing.address || activePropertyInput;
+  const addressParts = fullAddress.split(/,\s*/);
+  snapshotProperty.textContent = addressParts[0];
+  $("snapshotLocality").textContent = addressParts.slice(1).join(", ").replace(/([A-Z]\d[A-Z])\s+(\d[A-Z]\d)/ig, "$1\u00a0$2");
   snapshotMeta.textContent = buildSnapshotMeta(listing);
 
   if (listing.inputValidation?.label) {
@@ -263,10 +266,10 @@ function renderPrice(listing) {
 function buildFactLine(listing, restricted) {
   if (restricted) return "Listing identified · full internet display is restricted by the listing feed";
   const facts = [
-    listing.propertySubType || listing.propertyType,
+    (listing.propertySubType || listing.propertyType || "").replace(/^Condo Apartment$/i, "Condo"),
     listing.beds != null ? `${bedroomLabel(listing)} bed` : null,
     listing.baths != null ? `${listing.baths} bath` : null,
-    listing.livingAreaRange ? `${listing.livingAreaRange} sq ft` : null,
+    listing.livingAreaRange ? `${listing.livingAreaRange.replace(/-/g, "–")}\u00a0sq\u00a0ft` : null,
   ].filter(Boolean);
   return facts.length ? facts.join(" · ") : listing.foundInMls === false ? "No current MLS property details available" : "Property identified from MLS history";
 }
@@ -357,7 +360,7 @@ function renderQuickFacts(listing) {
   $("factLotLabel").textContent = listing.isCondominium ? "MAINTENANCE" : "LOT";
   const fee = listing.maintenanceFee, amount = fee?.amount, frequency = String(fee?.frequency || 'month').toLowerCase();
   const feeKnown = amount != null && Number.isFinite(Number(amount)) && Number(amount) >= 0;
-  const feeUnit = /^(month|monthly)$/.test(frequency) ? '/mo' : /^(year|annual|annually|yearly)$/.test(frequency) ? '/yr' : ` / ${frequency}`;
+  const feeUnit = /^(month|monthly)$/.test(frequency) ? '' : /^(year|annual|annually|yearly)$/.test(frequency) ? '/yr' : ` / ${frequency}`;
   $("factLot").textContent = listing.isCondominium ? feeKnown ? `${new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD",minimumFractionDigits:Number(amount)%1?2:0,maximumFractionDigits:2}).format(Number(amount))}${feeUnit}` : "Not reported" : listing.lotWidth && listing.lotDepth ? `${formatNumber(listing.lotWidth)} × ${formatNumber(listing.lotDepth)} ${listing.publicListing?.lotUnits || "(units not reported)"}` : "—";
   $("factParking").textContent = listing.parkingTotal ?? "—";
   $("factTax").textContent = listing.details?.annualTax ? `${money(listing.details.annualTax)}${listing.details.taxYear ? ` · ${listing.details.taxYear}` : ""}` : "—";
