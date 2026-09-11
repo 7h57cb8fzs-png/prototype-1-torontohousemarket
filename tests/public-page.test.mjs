@@ -42,7 +42,7 @@ test('related homes are visible immediately and not described as zero evidence',
   context.related = {available:false,criteria:'Same type and neighbourhood',count:0,relatedMatches:[{listingKey:'W13602036',address:'53 Foxrun Avenue',asking:874900,size:'1100–1500 sq ft',beds:3,baths:2,difference:'Different parking.'}]};
   vm.runInContext('renderPriceCheck(related)',context);
   assert.equal(elements.get('priceCheckDetails').open,true);
-  assert.match(elements.get('priceCheckBadge').textContent,/1 related homes found/);
+  assert.match(elements.get('priceCheckBadge').textContent,/1 related home found/);
   assert.match(elements.get('priceCheckMatches').innerHTML,/53 Foxrun/);
 });
 test('buyer snapshot loads automatically inside the combined brief without repeating its summary', async () => {
@@ -180,4 +180,11 @@ test('browser phone rules match the server for pasted, formatted and invalid num
  for(const value of ['Golestan','1234567890','647-890-4704','+1 (647) 890-4704','6478904','647890470400','6478904704junk','1111111111','+44 20 7946 0958']){
   context.phone=value;assert.equal(vm.runInContext('normalizeNorthAmericanPhone(phone)',context),normalizeNorthAmericanPhone(value),value);
  }
+});
+
+test('one asking-price comparison never becomes an artificial market range',()=>{
+ const {elements,context}=page();context.single={asking:519000,count:1,observedAsking:{low:550000,high:550000}};
+ vm.runInContext('renderAskingRange(single)',context);
+ const html=elements.get('priceCheckRange').innerHTML;
+ assert.match(html,/1 SIMILAR HOME IS ASKING/);assert.match(html,/31,000 less/);assert.ok(!html.includes('Below range'));assert.match(html,/not a market range/);
 });
