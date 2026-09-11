@@ -1,3 +1,16 @@
+// Format validation only; a successful check does not verify phone ownership.
+function normalizeNorthAmericanPhone(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw || raw.length > 24 || !/^\+?[\d\s().-]+$/.test(raw)) return null;
+  let digits = raw.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+  else if (raw.startsWith('+')) return null;
+  if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return null;
+  if (digits.slice(1,3) === '11' || digits.slice(4,6) === '11' || /^(\d)\1{9}$/.test(digits) || ['1234567890','0123456789','9876543210'].includes(digits)) return null;
+  return '+1' + digits;
+}
+
 const $ = (id) => document.getElementById(id);
 
 const analysisForm = $("analysisForm");
@@ -332,7 +345,11 @@ function renderQuickFacts(listing) {
   $("factBeds").textContent = bedroomLabel(listing);
   $("factBaths").textContent = listing.baths ?? "—";
   $("factType").textContent = listing.propertySubType || listing.propertyType || "—";
-  $("factLot").textContent = listing.lotWidth && listing.lotDepth ? `${formatNumber(listing.lotWidth)} × ${formatNumber(listing.lotDepth)} ${listing.publicListing?.lotUnits || "(units not reported)"}` : "—";
+  $("factLotLabel").textContent = listing.isCondominium ? "MAINTENANCE" : "LOT";
+  const fee = listing.maintenanceFee, amount = fee?.amount, frequency = String(fee?.frequency || 'month').toLowerCase();
+  const feeKnown = amount != null && Number.isFinite(Number(amount)) && Number(amount) >= 0;
+  const feeUnit = /^(month|monthly)$/.test(frequency) ? '/mo' : /^(year|annual|annually|yearly)$/.test(frequency) ? '/yr' : ` / ${frequency}`;
+  $("factLot").textContent = listing.isCondominium ? feeKnown ? `${new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD",minimumFractionDigits:Number(amount)%1?2:0,maximumFractionDigits:2}).format(Number(amount))}${feeUnit}` : "Not reported" : listing.lotWidth && listing.lotDepth ? `${formatNumber(listing.lotWidth)} × ${formatNumber(listing.lotDepth)} ${listing.publicListing?.lotUnits || "(units not reported)"}` : "—";
   $("factParking").textContent = listing.parkingTotal ?? "—";
   $("factTax").textContent = listing.details?.annualTax ? `${money(listing.details.annualTax)}${listing.details.taxYear ? ` · ${listing.details.taxYear}` : ""}` : "—";
 }
@@ -457,6 +474,7 @@ function openLeadModal(mode, includeShowing = false) {
 
   currentLeadMode = mode;
   leadForm.reset();
+  $("leadMobile").removeAttribute("aria-invalid");
   leadRequestKey = crypto.randomUUID();
   $("showingChoice").checked = includeShowing;
   $("showingChoiceWrap").classList.toggle("hidden", !["buyer_report","showing"].includes(mode));
@@ -474,9 +492,9 @@ function openLeadModal(mode, includeShowing = false) {
   leadMode.value = mode;
 
   if (["showing","buyer_report"].includes(mode)) {
-    modalEyebrow.textContent = "SHOWING + AI BUYER REPORT";
+    modalEyebrow.textContent = "AI BUYER REPORT";
     modalTitle.textContent = "Your AI report starts here.";
-    modalCopy.textContent = "We’ll email your sold comparisons, price guidance and key checks. Tick the box below if you’d also like to see the home.";
+    modalCopy.textContent = "We’ll email your sold comparisons, price guidance and key checks. Add a private showing if you’d like a closer look.";
     nextStepLabel.textContent = "WHEN DO YOU WANT TO SEE IT?";
     showingTiming.innerHTML = `<option value="asap">Earliest available</option><option value="preferred_time">Choose a date &amp; time</option>`;
     $("showingTime").innerHTML = Array.from({length:24},(_,i)=>{const hour=9+Math.floor(i/2), minute=i%2?"30":"00",value=`${String(hour).padStart(2,"0")}:${minute}`;return `<option value="${value}">${hour>12?hour-12:hour}:${minute} ${hour>=12?"PM":"AM"}</option>`;}).join("");
@@ -519,6 +537,7 @@ function syncShowingChoice() {
   $('showingDate').required=calendar; $('showingTime').required=calendar;
   leadSubmit.textContent=showing?'Get report + request showing':'Get my AI report';
 }
+$('leadMobile').addEventListener('input',()=> $('leadMobile').removeAttribute('aria-invalid'));
 $('showingChoice').addEventListener('change',syncShowingChoice);
 showingTiming.addEventListener('change',syncShowingChoice);
 
@@ -540,12 +559,12 @@ leadForm.addEventListener("submit", async (event) => {
 
   const form = new FormData(leadForm);
   const name = String(form.get("name") || "").trim();
-  const mobile = String(form.get("mobile") || "").trim();
+  const mobile = normalizeNorthAmericanPhone(String(form.get("mobile") || ""));
   const email = String(form.get("email") || "").trim();
   const website = String(form.get("website") || "").trim();
 
   if (name.length < 2) return showLeadError("Please enter your name.");
-  if (mobile.replace(/\D/g, "").length < 7) return showLeadError("Please enter a valid mobile number.");
+  if (!mobile) { $("leadMobile").setAttribute("aria-invalid", "true"); $("leadMobile").focus(); return showLeadError("Enter a valid 10-digit mobile number, such as (416) 234-5678. You can include +1."); }
   if (!email) return showLeadError("Please enter your email address.");
   if (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email)) return showLeadError("Please enter a valid email address.");
 
@@ -751,7 +770,10 @@ function resetPriceCheck() {
 function renderAskingRange(data) {
   const range = data.observedAsking, target = $("priceCheckRange");
   if (!range || !(range.low > 0) || !(range.high >= range.low) || !(data.asking > 0)) { target.innerHTML = ""; return; }
-  target.innerHTML = `<div class="price-picture"><div class="price-picture-subject"><span>THIS HOME IS ASKING</span><strong>${money(data.asking)}</strong></div><div class="price-picture-market"><span>${data.count} SIMILAR HOMES · ASKING PRICES</span><div class="price-endpoints"><div><small>Lowest</small><strong>${money(range.low)}</strong></div><div><small>Highest</small><strong>${money(range.high)}</strong></div></div></div></div><p class="price-picture-note">These homes are still for sale. Your email report compares completed sales.</p>`;
+  const position = data.asking < range.low ? 0 : data.asking > range.high ? 2 : 1;
+  const positionText = position === 0 ? `Asking ${money(range.low-data.asking)} below this range.` : position === 2 ? `Asking ${money(data.asking-range.high)} above this range.` : "This home’s asking price is inside this range.";
+  const graphic = ['Below range','Inside range','Above range'].map((label,i)=>`<div class="${i===position?'is-asking':''}"><small>${i===position?'THIS HOME':'&nbsp;'}</small>${label}</div>`).join('');
+  target.innerHTML = `<div class="price-picture"><div class="price-picture-subject"><span>THIS HOME IS ASKING</span><strong>${money(data.asking)}</strong></div><div class="price-picture-market"><span>${data.count} SIMILAR HOMES · ASKING PRICE RANGE</span><div class="price-endpoints"><div><small>From</small><strong>${money(range.low)}</strong></div><div><small>To</small><strong>${money(range.high)}</strong></div></div><div class="price-position" role="img" aria-label="${positionText}">${graphic}</div><p class="price-position-note">${positionText}</p></div></div><p class="price-picture-note">These homes are still for sale. Your email report compares completed sales.</p>`;
 }
 function renderPriceCheck(data) {
   const recognized = ["below", "inline", "above", "review"].includes(data.signal);

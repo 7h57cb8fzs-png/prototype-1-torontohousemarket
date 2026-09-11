@@ -59,6 +59,16 @@ async function checkBedroomPricing(base) {
   if (p.count < 3) check(!p.available && p.medianAsk === null, "Sparse bedroom layout received a price label");
   console.log(JSON.stringify({ bedroomLayoutCheck: { listingKey: p.listingKey, matches: p.count, signal: p.signal } }));
 }
+async function checkCondoSize(base) {
+  const subjectResponse=await fetch(`${base}/api/property?listingKey=N13748512`);
+  const subject=(await subjectResponse.json()).property;
+  check(subjectResponse.ok && subject?.forSale && subject.isCondominium,'Condo fixture is no longer a current public condo');
+  const response=await fetch(`${base}/api/price-check?listingKey=N13748512`);
+  const result=await response.json();
+  check(response.ok && result.ok && result.sizeRule==='same_condo_size_range','Strict condo size rule missing');
+  check([...(result.matches||[]),...(result.relatedMatches||[])].every(c=>c.size===result.subjectSize),'Condo comparison includes a different size range');
+  console.log(JSON.stringify({condoSizeCheck:{listingKey:subject.listingKey,size:result.subjectSize,matches:result.count,related:result.relatedMatches?.length,feeAvailable:subject.maintenanceFee?.amount!=null}}));
+}
 async function checkAvenueAddress(base) {
   let matchedKey;
   for (const query of ['981 avenue rd', '981 Avenue Road']) {
@@ -102,6 +112,7 @@ await checkPhase5(previewOrigin);
 await checkWhitburn(previewOrigin);
 await checkAvenueAddress(previewOrigin);
 await checkBedroomPricing(previewOrigin);
+await checkCondoSize(previewOrigin);
 const positivePreview = await (await fetch(`${previewOrigin}/api/price-check?listingKey=N13519308`)).json();
 check(positivePreview.ok && positivePreview.available && positivePreview.count >= 3, "Preview freehold Price Check failed");
 const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
@@ -164,6 +175,7 @@ try {
   await checkWhitburn(origin);
   await checkAvenueAddress(origin);
   await checkBedroomPricing(origin);
+  await checkCondoSize(origin);
   const priceResponse = await fetch(`${origin}/api/price-check?listingKey=N13519308`);
   const price = await priceResponse.json();
   check(priceResponse.ok && price.ok && price.listingKey === "N13519308" && price.available && price.count >= 3 && price.medianAsk > 0, "Live Price Check verification failed");

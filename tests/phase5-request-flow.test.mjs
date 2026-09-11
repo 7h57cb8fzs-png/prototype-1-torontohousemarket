@@ -90,6 +90,6 @@ test('buyer emails distinguish report-only, requested and confirmed showing stat
 });
 test('report contact actions carry the signed scheduling link and never a fresh-analysis request',()=>{
   const report=propertyReportEmail('Test home',{}, {facts:{for_sale:true,list_price:1000000},valuation:{available:false},comparables:[]},{appointmentUrl:'https://torontohousemarket.com/showing.html#token=fixture'});
-  for(const text of [report.html,report.text]){assert.match(text,/647-890-4704/);assert.match(text,/showing.html#token=fixture/);assert.ok(!/fresh price analysis|Request a fresh/i.test(text));}
+  for(const text of [report.html,report.text]){assert.match(text,/Golestan Homes/);assert.match(text,/showing.html#token=fixture/);assert.ok(!/fresh price analysis|Request a fresh/i.test(text));}
   assert.match(report.html,/tel:\+16478904704/);assert.match(report.html,/Alireza Golestan &amp; Mehrdad Golestan/);assert.match(report.html,/Sales Representatives/);
 });

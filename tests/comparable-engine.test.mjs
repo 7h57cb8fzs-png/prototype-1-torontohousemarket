@@ -83,12 +83,12 @@ test("valid local evidence remains visible when the price cluster cannot support
   }
 });
 
-test("same-building sales are local and ranked before other community sales", async () => {
-  const subject = soldRow({ ListingKey: "PINE-SUBJECT", PropertySubType: "Condo Apartment", CityRegion: "East Woodbridge", PostalCode: "L4L 2X5", UnparsedAddress: "201 Pine Grove Road 405, Vaughan", ClosePrice: null });
+test("same-building condos rank first within the same community and size range", async () => {
+  const subject = soldRow({ ListingKey: "PINE-SUBJECT", PropertySubType: "Condo Apartment", LivingAreaRange: "700-799", CityRegion: "East Woodbridge", PostalCode: "L4L 2X5", UnparsedAddress: "201 Pine Grove Road 405, Vaughan", ClosePrice: null });
   const rows = [
-    soldRow({ ListingKey: "COMMUNITY-1", PropertySubType: "Condo Apartment", CityRegion: "East Woodbridge", PostalCode: "L4L 1A1", UnparsedAddress: "10 Other Road, Vaughan", ClosePrice: 800000 }),
-    soldRow({ ListingKey: "BUILDING-1", PropertySubType: "Condo Apartment", CityRegion: "Pine Valley Business Park", PostalCode: "L4L 2X5", UnparsedAddress: "103 - 201 Pine Grove Rd, Vaughan", ClosePrice: 805000 }),
-    soldRow({ ListingKey: "BUILDING-2", PropertySubType: "Condo Apartment", CityRegion: "Pine Valley Business Park", PostalCode: "L4L 2X5", UnparsedAddress: "Unit 210-201 Pine Grove Road, Vaughan", ClosePrice: 810000 })
+    soldRow({ ListingKey: "COMMUNITY-1", PropertySubType: "Condo Apartment", LivingAreaRange: "700-799", CityRegion: "East Woodbridge", PostalCode: "L4L 1A1", UnparsedAddress: "10 Other Road, Vaughan", ClosePrice: 800000 }),
+    soldRow({ ListingKey: "BUILDING-1", PropertySubType: "Condo Apartment", LivingAreaRange: "700-799", CityRegion: "East Woodbridge", PostalCode: "L4L 2X5", UnparsedAddress: "103 - 201 Pine Grove Rd, Vaughan", ClosePrice: 805000 }),
+    soldRow({ ListingKey: "BUILDING-2", PropertySubType: "Condo Apartment", LivingAreaRange: "700-799", CityRegion: "East Woodbridge", PostalCode: "L4L 2X5", UnparsedAddress: "Unit 210-201 Pine Grove Road, Vaughan", ClosePrice: 810000 })
   ];
   const calls = [];
   const originalFetch = globalThis.fetch;
@@ -108,7 +108,7 @@ test("same-building sales are local and ranked before other community sales", as
   }
 });
 
-test("sparse same-type evidence uses verified coordinates instead of postal proximity", async () => {
+test("condo sales from other communities cannot qualify through coordinates or postal proximity", async () => {
   const subject = soldRow({ ListingKey: "PINE-SPARSE", PropertySubType: "Condo Townhouse", CityRegion: "Islington Woods", PostalCode: "L4L 0H8", UnparsedAddress: "201 Pine Grove Road 405, Vaughan", LivingAreaRange: "1000-1199", ClosePrice: null });
   const rows = [
     soldRow({ ListingKey: "NEAR-1", PropertySubType: "Condo Townhouse", CityRegion: "East Woodbridge", PostalCode: "L4L 1J4", UnparsedAddress: "26 Bruce Street E08, Vaughan", LivingAreaRange: "1000-1199", ClosePrice: 700000 }),
@@ -134,9 +134,9 @@ test("sparse same-type evidence uses verified coordinates instead of postal prox
   };
   try {
     const result = await buildComparableContext(subject, { AMPRE_TOKEN: "test-only", VOW_AUDIT_SALT: "test-salt", COMPARABLE_GEOCODE_THROTTLE_MS: 0 }, true, "verified-radius-test");
-    assert.equal(result.available, true);
-    assert.equal(result.comparables.length, 3);
-    assert.ok(result.comparables.every((row) => Number.isFinite(row.distanceKm) && row.distanceKm <= 5));
+    assert.equal(result.available, false);
+    assert.equal((result.comparables || []).length, 0);
+    assert.equal(result.policy.sizeFallbackUsed, false);
   } finally {
     globalThis.fetch = originalFetch;
   }

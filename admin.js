@@ -1,3 +1,16 @@
+// Format validation only; a successful check does not verify phone ownership.
+function normalizeNorthAmericanPhone(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw || raw.length > 24 || !/^\+?[\d\s().-]+$/.test(raw)) return null;
+  let digits = raw.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+  else if (raw.startsWith('+')) return null;
+  if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return null;
+  if (digits.slice(1,3) === '11' || digits.slice(4,6) === '11' || /^(\d)\1{9}$/.test(digits) || ['1234567890','0123456789','9876543210'].includes(digits)) return null;
+  return '+1' + digits;
+}
+
 const $=id=>document.getElementById(id);let token="",agentData=[],leadData=[],manualRequestKey=null;
 $("loginForm").addEventListener("submit",e=>{e.preventDefault();token=$("key").value.trim();load();});$("refresh").addEventListener("click",load);
 document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b));["leadsView","agentsView","settingsView"].forEach(id=>$(id).hidden=id!==b.dataset.view);}));
@@ -20,7 +33,7 @@ function renderLeads(leads){
 $('leadFilter').addEventListener('change',()=>renderLeads(leadData));
 $('addLead').addEventListener('click',()=>{$('manualLeadForm').reset();manualRequestKey=crypto.randomUUID();$('manualLeadForm').hidden=false;$('manualError').textContent='';$('manualName').focus();});
 $('cancelLead').addEventListener('click',()=>{$('manualLeadForm').hidden=true;});
-$('manualLeadForm').addEventListener('submit',async e=>{e.preventDefault();if(!$('manualLeadForm').reportValidity())return;const property=$('manualProperty').value.trim(),generate=$('manualGenerate').checked,showing=$('manualShowing').checked;if((generate||showing)&&!property){$('manualError').textContent='Choose a property for a report or showing.';return;}$('manualSave').disabled=true;try{await api('/api/admin/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('manualName').value,mobile:$('manualMobile').value,email:$('manualEmail').value,property_input:property,listing_key:/^[A-Z]\d{7,9}$/i.test(property)?property.toUpperCase():null,showing_requested:showing,showing_timing:showing?'asap':'report',lead_mode:showing?'showing':'buyer_report',generate_report:generate,request_key:manualRequestKey})});$('manualLeadForm').hidden=true;await load();}catch(e){$('manualError').textContent=e.message;}finally{$('manualSave').disabled=false;}});
+$('manualLeadForm').addEventListener('submit',async e=>{e.preventDefault();if(!$('manualLeadForm').reportValidity())return;const mobile=normalizeNorthAmericanPhone($('manualMobile').value);if(!mobile){$('manualError').textContent='Enter a valid 10-digit mobile number, with optional +1.';$('manualMobile').focus();return;}const property=$('manualProperty').value.trim(),generate=$('manualGenerate').checked,showing=$('manualShowing').checked;if((generate||showing)&&!property){$('manualError').textContent='Choose a property for a report or showing.';return;}$('manualSave').disabled=true;try{await api('/api/admin/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('manualName').value,mobile,email:$('manualEmail').value,property_input:property,listing_key:/^[A-Z]\d{7,9}$/i.test(property)?property.toUpperCase():null,showing_requested:showing,showing_timing:showing?'asap':'report',lead_mode:showing?'showing':'buyer_report',generate_report:generate,request_key:manualRequestKey})});$('manualLeadForm').hidden=true;await load();}catch(e){$('manualError').textContent=e.message;}finally{$('manualSave').disabled=false;}});
 async function removeLead(id,button){if(!confirm('Remove this lead, its saved report and queued jobs? Already sent emails cannot be recalled. This cannot be undone.'))return;button.disabled=true;try{await api(`/api/admin/leads/${id}`,{method:'DELETE'});await load();}catch(e){alert(e.message);}finally{button.disabled=false;}}
 async function confirmAppointment(id,form){if(!form.reportValidity())return;const button=form.querySelector('button');button.disabled=true;try{await updateLead(id,{status:'appointment_confirmed',showing_date:form.querySelector('[name=date]').value,showing_time:form.querySelector('[name=time]').value});}catch(e){alert(e.message);}finally{button.disabled=false;}}
 function renderAgents(){$("agents").innerHTML=agentData.length?agentData.map(a=>`<article class="agent ${a.active?"":"inactive"}"><div><span>${esc(a.code)} · Order ${a.assignment_order}</span><h2>${esc(a.display_name)}</h2><p>${a.email?esc(a.email):"No email"} · ${a.mobile?esc(a.mobile):"No mobile"}</p></div><div><b>${a.active?"Available":"Unavailable"}</b><button data-edit="${a.id}">Edit</button></div></article>`).join(""):"<p>No agents configured.</p>";document.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>openAgent(agentData.find(a=>a.id===b.dataset.edit))));}

@@ -12,7 +12,7 @@ function page(fetchImpl = async () => { throw new Error("Unexpected network call
     textContent: "", innerHTML: "", value: "", disabled: false, handlers: {}, dataset: {},
     addEventListener(name, handler) { this.handlers[name] = handler; },
     classList: { add() {}, remove() {}, toggle() {}, contains() { return true; } },
-    querySelectorAll() { return []; }, querySelector(){return {focus(){}};}, reset(){}, focus() {}, scrollIntoView() {}, reportValidity() { return true; },
+    querySelectorAll() { return []; }, querySelector(){return {focus(){}};}, reset(){}, setAttribute(name,value){this[name]=value;}, removeAttribute(name){delete this[name];}, focus() {}, scrollIntoView() {}, reportValidity() { return true; },
     requestSubmit() { this.submitted = true; }
   }]));
   const context = vm.createContext({ document: {
@@ -161,4 +161,23 @@ test('school results cannot overwrite a newly selected property',async()=>{
  vm.runInContext('liveListing={listingKey:"N1000002",forSale:true,photos:[]}; renderListing(liveListing)',context);
  finish(Response.json({ok:true,schoolSummary:{name:'OLD SCHOOL'}}));await pending;
  assert.ok(!elements.get('schoolName').textContent.includes('OLD SCHOOL'));
+});
+
+test('condo facts replace lot with the reported maintenance fee and reset for freehold',()=>{
+ const {elements,context}=page();
+ context.home={forSale:true,isCondominium:true,maintenanceFee:{amount:432.15,frequency:'month'}};
+ vm.runInContext('renderQuickFacts(home)',context);
+ assert.equal(elements.get('factLotLabel').textContent,'MAINTENANCE');
+ assert.equal(elements.get('factLot').textContent,'$432.15/mo');
+ context.home.maintenanceFee={amount:null};vm.runInContext('renderQuickFacts(home)',context);
+ assert.equal(elements.get('factLot').textContent,'Not reported');
+ context.home={forSale:true,isCondominium:false,lotWidth:30,lotDepth:100,publicListing:{lotUnits:'Feet'}};
+ vm.runInContext('renderQuickFacts(home)',context);
+ assert.equal(elements.get('factLotLabel').textContent,'LOT');assert.match(elements.get('factLot').textContent,/30 × 100/);
+});
+test('browser phone rules match the server for pasted, formatted and invalid numbers',async()=>{
+ const {normalizeNorthAmericanPhone}=await import('../worker-v11.js');const {context}=page();
+ for(const value of ['Golestan','1234567890','647-890-4704','+1 (647) 890-4704','6478904','647890470400','6478904704junk','1111111111','+44 20 7946 0958']){
+  context.phone=value;assert.equal(vm.runInContext('normalizeNorthAmericanPhone(phone)',context),normalizeNorthAmericanPhone(value),value);
+ }
 });
