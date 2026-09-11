@@ -533,7 +533,7 @@ function openLeadModal(mode, includeShowing = false) {
     $("showingDate").max = new Date(Date.now()+29*86400000).toLocaleDateString("en-CA",{timeZone:"America/Toronto"});
     leadSubmit.textContent = "Get my AI report";
     syncShowingChoice();
-    serviceNote.textContent = "Realtor response target: within 5 minutes, 9 AM–9 PM. Showing target: 1–24 hours, subject to availability.";
+    serviceNote.textContent = "Realtor response target: within 28 minutes, 9 AM–9 PM. Showing target: 1–24 hours, subject to availability.";
   } else if (mode === "seller") {
     modalEyebrow.textContent = "SELLER VALUE REVIEW";
     modalTitle.textContent = "Own this home? Understand its position.";
@@ -667,7 +667,7 @@ function renderLeadSuccess(result) {
       ? "Your request is saved for the next service window. A Realtor will confirm the earliest available appointment."
       : "A Realtor will contact you to confirm the earliest appointment available from the listing side.";
     successStepOne.textContent = "Showing request routed";
-    successStepOneNote.textContent = afterHours ? "We will respond in the next 9 AM–9 PM service window." : "Realtor response target: within 5 minutes.";
+    successStepOneNote.textContent = afterHours ? "We will respond in the next 9 AM–9 PM service window." : "Realtor response target: within 28 minutes.";
   } else if (currentLeadMode === "buyer_report") {
     successTitle.textContent = "Your AI report is on its way.";
     successCopy.textContent = "Your request is saved. We’ll email the report when it is ready.";
