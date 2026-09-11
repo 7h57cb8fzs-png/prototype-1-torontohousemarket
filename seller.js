@@ -11,7 +11,9 @@
   const setValue = (id,value) => {if(value!=null){$(id).value=String(value);$(id).dispatchEvent(new Event('change',{bubbles:true}));}};
   function fillSizes(value = '') {
     const condo = /condo/i.test($('sellerType').value);
-    const bands = condo ? Array.from({length:26},(_,i)=>`${400+i*100}-${499+i*100}`) : ['700-1100','1100-1500','1500-2000','2000-2500','2500-3000','3000-3500','3500-5000'];
+    const bands = condo ? ['400-499','500-599','600-699','700-799','800-899','900-999','1000-1199','1200-1399','1400-1599','1600-1799','1800-1999','2000-2249','2250-2499','2500-2749','2750-2999','3000-3499','3500-3999','4000-4499','4500-4999'] : ['700-1100','1100-1500','1500-2000','2000-2500','2500-3000','3000-3500','3500-5000'];
+    value=String(value||'').replace(/[–—]/g,'-').replace(/,/g,'').trim();
+    if(condo && /^(\d{3,5})-(\d{3,5})$/.test(value) && !bands.includes(value))bands.unshift(value);
     $('sellerSize').innerHTML='<option value="">Choose the interior size</option>'+bands.map(b=>`<option value="${b}">${b.replace('-', '–')} sq ft</option>`).join('')+'<option value="unknown">I’m not sure</option>';
     setValue('sellerSize',bands.includes(String(value).replace(/[–—]/g,'-')) ? String(value).replace(/[–—]/g,'-') : value ? 'unknown' : '');
   }

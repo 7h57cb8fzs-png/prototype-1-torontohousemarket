@@ -32,6 +32,8 @@ test('seller scenario 1: detached evidence, independent target, atomic request c
 test('seller scenario 2: condo same-building exception preserves size and exact unit',async()=>{
   const a={...subject,PropertySubType:'Condo Apartment',PropertyType:'Residential Condo & Other',LivingAreaRange:'600-699',City:'Richmond Hill',CityRegion:'Example North',UnparsedAddress:'10 Example Avenue 401, Richmond Hill',StreetNumber:'10',StreetName:'Example',StreetSuffix:'Avenue',UnitNumber:'401',PostalCode:'L4B1A1'};
   const b={...a,ListingKey:'N00000002',UnitNumber:'501',UnparsedAddress:'10 Example Avenue 501, Richmond Hill',CityRegion:'Example South',StandardStatus:'Closed',ClosePrice:630000,TransactionType:'For Sale',PurchaseContractDate:new Date(Date.now()-40*86400000).toISOString().slice(0,10)};
+  assert.equal(validateSellerProfile({...profileInput,homeType:'Condo Apartment',sizeBand:'1400-1599'}).sizeBand,'1400-1599');
+  assert.throws(()=>validateSellerProfile({...profileInput,homeType:'Condo Apartment',sizeBand:'900-500'}));
   assert(sellerComparableGeography(a,b));assert(!sellerSameHome(a,b));
   assert.equal(qualifiedSoldComparableRows(a,[b],300).length,1);
   assert.equal(qualifiedSoldComparableRows(a,[{...b,LivingAreaRange:'700-799'}],300).length,0);

@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-09-11",
+  "selection": "One randomly chosen, previously unused condo from each city\u2019s visible market shortlist. Only these three addresses were searched.",
+  "checks": [
+    {
+      "city": "Toronto",
+      "listingKey": "W13774942",
+      "address": "858 Dupont Street 629, Toronto, ON M6G 0C1",
+      "lookup": "matched",
+      "note": "Wider interior-size band exposed a form-prefill issue, corrected in this release."
+    },
+    {
+      "city": "Richmond Hill",
+      "listingKey": "N13774610",
+      "address": "9088 Yonge Street 510A, Richmond Hill, ON L4C 0Y6",
+      "lookup": "matched",
+      "sizeBand": "900-999"
+    },
+    {
+      "city": "Vaughan",
+      "listingKey": "N13773810",
+      "address": "20 Gatineau Drive 404, Vaughan, ON L4J 0L3",
+      "lookup": "matched",
+      "sizeBand": "700-799"
+    }
+  ],
+  "scope": "Public seller-page address prefilling and form navigation. No live lead creation, report generation or email delivery."
+}
