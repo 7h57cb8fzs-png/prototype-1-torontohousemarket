@@ -678,3 +678,6 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}input::-webkit
 .layout-essentials-grid article{min-width:0}.layout-essentials-grid article>span{display:block;font-size:11px;font-weight:650;letter-spacing:.08em;color:#61746c;margin-bottom:6px}
 .layout-essentials-grid strong{display:block;font-size:17px;font-weight:650;line-height:1.45;color:#183330;overflow-wrap:normal}
 @media(max-width:600px){.layout-essentials{padding:18px}.layout-essentials-grid{grid-template-columns:1fr;gap:14px}.layout-essentials-grid article+article{border-top:1px solid var(--line);padding-top:14px}}
+
+/* Seller entry keeps the buyer search primary. */
+.seller-nav-link{font-size:14px;font-weight:650;text-decoration:none;color:#196b60;margin-right:18px}.seller-entry{font-size:14px;line-height:1.6;margin:18px 0;color:#63776d}.seller-entry a{color:#196b60;font-weight:650;text-underline-offset:4px}@media(max-width:650px){.seller-nav-link{display:none}.seller-entry{font-size:13px}}

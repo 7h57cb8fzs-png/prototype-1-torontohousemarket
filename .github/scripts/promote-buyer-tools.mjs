@@ -41,7 +41,7 @@ for (const b of before.bindings.filter(b => b.type === "plain_text" && b.name !=
 }
 const schedule = await cf(`/workers/scripts/${worker}/schedules`);
 const previewOrigin = `https://${candidate.slice(0, 8)}-${worker}.7h57cb8fzs.workers.dev`;
-for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js", "select-controls.js"]) {
+for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js", "select-controls.js", "seller.html", "seller.js", "seller.css"]) {
   const url = path === "index.html" ? "/" : `/${path}`;
   const response = await fetch(`${previewOrigin}${url}?release=${process.env.GITHUB_SHA}`);
   const actual = Buffer.from(await response.arrayBuffer());
@@ -122,7 +122,7 @@ async function checkPhase5(base) {
   check(photoOk,'No working photo in the checked shortlist');
   console.log(JSON.stringify({phase5:{selectionMode:data.selectionMode,count:data.listings.length,photoOk,protectedRoutes:true}}));
 }
-const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
+const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified Phase 6 seller reports" : "Automatic rollback after buyer-tools verification failure" } });
 let attempted = false;
 try {
   check(await activeVersion() === previous, "Concurrent deployment detected");
@@ -132,7 +132,7 @@ try {
   for (let i = 0; i < 6; i++) { current = await activeVersion(); if (current === candidate) break; await new Promise(r => setTimeout(r, 2000)); }
   check(current === candidate, "Candidate did not become active");
   check(isDeepStrictEqual(schedule, await cf(`/workers/scripts/${worker}/schedules`)), "Cron schedule changed");
-  for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js", "select-controls.js"]) {
+  for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js", "select-controls.js", "seller.html", "seller.js", "seller.css"]) {
     const url = path === "index.html" ? "/" : `/${path}`;
     let matched = false, actual, status;
     for (let attempt = 0; attempt < 12; attempt++) {
@@ -150,7 +150,7 @@ try {
     check(matched, `Live asset mismatch after propagation window: ${path}`);
   }
   console.log(JSON.stringify({deployedVersion:candidate,previousVersion:previous,sourceSha256:hash(source(next))}));
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and response-target copy updated; no property tests needed. No reports or emails sent by this audit.\n`);
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron and seller assets verified. Three synthetic seller scenarios checked without live property/report requests. No reports or emails sent by this audit.\n`);
 } catch (error) {
   if (attempted && await activeVersion() === candidate) {
     await deploy(previous);

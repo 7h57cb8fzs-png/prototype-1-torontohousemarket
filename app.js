@@ -496,7 +496,7 @@ $("headerReportButton").addEventListener("click", () => {
 seeHomeButton.addEventListener("click", () => openLeadModal("buyer_report"));
 for (const id of ["briefShowingButton", "mobileShowingButton"]) $(id).addEventListener("click", () => openLeadModal("buyer_report"));
 deepReportButton.addEventListener("click", () => openLeadModal("buyer_offmarket"));
-sellerReportButton.addEventListener("click", () => openLeadModal("seller"));
+sellerReportButton.addEventListener("click", () => { location.href = "/seller.html?address=" + encodeURIComponent(liveListing?.address || propertyInput.value || ""); });
 
 let leadRequestKey = null;
 function openLeadModal(mode, includeShowing = false) {

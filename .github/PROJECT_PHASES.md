@@ -32,6 +32,13 @@ Ten newly selected condo properties (4 Toronto, 3 Richmond Hill, 3 Vaughan) are 
 898 Portage Parkway #2106, MLS N13611398, remains unresolved: direct IDX request returned 404; address query returned 18 building records without this unit, while an external REALTOR.ca listing was visible. Do not claim the highway parser fix solved this property or that this proves all condo failures are feed issues.
 
 ## Phase 6 working rules
-Use phase-6 as the working branch. Keep the Phase 5 checkpoint untouched. No Phase 6 feature scope has yet been approved beyond this transition.
+Use phase-6 as the working branch. Keep the Phase 5 checkpoint untouched. Approved Phase 6 scope includes a seller landing page, owner-confirmed home facts and upgrades, target-price capture, seller evidence report, email delivery and admin seller details. Public response target is 28 minutes, 9 AM–9 PM.
 The user is highly cost-sensitive: run only the specifically requested number of property checks; reuse the selected sample for before/after checks. “Random” means exclude previously tested properties. Never run the entire 139-test/property batch by default. Do not send test emails or create test leads without authorization.
-Keep GitHub → Cloudflare Worker + Supabase. Do not migrate hosting or recreate infrastructure. The prior release workflow only triggers on fix/ten-property-reliability-20260906; changing phase labels/branches does not itself deploy. Intentionally configure and review a guarded Phase 6 release path when actual deployment work is requested.
+Keep GitHub → Cloudflare Worker + Supabase. Do not migrate hosting or recreate infrastructure. The guarded release workflow now triggers on phase-6. Always verify the production source hash before deployment and preserve secrets, bindings, cron and customer records.
+
+## Seller experience — Phase 6
+- Dedicated campaign URL: /seller.html. Homepage seller links and the off-market owner action lead here.
+- Owner-provided facts, improvements, recency, document availability, target price, timeline and consent are stored in leads.property_snapshot.sellerProfile using the existing atomic create_phase5_request RPC.
+- Seller reports use the protected sold feed after a request. Same community (or verified same condo building), exact type and matching interior-size band are required. No freehold size fallback and no evidence older than 300 days. The owner's target and renovation spending never enter the valuation.
+- Unknown size/community produces a useful review report without a fabricated range. Three qualified sold homes are required. Condition and upgrade evidence remain to be reviewed by the team.
+- Seller email uses Market evidence / Improvements / Owner target, plus a target-position graphic and call/reply actions. Seller requests stay out of showing scheduling.
