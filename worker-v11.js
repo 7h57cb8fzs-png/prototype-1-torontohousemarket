@@ -2827,6 +2827,14 @@ function parseAddress5(raw) {
   first = first.replace(/^(?:unit|suite|apt|apartment|#)\s*[A-Za-z0-9-]+\s*[-,]?\s*/i, "");
   const m = first.match(/^(\d+[A-Za-z]?)\s+(.+)$/);
   if (!m) return {};
+  // A highway number belongs to the street, not the apartment number.
+  const highway = m[2].trim().match(/^(?:highway|hwy)\.?\s+(\d+[A-Za-z]?)(?:\s+(road|rd))?(?:\s+(east|west|north|south|e|w|n|s))?(?:\s+(?:(?:unit|suite|apt|apartment|#)\s*)?([A-Za-z0-9-]+))?$/i);
+  if (highway) return {
+    number: normalize3(m[1]), name: `highway ${normalize3(highway[1])}`,
+    suffix: highway[2] ? "road" : null,
+    direction: highway[3] ? canonicalDirection(highway[3]) : null,
+    unit: highway[4] ? normalize3(highway[4]) : null
+  };
   const tokens = m[2].trim().replace(/[.]/g, "").split(/\s+/);
   let direction = null;
   let suffix = null;
@@ -2864,7 +2872,7 @@ function addressScore2(a, r) {
   if (normalize3(r?.StreetNumber) !== a.number) return -100;
   let score = 0;
   const rowNumber = normalize3(r?.StreetNumber);
-  const rowName = normalize3(r?.StreetName);
+  const rowName = normalize3(r?.StreetName).replace(/^hwy\.?\s*/i,"highway ");
   const rowSuffix = canonicalStreetType(r?.StreetSuffix);
   const rowDirection = canonicalDirection(r?.StreetDirSuffix || r?.StreetDirPrefix);
   const unparsed = normalize3(r?.UnparsedAddress);

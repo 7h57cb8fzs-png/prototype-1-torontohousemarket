@@ -121,16 +121,16 @@ async function checkPhase5(base) {
   check(photoOk,'No working photo in the checked shortlist');
   console.log(JSON.stringify({phase5:{selectionMode:data.selectionMode,count:data.listings.length,photoOk,protectedRoutes:true}}));
 }
-async function checkReportedProperty(base) {
-  const r=await fetch(`${base}/api/property?q=${encodeURIComponent('898 Portage Pkwy 2106')}`),d=await r.json(),p=d.property;
-  check(r.ok && d.ok && p,'Reported address request failed');
-  if(p.foundInMls===false) check(p.inputValidation?.label==='Not found in connected feed' && p.forSale===null,'Missing record must have clear feed limitation and unknown status');
-  else check(/\b898\b/.test(p.address)&&/\b2106\b/.test(p.address),'Wrong unit substitution');
-  const keyResponse=await fetch(`${base}/api/property?listingKey=N13611398`),keyData=await keyResponse.json();
-  check(keyResponse.ok ? keyData.property?.listingKey==='N13611398' : keyResponse.status===404 && keyData.error.includes('connected feed'),'MLS lookup must preserve exact identity or explain feed gap');
-  console.log(JSON.stringify({reportedProperty:{address:p.address,found:p.foundInMls,mlsStatus:keyResponse.status,stage:base===origin?'production':'preview'}}));
+const sample=JSON.parse(readFileSync('tests/condo-address-sample.json','utf8'));
+async function checkCondoAddresses(base) {
+ for(const home of sample) {
+  const response=await fetch(`${base}/api/property?`+new URLSearchParams({q:home.address.split(',')[0],mode:'public_snapshot'}));
+  const body=await response.json(),p=body.property;
+  console.log(JSON.stringify({condoAddressCheck:{expected:home.listingKey,matched:p?.listingKey,address:p?.address,status:response.status,stage:base===origin?'production':'preview'}}));
+  check(response.ok&&body.ok&&p?.listingKey===home.listingKey,'Condo address did not resolve to the exact selected listing');
+ }
 }
-await checkReportedProperty(previewOrigin);
+await checkCondoAddresses(previewOrigin);
 const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
 let attempted = false;
 try {
@@ -158,9 +158,9 @@ try {
     }
     check(matched, `Live asset mismatch after propagation window: ${path}`);
   }
-  await checkReportedProperty(origin);
+  await checkCondoAddresses(origin);
   console.log(JSON.stringify({deployedVersion:candidate,previousVersion:previous,sourceSha256:hash(source(next))}));
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and only the reported property checked; absent feed record remains unresolved. No reports or emails sent by this audit.\n`);
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and all ten selected condo addresses verified against expected MLS keys. No reports or emails sent by this audit.\n`);
 } catch (error) {
   if (attempted && await activeVersion() === candidate) {
     await deploy(previous);
