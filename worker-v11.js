@@ -902,7 +902,7 @@ var COMPARABLE_SELECT_FIELDS = [
 function qualifiedSoldComparableRows(subject, records, maxAgeDays, options = {}) {
   const condo = isCondominiumProperty(subject);
   const requireCompatibleSize = condo || options.requireCompatibleSize !== false;
-  return dedupe(records || []).filter((record) => record.ListingKey !== subject.ListingKey).filter((record) => exactComparableType(subject, record)).filter(record => !condo || (hasExactCommunity(subject.CityRegion) && sameText(subject.CityRegion,record.CityRegion))).filter((record) => !requireCompatibleSize || comparableHasCompatibleSize(subject, record)).filter((record) => isSoldWithinDays(record, maxAgeDays, subject)).map((record) => {
+  return dedupe(records || []).filter((record) => record.ListingKey !== subject.ListingKey).filter((record) => exactComparableType(subject, record)).filter(record => !condo || condoCommunityMatches(subject,record)).filter((record) => !requireCompatibleSize || comparableHasCompatibleSize(subject, record)).filter((record) => isSoldWithinDays(record, maxAgeDays, subject)).map((record) => {
     const candidate = normalizeComparable(subject, record);
     const soldDate = soldRecordDate(record);
     return { ...candidate, ageDays: soldDate ? Math.max(0, (Date.now() - soldDate.getTime()) / 864e5) : Number.POSITIVE_INFINITY };
@@ -938,9 +938,20 @@ function condoHasSameSizeRange(subject, record) {
   if (b.banded) return a.low>=b.low && a.high<=b.high;
   return Math.floor(a.low/100)===Math.floor(b.low/100);
 }
+function verifiedSameCondoBuilding(a,b) {
+  const addressA=a.UnparsedAddress || a.address || '', addressB=b.UnparsedAddress || b.address || '';
+  const postal=r=>String(r.PostalCode || r.postalCode || r.postal_code || (String(r.UnparsedAddress || r.address || '').match(/\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b/i)||[])[0] || '').replace(/\s/g,'').toUpperCase();
+  const postalA=postal(a),postalB=postal(b);
+  if(!/^[A-Z]\d[A-Z]\d[A-Z]\d$/.test(postalA) || postalA!==postalB) return false;
+  const x=parseAddress5(addressA),y=parseAddress5(addressB);
+  return !!(x.number && x.name && x.suffix && x.number===y.number && x.name===y.name && x.suffix===y.suffix && x.direction===y.direction);
+}
+function condoCommunityMatches(a,b) {
+  return (hasExactCommunity(a.CityRegion) && sameText(a.CityRegion,b.CityRegion)) || verifiedSameCondoBuilding(a,b);
+}
 function reportCondoMatch(facts, c) {
   if (!isCondominiumProperty({PropertySubType:facts.property_type})) return true;
-  return sameText(facts.property_type,c.propertySubType) && hasExactCommunity(facts.neighbourhood) && sameText(facts.neighbourhood,c.cityRegion) && condoHasSameSizeRange({LivingAreaRange:facts.living_area},{LivingAreaRange:c.livingAreaRange,BuildingAreaTotal:c.buildingAreaTotal,BuildingAreaUnits:c.buildingAreaUnits});
+  return sameText(facts.property_type,c.propertySubType) && condoCommunityMatches({...facts,CityRegion:facts.neighbourhood},{...c,CityRegion:c.cityRegion}) && condoHasSameSizeRange({LivingAreaRange:facts.living_area},{LivingAreaRange:c.livingAreaRange,BuildingAreaTotal:c.buildingAreaTotal,BuildingAreaUnits:c.buildingAreaUnits});
 }
 function comparableHasCompatibleSize(subject, record) {
   if (isCondominiumProperty(subject)) return condoHasSameSizeRange(subject, record);
@@ -1182,6 +1193,7 @@ function publicComparable(c) {
     distanceKm: c.distanceKm,
     cityRegion: r.CityRegion || null,
     postalCode: r.PostalCode || null,
+    geographyNote: c.sameBuilding && !c.sameRegion ? "Same building; MLS community label differs." : null,
     priceDeviationPct: c.priceDeviationPct ?? null
   };
 }
@@ -3086,7 +3098,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "unit-search-brand-v114-20260911";
+var VERSION4 = "condo-building-community-v115-20260911";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3232,7 +3244,7 @@ function priceCheckSelection(subject, records) {
   for (const row of sorted) {
     const key = String(row.ListingKey || ""), identity = priceCheckIdentity(row);
     if (!/^[A-Z]\d{7,9}$/.test(key) || seenKeys.has(key) || !identity || seen.has(identity) || !publicListingFacts(row)) continue;
-    if (priceCheckType(row) !== type || normalizeText(row.City) !== city || normalizeText(row.CityRegion) !== community) continue;
+    if (priceCheckType(row) !== type || normalizeText(row.City) !== city || (normalizeText(row.CityRegion) !== community && !(isCondominiumProperty(subject) && verifiedSameCondoBuilding(subject,row)))) continue;
     const otherArea = priceCheckArea(row), otherBeds = numberOrNull(row.BedroomsTotal), otherBaths = numberOrNull(row.BathroomsTotalInteger), price = numberOrNull(row.ListPrice);
     if (!otherArea || otherBeds === null || Math.abs(otherBeds - beds) > 1 || !(price > 0)) continue;
     const sizeGap = Math.abs((otherArea.low + otherArea.high) / (area.low + area.high) - 1);
@@ -4597,7 +4609,7 @@ function mergeCurrentIdxWithVow(currentProperty, protectedProperty, subjectSourc
 __name(mergeCurrentIdxWithVow, "mergeCurrentIdxWithVow");
 async function buildPropertyReport(env, lead, property2, requestId = null) {
   let comp = property2.comparableContext || {};
-  const condoFacts = {property_type:property2.propertySubType || property2.propertyType,living_area:property2.livingAreaRange || property2.buildingAreaTotal,neighbourhood:property2.cityRegion};
+  const condoFacts = {address:property2.address,postal_code:property2.postalCode,property_type:property2.propertySubType || property2.propertyType,living_area:property2.livingAreaRange || property2.buildingAreaTotal,neighbourhood:property2.cityRegion};
   if (isCondominiumProperty({PropertySubType:condoFacts.property_type})) {
     const original = Array.isArray(comp.comparables) ? comp.comparables : [];
     const matched = original.filter(c=>reportCondoMatch(condoFacts,c));
@@ -4663,7 +4675,7 @@ async function buildPropertyReport(env, lead, property2, requestId = null) {
   const valueRating = buildValueRating(facts, valuation, comp.policy || {}, comparables.length);
   return reportWithoutUnsupportedRating({
     schema_version: 5,
-    method_version: "community-size-v112",
+    method_version: "verified-building-community-size-v115",
     template_version: "thm-report-v114",
     generated_at: (/* @__PURE__ */ new Date()).toISOString(),
     report_type: "THM AI buyer intelligence brief",
@@ -5167,7 +5179,7 @@ function propertyReportEmail(address, agentData, input, options = {}) {
   const paragraph = t => `<p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#374151">${html(t)}</p>`;
   const bullets = values => `<ul style="margin:0;padding-left:20px;color:#374151;font-size:16px;line-height:1.65">${values.map(x => `<li style="margin-bottom:8px">${html(x)}</li>`).join('')}</ul>`;
   const section = (name, body) => `<tr><td class="report-section" style="padding:22px 26px;border-bottom:1px solid #e5e7eb">${label(name)}${body}</td></tr>`;
-  const compRows = comps.map((c,i) => `<tr><td style="padding:12px 0;border-bottom:1px solid #e5e7eb">${paragraph(`${i+1}. ${c.address || "MLS comparable"}`)}<p style="margin:0;font-size:14px;line-height:1.6">${html([cad(c.soldPrice), c.soldDate, c.propertySubType, c.beds != null ? `${c.beds} bd` : null, c.baths != null ? `${c.baths} ba` : null, c.livingAreaRange, c.cityRegion, c.distanceKm != null ? `${Number(c.distanceKm).toFixed(2)} km` : 'Distance unavailable'].filter(Boolean).join(' · '))}</p></td></tr>`).join('');
+  const compRows = comps.map((c,i) => `<tr><td style="padding:12px 0;border-bottom:1px solid #e5e7eb">${paragraph(`${i+1}. ${c.address || "MLS comparable"}`)}<p style="margin:0;font-size:14px;line-height:1.6">${html([cad(c.soldPrice), c.soldDate, c.propertySubType, c.beds != null ? `${c.beds} bd` : null, c.baths != null ? `${c.baths} ba` : null, c.livingAreaRange, c.cityRegion, c.geographyNote, c.distanceKm != null ? `${Number(c.distanceKm).toFixed(2)} km` : 'Distance unavailable'].filter(Boolean).join(' · '))}</p></td></tr>`).join('');
   const disclaimer = "Preliminary decision support, not an appraisal or guarantee of value. Confirm listing status, measurements, taxes, legal use and sold evidence with your Realtor before relying on them.";
   const priceGraphic = reportPriceGraphic(report);
   const suggestion = reportPriceSuggestion(report);
@@ -5177,7 +5189,7 @@ function propertyReportEmail(address, agentData, input, options = {}) {
   const cashbackHtml = active ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#edf5f1;border-radius:12px;margin:0 0 22px"><tr><td style="padding:18px"><p style="margin:0 0 7px;color:#466e60;font-size:11px;font-weight:bold;letter-spacing:1px">YOUR BUYER BENEFIT</p><p style="margin:0;color:#153e33;font-family:Arial,Helvetica,sans-serif;font-size:25px;font-weight:bold;line-height:1.25">Up to $10,000 cashback</p><p style="margin:8px 0 0;color:#496259;font-size:14px;line-height:1.5">On an eligible purchase through Toronto House Market. Ask us about eligibility and terms.</p></td></tr></table>` : '';
   const ratingText = rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : 'Value rating unavailable. Review the sold evidence below with the team.';
   const textParts = [title,address,status,`Prepared ${generated}`,"YOUR PRICE PICTURE",verdict,priceGraphic.text,suggestion.available?suggestion.text:null,ratingText,cashbackText,contactText,"HOME AT A GLANCE",factsRead,"Recent comparable sales",evidence,`Observed sold prices: ${observedRange}. This may differ from the modelled range.`,locality,size,...comps.map((c,i)=>`${i+1}. ${c.address} · ${cad(c.soldPrice)} · ${c.soldDate} · ${c.livingAreaRange || (c.buildingAreaTotal ? c.buildingAreaTotal+' sq ft' : 'Size not reported')} · ${c.distanceKm != null ? `${c.distanceKm} km` : 'Distance unavailable'}`),"WHAT THE NUMBERS SAY",v.basis,"KNOWN MONTHLY COSTS",...costs,"CHECK BEFORE AN OFFER",...checks,...questions,contactText,actionNote,generatedMode,disclaimer,TEAM_NAMES+' · Sales Representatives',TEAM_BROKERAGE];
-  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="format-detection" content="telephone=no,address=no,date=no,email=no"><title>${html(title)}</title><style>a[x-apple-data-detectors]{color:inherit!important;font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;text-decoration:none!important}.report-address,.report-address a{color:#ffffff!important;font-family:Arial,Helvetica,sans-serif!important;font-weight:700!important;text-decoration:none!important}@media(max-width:480px){.report-section{padding:20px 16px!important}.report-address{font-size:23px!important}}</style></head><body style="margin:0;background:#f7f7f2;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} · ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:16px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden"><tr><td style="padding:26px 22px;background:#183330;color:#fff"><p style="color:#b9dccc;font-size:12px;letter-spacing:1px;margin:0 0 8px">${html(title)}</p><h1 class="report-address" style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:700;color:#ffffff;line-height:1.3;margin:8px 0 12px;overflow-wrap:anywhere"><a href="${html(viewPropertyUrl)}" style="font-family:Arial,Helvetica,sans-serif;font-size:inherit;font-weight:700;line-height:inherit;color:#ffffff!important;text-decoration:none!important">${html(address)}</a></h1><p style="font-size:16px;line-height:1.5;margin:0;color:#e5e7eb">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section('YOUR PRICE PICTURE',`${priceGraphic.html}${suggestion.available?paragraph(suggestion.text):''}<p style="font-size:12px;color:#61746c;line-height:1.5;margin:0">${html(ratingText)}</p>`)}${section('YOUR BUYER BENEFIT',cashbackHtml+contactHtml)}${section('HOME AT A GLANCE',paragraph(factsRead))}${section('Recent comparable sales',paragraph(evidence)+paragraph(`These sales span ${observedRange}. The estimate also considers how closely each home matches.`)+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>`+paragraph([locality,size].filter(Boolean).join(' ')))}${section('WHAT THE NUMBERS SAY',paragraph(v.basis || reason)+paragraph(/condo|apartment/i.test(f.property_type || '') ? 'Condo method: same community, same home type and same interior size range. A price estimate requires at least 3 qualifying sales. Reports may change when the listing facts, qualifying sales or method change.' : 'A price estimate requires at least 3 qualifying sold homes. Reports may change when the listing facts or qualifying sales change.'))}${section('KNOWN MONTHLY COSTS',bullets(costs))}${section('CHECK BEFORE AN OFFER',bullets(checks)+(questions.length ? label('QUESTIONS TO ASK US')+bullets(questions) : ''))}${section('YOUR NEXT MOVE',contactHtml)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6"><strong style="color:#183330">${html(TEAM_NAMES)}</strong><br>Sales Representatives<br><strong>${html(TEAM_BROKERAGE)}</strong><br><a href="tel:+16478904704" style="color:#196b60">Contact the team</a><br><br>${html(generatedMode)}<br>${html(disclaimer)}<br>Toronto House Market</td></tr></table></td></tr></table></body></html>`;
+  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="format-detection" content="telephone=no,address=no,date=no,email=no"><title>${html(title)}</title><style>a[x-apple-data-detectors]{color:inherit!important;font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;text-decoration:none!important}.report-address,.report-address a{color:#ffffff!important;font-family:Arial,Helvetica,sans-serif!important;font-weight:700!important;text-decoration:none!important}@media(max-width:480px){.report-section{padding:20px 16px!important}.report-address{font-size:23px!important}}</style></head><body style="margin:0;background:#f7f7f2;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} · ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:16px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden"><tr><td style="padding:26px 22px;background:#183330;color:#fff"><p style="color:#b9dccc;font-size:12px;letter-spacing:1px;margin:0 0 8px">${html(title)}</p><h1 class="report-address" style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:700;color:#ffffff;line-height:1.3;margin:8px 0 12px;overflow-wrap:anywhere"><a href="${html(viewPropertyUrl)}" style="font-family:Arial,Helvetica,sans-serif;font-size:inherit;font-weight:700;line-height:inherit;color:#ffffff!important;text-decoration:none!important">${html(address)}</a></h1><p style="font-size:16px;line-height:1.5;margin:0;color:#e5e7eb">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section('YOUR PRICE PICTURE',`${priceGraphic.html}${suggestion.available?paragraph(suggestion.text):''}<p style="font-size:12px;color:#61746c;line-height:1.5;margin:0">${html(ratingText)}</p>`)}${section('YOUR BUYER BENEFIT',cashbackHtml+contactHtml)}${section('HOME AT A GLANCE',paragraph(factsRead))}${section('Recent comparable sales',paragraph(evidence)+paragraph(`These sales span ${observedRange}. The estimate also considers how closely each home matches.`)+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>`+paragraph([locality,size].filter(Boolean).join(' ')))}${section('WHAT THE NUMBERS SAY',paragraph(v.basis || reason)+paragraph(/condo|apartment/i.test(f.property_type || '') ? 'Condo method: same community, same home type and same interior size range. Units verified in the same building and full postal code remain eligible when MLS community labels differ. A price estimate requires at least 3 qualifying sales. Reports may change when the listing facts, qualifying sales or method change.' : 'A price estimate requires at least 3 qualifying sold homes. Reports may change when the listing facts or qualifying sales change.'))}${section('KNOWN MONTHLY COSTS',bullets(costs))}${section('CHECK BEFORE AN OFFER',bullets(checks)+(questions.length ? label('QUESTIONS TO ASK US')+bullets(questions) : ''))}${section('YOUR NEXT MOVE',contactHtml)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6"><strong style="color:#183330">${html(TEAM_NAMES)}</strong><br>Sales Representatives<br><strong>${html(TEAM_BROKERAGE)}</strong><br><a href="tel:+16478904704" style="color:#196b60">Contact the team</a><br><br>${html(generatedMode)}<br>${html(disclaimer)}<br>Toronto House Market</td></tr></table></td></tr></table></body></html>`;
   return {subject:`AI Property Report Ready: ${address} | ${rating.available ? `Value Rating ${rating.score}/10` : active ? 'Realtor Review' : 'Property Review'}`,html:htmlBody,text:textParts.filter(Boolean).join('\n\n')};
 }
 __name(propertyReportEmail, "propertyReportEmail");

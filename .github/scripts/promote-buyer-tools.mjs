@@ -158,7 +158,7 @@ try {
   }
   await checkFocusedProperty(origin);
   console.log(JSON.stringify({deployedVersion:candidate,previousVersion:previous,sourceSha256:hash(source(next))}));
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Ten selected automated checks passed; source, bindings, cron, assets and exact-unit lookup verified. No reports or emails sent by this audit.\n`);
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and exact-unit lookup verified. No reports or emails sent by this audit.\n`);
 } catch (error) {
   if (attempted && await activeVersion() === candidate) {
     await deploy(previous);

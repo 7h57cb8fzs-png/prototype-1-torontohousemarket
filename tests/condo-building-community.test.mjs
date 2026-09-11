@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const source=readFileSync(new URL('../worker-v11.js',import.meta.url),'utf8');
+const c=vm.createContext({});vm.runInContext(source.replace(/export \{[\s\S]*?\};\s*\/\/# sourceMappingURL=[^\n]+\s*$/,''),c);
+test('same-building label conflicts preserve same-size condos without admitting other buildings or sizes',()=>{
+ const facts={address:'5 Example Avenue 5505, Vaughan, ON L4K 0J5',property_type:'Condo Apartment',living_area:'600-699',neighbourhood:'Vaughan Corporate Centre',for_sale:true,list_price:400000};
+ const comparable={address:'5 Example Avenue 5110, Vaughan, ON L4K 0J5',propertySubType:'Condo Apartment',livingAreaRange:'600-699',cityRegion:'Concord',postalCode:'L4K 0J5'};
+ assert.equal(c.reportCondoMatch(facts,comparable),true);
+ assert.equal(c.reportCondoMatch(facts,{...comparable,address:'7 Example Avenue 5110, Vaughan, ON L4K 0J5'}),false);
+ assert.equal(c.reportCondoMatch(facts,{...comparable,postalCode:'L4K 0J6'}),false);
+ assert.equal(c.reportCondoMatch(facts,{...comparable,livingAreaRange:'700-799'}),false);
+ assert.equal(c.reportCondoMatch(facts,{...comparable,address:'',postalCode:''}),false);
+ const comps=[1,2,3].map((n)=>({...comparable,address:`5 Example Avenue ${n}, Vaughan, ON L4K 0J5`,listingKey:'N'+n,soldPrice:500000+n*1000,soldDate:'2026-08-01'}));
+ const report=c.reportWithoutUnsupportedRating({facts,generated_at:'2026-09-11',comparables:comps,valuation:{available:true,low:490000,midpoint:500000,high:510000}});
+ assert.equal(report.comparables.length,3);assert.equal(report.valuation.available,true);
+ const subject={UnparsedAddress:facts.address,CityRegion:facts.neighbourhood,PostalCode:'L4K 0J5',PropertySubType:'Condo Apartment'};
+ assert.equal(c.condoCommunityMatches(subject,{UnparsedAddress:comparable.address,CityRegion:'Concord',PostalCode:'L4K 0J5'}),true);
+});
