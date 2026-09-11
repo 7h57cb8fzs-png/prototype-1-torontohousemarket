@@ -121,16 +121,14 @@ async function checkPhase5(base) {
   check(photoOk,'No working photo in the checked shortlist');
   console.log(JSON.stringify({phase5:{selectionMode:data.selectionMode,count:data.listings.length,photoOk,protectedRoutes:true}}));
 }
-const sample=JSON.parse(readFileSync('tests/condo-address-sample.json','utf8'));
-async function checkCondoAddresses(base) {
- for(const home of sample) {
-  const response=await fetch(`${base}/api/property?`+new URLSearchParams({q:home.address.split(',')[0],mode:'public_snapshot'}));
-  const body=await response.json(),p=body.property;
-  console.log(JSON.stringify({condoAddressCheck:{expected:home.listingKey,matched:p?.listingKey,address:p?.address,status:response.status,stage:base===origin?'production':'preview'}}));
-  check(response.ok&&body.ok&&p?.listingKey===home.listingKey,'Condo address did not resolve to the exact selected listing');
- }
+async function checkNorthcliffe(base) {
+ const response=await fetch(`${base}/api/price-check?listingKey=C13696242`),p=await response.json();
+ console.log(JSON.stringify({northcliffe:{stage:base===origin?'production':'preview',status:response.status,count:p.count,criteria:p.criteria,matches:(p.matches||[]).map(c=>({address:c.address,bedrooms:c.bedroomLayout,size:c.size})),coverage:p.coverage}}));
+ check(response.ok&&p.ok&&p.community==='Oakwood Village'&&p.criteria.includes('3 above-ground bedrooms'),'Detached bedroom comparison rule missing');
+ check(p.count>0,'No qualifying live matches; investigate before deployment');
+ if(p.count<3)check(!p.available&&p.medianAsk===null,'Sparse evidence received a price rating');
 }
-await checkCondoAddresses(previewOrigin);
+await checkNorthcliffe(previewOrigin);
 const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
 let attempted = false;
 try {
@@ -158,9 +156,9 @@ try {
     }
     check(matched, `Live asset mismatch after propagation window: ${path}`);
   }
-  await checkCondoAddresses(origin);
+  await checkNorthcliffe(origin);
   console.log(JSON.stringify({deployedVersion:candidate,previousVersion:previous,sourceSha256:hash(source(next))}));
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and all ten selected condo addresses verified against expected MLS keys. No reports or emails sent by this audit.\n`);
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Focused automated checks passed; source, bindings, cron, assets and 403 Northcliffe comparison checked. No reports or emails sent by this audit.\n`);
 } catch (error) {
   if (attempted && await activeVersion() === candidate) {
     await deploy(previous);

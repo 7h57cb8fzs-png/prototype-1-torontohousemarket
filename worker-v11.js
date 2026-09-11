@@ -3212,7 +3212,7 @@ function forwardPublicSnapshot(source, target) {
 
 // Public asking-price position. This never calls the sold-comparable engine,
 // generates a report, or substitutes a VOW credential for IDX.
-const PRICE_CHECK_VERSION = "strict-condo-size-v112";
+const PRICE_CHECK_VERSION = "freehold-above-grade-v118";
 const priceCheckBudget = new Map();
 function priceCheckArea(row) {
   const match = String(row?.LivingAreaRange || "").replace(/,/g, "").match(/^\s*(\d+)\s*[-–]\s*(\d+)\s*$/);
@@ -3235,12 +3235,19 @@ function comparableLotArea(row) {
   const factor = /^(feet|foot|ft)$/.test(units) ? 1 : /^(metres|meters|metre|meter|m)$/.test(units) ? 10.7639 : null;
   return width > 0 && depth > 0 && factor ? width * depth * factor : null;
 }
+function aboveGradeBedrooms(row) {
+  const above = numberOrNull(row.BedroomsAboveGrade);
+  if (above !== null) return above;
+  const total = numberOrNull(row.BedroomsTotal), below = numberOrNull(row.BedroomsBelowGrade);
+  return total !== null && below !== null && total >= below ? total - below : null;
+}
 function priceCheckSelection(subject, records) {
   const result = { available: false, signal: "unavailable", label: "More evidence needed", count: 0, medianAsk: null, differencePct: null, matches: [] };
   if (!publicListingFacts(subject)) return { ...result, reason: "A current listing with public details is required for a Price Check." };
   const type = priceCheckType(subject);
   const area = priceCheckArea(subject), beds = numberOrNull(subject.BedroomsTotal), baths = numberOrNull(subject.BathroomsTotalInteger);
-  const primaryBeds = numberOrNull(subject.BedroomsAboveGrade), extraBeds = numberOrNull(subject.BedroomsBelowGrade);
+  const primaryBeds = isCondominiumProperty(subject) ? numberOrNull(subject.BedroomsAboveGrade) : aboveGradeBedrooms(subject), extraBeds = numberOrNull(subject.BedroomsBelowGrade);
+  const condo = isCondominiumProperty(subject);
   const city = normalizeText(subject.City), community = normalizeText(subject.CityRegion), asking = numberOrNull(subject.ListPrice);
   const missing = [!type && "a supported home type", !area && "a comparable closed size range", beds === null && "bedrooms", !city && "municipality", (!community || /^(toronto )?[cew]\d{2}$/.test(community)) && "exact MLS community", !(asking > 0) && "asking price"].filter(Boolean);
   if (missing.length) return { ...result, reason: `We could not verify ${missing.join(", ")} for this listing. There is not enough detail for a reliable price comparison yet.` };
@@ -3254,27 +3261,31 @@ function priceCheckSelection(subject, records) {
     if (!/^[A-Z]\d{7,9}$/.test(key) || seenKeys.has(key) || !identity || seen.has(identity) || !publicListingFacts(row)) continue;
     if (priceCheckType(row) !== type || normalizeText(row.City) !== city || (normalizeText(row.CityRegion) !== community && !(isCondominiumProperty(subject) && verifiedSameCondoBuilding(subject,row)))) continue;
     const otherArea = priceCheckArea(row), otherBeds = numberOrNull(row.BedroomsTotal), otherBaths = numberOrNull(row.BathroomsTotalInteger), price = numberOrNull(row.ListPrice);
-    if (!otherArea || otherBeds === null || Math.abs(otherBeds - beds) > 1 || !(price > 0)) continue;
+    const otherPrimary = condo ? numberOrNull(row.BedroomsAboveGrade) : aboveGradeBedrooms(row), otherExtra = numberOrNull(row.BedroomsBelowGrade);
+    if (!otherArea || otherBeds === null || !(price > 0)) continue;
+    if (condo ? Math.abs(otherBeds - beds) > 1 : primaryBeds !== null && otherPrimary !== null && Math.abs(otherPrimary - primaryBeds) > 1) continue;
     const sizeGap = Math.abs((otherArea.low + otherArea.high) / (area.low + area.high) - 1);
     if (isCondominiumProperty(subject) ? !condoHasSameSizeRange(subject,row) : sizeGap > .25) continue;
-    const sameBedrooms = otherBeds === beds && !(primaryBeds !== null && numberOrNull(row.BedroomsAboveGrade) !== primaryBeds || extraBeds !== null && numberOrNull(row.BedroomsBelowGrade) !== extraBeds);
+    const sameBedrooms = condo
+      ? otherBeds === beds && !(primaryBeds !== null && otherPrimary !== primaryBeds || extraBeds !== null && otherExtra !== extraBeds)
+      : primaryBeds !== null && otherPrimary !== null && primaryBeds === otherPrimary;
     const parking = numberOrNull(subject.ParkingTotal), otherParking = numberOrNull(row.ParkingTotal);
     const subjectLot = comparableLotArea(subject), rowLot = comparableLotArea(row);
     const lotSimilarity = subjectLot && rowLot ? Math.min(subjectLot,rowLot)/Math.max(subjectLot,rowLot) : null;
     const similarity = Math.round(100 * ((1 - sizeGap) * .60 + (sameBedrooms ? .25 : .10) + (lotSimilarity === null ? 0 : .15 * lotSimilarity)) / (lotSimilarity === null ? .85 : 1));
-    const differences = [parking !== null && otherParking !== null && parking !== otherParking ? `${otherParking} parking` : null, baths !== null && otherBaths !== null && baths !== otherBaths ? `${otherBaths} baths` : null, subjectLot && rowLot ? `${Math.round(rowLot).toLocaleString('en-CA')} sq ft lot` : null].filter(Boolean);
+    const differences = [!condo && otherExtra !== extraBeds ? (otherExtra === null ? "Basement bedroom count not reported" : `${otherExtra} basement bedrooms`) : null, parking !== null && otherParking !== null && parking !== otherParking ? `${otherParking} parking` : null, baths !== null && otherBaths !== null && baths !== otherBaths ? `${otherBaths} baths` : null, subjectLot && rowLot ? `${Math.round(rowLot).toLocaleString('en-CA')} sq ft lot` : null].filter(Boolean);
     if (!sameBedrooms) {
-      if (relatedMatches.length < 5) relatedMatches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName), difference: 'Different bedroom layout; outside the asking-price signal.', differences, similarity });
+      if (relatedMatches.length < 5) relatedMatches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName), difference: condo ? 'Different bedroom layout; outside the asking-price signal.' : otherPrimary === null || primaryBeds === null ? 'Above-ground bedrooms unconfirmed; outside the price comparison.' : 'Different above-ground bedroom count; outside the price comparison.', differences, similarity });
       seen.add(identity); seenKeys.add(key);
       continue;
     }
     seen.add(identity);
     seenKeys.add(key);
-    matches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, bedroomLayout: primaryBeds !== null && extraBeds !== null ? `${primaryBeds}+${extraBeds}` : null, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName), differences, similarity });
+    matches.push({ listingKey: key, address: cleanText(row.UnparsedAddress || buildAddress(row)), asking: price, beds: otherBeds, bedroomLayout: otherPrimary !== null && otherExtra !== null ? `${otherPrimary}+${otherExtra}` : null, baths: otherBaths, size: otherArea.label, listingOffice: cleanText(row.ListOfficeName), differences, similarity });
   }
   matches.sort((a,b) => b.similarity - a.similarity || a.listingKey.localeCompare(b.listingKey));
   result.matches = matches; result.count = matches.length; result.relatedMatches = relatedMatches;
-  const layout = primaryBeds !== null && extraBeds !== null ? `${primaryBeds}+${extraBeds} reported bedroom layout` : `${beds} bedrooms`;
+  const layout = !condo ? primaryBeds !== null ? `${primaryBeds} above-ground bedrooms · basement bedrooms shown separately` : "above-ground bedrooms unconfirmed" : primaryBeds !== null && extraBeds !== null ? `${primaryBeds}+${extraBeds} reported bedroom layout` : `${beds} bedrooms`;
   result.criteria = `${cleanText(subject.CityRegion)} · ${cleanText(subject.PropertySubType)} · ${isCondominiumProperty(subject) ? area.label+" only" : "similar size"} · ${layout}`;
   result.sizeRule = isCondominiumProperty(subject) ? "same_condo_size_range" : "similar_size";
   result.subjectSize = area.label;
