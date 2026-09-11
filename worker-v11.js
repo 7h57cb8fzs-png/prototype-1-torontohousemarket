@@ -3129,7 +3129,7 @@ var worker_v11_default = {
 async function publicProperty(request, env, ctx) {
   const publicUrl = new URL(request.url);
   publicUrl.searchParams.set("mode", "public_snapshot");
-  publicUrl.searchParams.set("snapshot_version", "public-facts-address-v104-20260906");
+  publicUrl.searchParams.set("snapshot_version", VERSION4);
   const cacheKey = new Request(publicUrl.toString(), { method: "GET" });
   const edgeCache = typeof caches !== "undefined" ? caches.default : null;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
@@ -3158,8 +3158,9 @@ async function publicProperty(request, env, ctx) {
   if (["none", "unknown"].includes(body.property.offerTiming?.type)) body.property.offerTiming = {type:"unknown",label:"Offer date not reported",note:"No clear deadline in the public listing. Confirm offer instructions with your Realtor."};
   body.property.comparableContext = { available: false, matchCount: 0, confidence: "Included in your report", basis: "Recent sold comparables and the value range are emailed after your request." };
   body.property.priceOpinion = { available: false, label: "Included in your report", note: "Your value range is prepared after your request." };
-  const result = json7(body, response.status, { "Cache-Control": "public, max-age=60, s-maxage=300" });
-  if (response.status === 200 && edgeCache) ctx.waitUntil(edgeCache.put(cacheKey, result.clone()));
+  const cacheable = body.property.foundInMls !== false;
+  const result = json7(body, response.status, { "Cache-Control": cacheable ? "public, max-age=60, s-maxage=300" : "no-store" });
+  if (response.status === 200 && cacheable && edgeCache) ctx.waitUntil(edgeCache.put(cacheKey, result.clone()));
   return result;
 }
 __name(publicProperty, "publicProperty");

@@ -199,3 +199,17 @@ test('an unmatched address is unknown, not verified off market',async t => {
   assert.equal(p.inputValidation.label,'Address not matched');
   assert.equal(p.offerTiming.type,'unknown');
 });
+
+test('old no-match cache cannot survive an address resolver release and new misses are not cached',async t => {
+  const keys=[],writes=[];
+  const previous=globalThis.caches;
+  globalThis.caches={default:{async match(key){keys.push(key.url);if(key.url.includes('public-facts-address-v104-20260906')) return Response.json({property:{foundInMls:false,forSale:false}});},async put(key){writes.push(key.url);}}};
+  t.after(()=>{if(previous===undefined)delete globalThis.caches;else globalThis.caches=previous;});
+  t.mock.method(globalThis,'fetch',async()=>Response.json({value:[]}));
+  const r=await worker.fetch(new Request('https://example.com/api/property?q=999999%20Missing%20Court'),{AMPRE_TOKEN:'fixture'},{waitUntil(){}});
+  const p=(await r.json()).property;
+  assert.equal(p.forSale,null);
+  assert.equal(r.headers.get('Cache-Control'),'no-store');
+  assert.ok(keys[0].includes('address-court-alias-v113-20260911'));
+  assert.equal(writes.length,0);
+});
