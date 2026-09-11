@@ -1,3 +1,5 @@
+> **Current phase: Phase 6.** Phase 5 closed on September 11, 2026. Before changing or restoring the project, read the [phase register and rollback checkpoint](.github/PROJECT_PHASES.md). The early prototype notes below are historical where superseded by that register.
+
 # PROTOTYPE 1 - TORONTOHOUSEMARKET
 
 Standalone Phase 1 product build for Toronto House Market.
