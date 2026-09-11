@@ -7,7 +7,7 @@ function render(data){
   $('appointmentAddress').textContent=data.address;
   $('appointmentForm').hidden=!!data.confirmed_at;
   $('appointmentConfirmed').hidden=!data.confirmed_at;
-  $('appointmentStatus').textContent=data.confirmed_at?'Confirmed by Golestan Team':data.preferred_at?`Requested: ${toronto(data.preferred_at)}. Awaiting confirmation.`:'Choose a time that works for you.';
+  $('appointmentStatus').textContent=data.confirmed_at?'Confirmed by our team':data.preferred_at?`Requested: ${toronto(data.preferred_at)}. Awaiting confirmation.`:'Choose a time that works for you.';
   if(data.confirmed_at)$('confirmedTime').textContent=toronto(data.confirmed_at)+' · Toronto time';
 }
 $('appointmentDate').min=new Date().toLocaleDateString('en-CA',{timeZone:'America/Toronto'});

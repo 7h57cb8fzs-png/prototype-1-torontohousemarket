@@ -190,7 +190,7 @@ function renderListing(listing) {
     linkValidationBadge.classList.remove("hidden");
   }
 
-  marketStatusPill.textContent = active ? "FOR SALE" : hasMls ? "NOT FOR SALE" : "STATUS UNCONFIRMED";
+  marketStatusPill.textContent = active ? "FOR SALE" : listing.forLease ? "FOR LEASE" : hasMls ? "NOT FOR SALE" : "STATUS UNCONFIRMED";
   marketStatusPill.className = `market-status-pill ${active ? "is-live" : "is-off"}`;
   mlsBadge.textContent = listing.listingKey ? `MLS ${listing.listingKey}` : hasMls ? "MLS HISTORY" : "NO MLS MATCH";
 
@@ -202,7 +202,10 @@ function renderListing(listing) {
   offMarketActionBox.classList.toggle("hidden", active);
 
   if (!active) {
-    if (hasMls) {
+    if (listing.forLease) {
+      offMarketTitle.textContent = "This property is offered for lease.";
+      offMarketCopy.textContent = "You found the rental listing. Purchase price reports apply to homes for sale. Contact the team about this rental.";
+    } else if (hasMls) {
       offMarketTitle.textContent = "Not listed — but the property still has useful history.";
       offMarketCopy.textContent = "Request a deeper review using available MLS history and current local market context.";
     } else {
@@ -235,6 +238,7 @@ function resetDynamicSections() {
 }
 
 function buildSnapshotMeta(listing) {
+  if (listing.forLease) return `MLS ${listing.listingKey} · For lease · this is a rental listing, not a sale listing`;
   if (listing.forSale) {
     const bits = [];
     if (listing.listingKey) bits.push(`MLS ${listing.listingKey}`);
@@ -248,6 +252,7 @@ function buildSnapshotMeta(listing) {
 }
 
 function renderPrice(listing) {
+  if (listing.forLease) return `${money(listing.listPrice)}<span class="price-caption"> RENT / MONTH</span>`;
   if (listing.foundInMls === false) return `<span class="price-caption">STATUS</span>Listing status unconfirmed`;
   if (listing.forSale) {
     return listing.listPrice ? money(listing.listPrice) : `<span class="price-caption">ACTIVE LISTING</span>Price unavailable`;
@@ -345,7 +350,7 @@ function bedroomLabel(listing) {
 }
 
 function renderQuickFacts(listing) {
-  if (!listing.forSale || listing.displayRestricted) listing = {};
+  if ((!listing.forSale && !listing.forLease) || listing.displayRestricted) listing = {};
   $("factBeds").textContent = bedroomLabel(listing);
   $("factBaths").textContent = listing.baths ?? "—";
   $("factType").textContent = listing.propertySubType || listing.propertyType || "—";
@@ -568,7 +573,7 @@ leadForm.addEventListener("submit", async (event) => {
   const website = String(form.get("website") || "").trim();
 
   if (name.length < 2) return showLeadError("Please enter your name.");
-  if (!mobile) { $("leadMobile").setAttribute("aria-invalid", "true"); $("leadMobile").focus(); return showLeadError("Enter a valid 10-digit mobile number, such as (416) 234-5678. You can include +1."); }
+  if (!mobile) { $("leadMobile").setAttribute("aria-invalid", "true"); $("leadMobile").focus(); return showLeadError("Enter a valid 10-digit mobile number. You can include +1."); }
   if (!email) return showLeadError("Please enter your email address.");
   if (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email)) return showLeadError("Please enter a valid email address.");
 

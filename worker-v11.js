@@ -100,18 +100,20 @@ async function handleProperty(request, env) {
     validationLabel = input.type === "link" ? `Listing URL matched to ${subject.ListingKey ? `MLS ${subject.ListingKey}` : "MLS history"}` : found.resolution === "address_live" ? `Address matched to active MLS ${subject.ListingKey}` : "Address matched to MLS history";
   }
   const activeForSale = isActiveForSale(subject);
+  const activeLease = isActiveLease(subject);
   const addressDisplayAllowed = subject.InternetAddressDisplayYN !== false;
   const fullDisplayAllowed = subject.InternetEntireListingDisplayYN !== false;
-  const displayRestricted = activeForSale && !fullDisplayAllowed;
+  const displayRestricted = (activeForSale || activeLease) && !fullDisplayAllowed;
   const embeddedMedia = Array.isArray(subject.Media) ? subject.Media : [];
   const [comparableContext, mediaRecords] = await Promise.all([
     publicSnapshot ? Promise.resolve({ available: false, matchCount: 0, confidence: "Included in your report", basis: "Recent sold comparables and the value range are emailed after your request." }) : buildComparableContext(subject, env, activeForSale, requestId),
-    activeForSale && fullDisplayAllowed && !reportEvidence ? embeddedMedia.length ? Promise.resolve(embeddedMedia) : fetchPropertyMedia(subject.ListingKey, env) : Promise.resolve([])
+    (activeForSale || activeLease) && fullDisplayAllowed && !reportEvidence ? embeddedMedia.length ? Promise.resolve(embeddedMedia) : fetchPropertyMedia(subject.ListingKey, env) : Promise.resolve([])
   ]);
   const historySummary = summarizeHistory(history, subject);
   const priceOpinion = buildPriceOpinion(comparableContext, activeForSale);
   const property2 = normalizeSubject(subject, {
     activeForSale,
+    activeLease,
     addressDisplayAllowed,
     fullDisplayAllowed,
     displayRestricted,
@@ -231,8 +233,9 @@ async function resolveAddress(input, env) {
   const scored = records.map((r) => ({ r, score: addressMatchScore(parsed, r) })).filter((x) => x.score >= 55).sort((a, b) => b.score - a.score || dateMs(b.r.ModificationTimestamp) - dateMs(a.r.ModificationTimestamp));
   if (!scored.length) return { subject: null, history: [], resolution: null };
   const exact = scored.filter((x) => sameAddressAs(parsed, x.r)).map((x) => x.r);
-  const candidates = exact.length ? exact : scored.map((x) => x.r);
-  const active2 = candidates.find(isActiveForSale);
+  const candidates = exact;
+  if (!candidates.length) return {subject:null,history:[],resolution:null};
+  const active2 = candidates.find(r => isActiveForSale(r) || isActiveLease(r));
   const subject = active2 || candidates.slice().sort(mostRecentRecord)[0] || null;
   const history = candidates.filter(withinTenYears);
   return {
@@ -288,6 +291,7 @@ function titleCase(value) {
 }
 __name(titleCase, "titleCase");
 function addressMatchScore(parsed, r) {
+  if (parsed.unitNumber && normalizeText(r.UnitNumber || r.ApartmentNumber || "") !== normalizeText(parsed.unitNumber)) return -100;
   let score = 0;
   const num2 = String(r.StreetNumber || "").trim();
   const name = normalizeText(r.StreetName);
@@ -444,6 +448,7 @@ async function handleMedia(request, env) {
 __name(handleMedia, "handleMedia");
 function normalizeSubject(p, extras) {
   const active2 = extras.activeForSale;
+  const live = active2 || extras.activeLease;
   const canShowFull = !extras.displayRestricted;
   const address = extras.addressDisplayAllowed ? p.UnparsedAddress || buildAddress(p) : "Address display restricted";
   const coordinates = propertyCoordinates(p);
@@ -457,8 +462,9 @@ function normalizeSubject(p, extras) {
     latitude: canShowFull ? coordinates.latitude : null,
     longitude: canShowFull ? coordinates.longitude : null,
     forSale: active2,
+    forLease: !!extras.activeLease,
     foundInMls: true,
-    marketStatus: active2 ? "For sale" : "Not currently listed",
+    marketStatus: active2 ? "For sale" : extras.activeLease ? "For lease" : "Not currently listed",
     status: p.StandardStatus || p.MlsStatus || p.ContractStatus || null,
     transactionType: p.TransactionType || null,
     propertyType: canShowFull ? p.PropertyType || null : null,
@@ -476,11 +482,11 @@ function normalizeSubject(p, extras) {
     kitchensTotal: canShowFull ? numberOrNull(p.KitchensTotal) : null,
     isCondominium: canShowFull ? condominium : false,
     maintenanceFee: canShowFull && condominium ? buildMaintenanceFee(p) : null,
-    remarks: active2 && canShowFull ? cleanText(p.PublicRemarks) : null,
-    listPrice: active2 && canShowFull ? numberOrNull(p.ListPrice) : null,
+    remarks: live && canShowFull ? cleanText(p.PublicRemarks) : null,
+    listPrice: live && canShowFull ? numberOrNull(p.ListPrice) : null,
     lastKnownListPrice: !active2 ? numberOrNull(p.ListPrice) : null,
     daysLive: active2 ? daysSince(p.OriginalEntryTimestamp) : null,
-    photos: active2 && canShowFull ? extras.photos : [],
+    photos: live && canShowFull ? extras.photos : [],
     inputValidation: { type: extras.resolution, label: extras.validationLabel || "Property checked" },
     historySummary: extras.historySummary,
     comparableContext: extras.comparableContext,
@@ -2592,7 +2598,7 @@ var worker_v10_default = {
       const listingKey = clean4(url.searchParams.get("listingKey"), 50);
       const q = clean4(url.searchParams.get("q"), 1e3);
       const realtorAddress = /^https?:\/\//i.test(q) ? parseRealtorAddress(q) : "";
-      const addressQuery = realtorAddress || q;
+      const addressQuery = normalizeUnitAddress(realtorAddress || q);
       if (!listingKey && addressQuery && (!/^https?:\/\//i.test(q) || realtorAddress) && !/^[A-Z]\d{7,9}$/i.test(addressQuery)) {
         if (!env.AMPRE_TOKEN) return json6({ ok: false, error: "IDX connection is not configured." }, 503);
         const parsed = parseAddress5(addressQuery);
@@ -2625,7 +2631,9 @@ var worker_v10_default = {
             return response;
           }
         }
-        return worker_default.fetch(request, env, ctx);
+        const fallbackUrl = new URL(request.url);
+        fallbackUrl.searchParams.set("q", addressQuery);
+        return worker_default.fetch(new Request(fallbackUrl, request), env, ctx);
       }
     }
     return worker_v9_default.fetch(request, env, ctx);
@@ -2740,8 +2748,8 @@ async function resolveAddress3(a, env) {
 }
 __name(resolveAddress3, "resolveAddress");
 function selectExactAddressMatch(a, rows) {
-  const exact = (rows || []).map((r) => ({ r, score: addressScore2(a, r) })).filter((x) => x.score >= 88).sort((x, y) => {
-    const activeDiff = Number(isActive3(y.r)) - Number(isActive3(x.r));
+  const exact = (rows || []).filter(r => !a.unit || normalize3(r.UnitNumber || r.ApartmentNumber || "") === a.unit).map((r) => ({ r, score: addressScore2(a, r) })).filter((x) => x.score >= 88).sort((x, y) => {
+    const activeDiff = Number(isActive3(y.r) || isActiveLease(y.r)) - Number(isActive3(x.r) || isActiveLease(x.r));
     if (activeDiff) return activeDiff;
     if (y.score !== x.score) return y.score - x.score;
     return recordTime3(y.r) - recordTime3(x.r);
@@ -2795,7 +2803,14 @@ function addressSuffixIndex(tokens, aliases) {
   }
   return -1;
 }
+function normalizeUnitAddress(raw) {
+  return String(raw || '').replace(/^\s*(?:unit|suite|apt|#)?\s*(\d+[A-Za-z]?)\s*[-–—]\s*(\d+[A-Za-z]?)\s+([^,]+)(.*)$/i, (_,unit,number,street,tail)=>`${number} ${street} Unit ${unit}${tail}`);
+}
+function isActiveLease(p) {
+  return /lease|rent/i.test(p?.TransactionType || '') && isActiveForSale({...p,TransactionType:'For Sale'});
+}
 function parseAddress5(raw) {
+  raw = normalizeUnitAddress(raw);
   let first = String(raw || "").replace(/\s+/g, " ").trim().split(",")[0].trim();
   first = first.replace(/^(?:unit|suite|apt|apartment|#)\s*[A-Za-z0-9-]+\s*[-,]?\s*/i, "");
   const m = first.match(/^(\d+[A-Za-z]?)\s+(.+)$/);
@@ -2833,6 +2848,8 @@ function parseAddress5(raw) {
 }
 __name(parseAddress5, "parseAddress");
 function addressScore2(a, r) {
+  if (a.unit && normalize3(r?.UnitNumber || r?.ApartmentNumber || "") !== a.unit) return -100;
+  if (normalize3(r?.StreetNumber) !== a.number) return -100;
   let score = 0;
   const rowNumber = normalize3(r?.StreetNumber);
   const rowName = normalize3(r?.StreetName);
@@ -3069,7 +3086,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "address-court-alias-v113-20260911";
+var VERSION4 = "unit-search-brand-v114-20260911";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3137,7 +3154,7 @@ async function publicProperty(request, env, ctx) {
   let response = await worker_v10_default.fetch(new Request(publicUrl.toString(), { method: "GET", headers: request.headers }), env, ctx);
   let body = await response.clone().json().catch(() => null);
   if (!response.ok || !body?.property) return response;
-  if (!body.property.forSale) {
+  if (!body.property.forSale && !body.property.forLease) {
     body.property.remarks = null;
     body.property.photos = [];
     body.property.photoCount = 0;
@@ -4224,7 +4241,7 @@ async function appointmentRequest(request,env,ctx) {
 function showingCalendar(lead,address) {
   const escape=s=>String(s||'').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\n').replace(/[,;]/g,'\\$&');
   const date=v=>new Date(v).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
-  return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Toronto House Market//Showing//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',`UID:thm-${lead.id}@torontohousemarket.com`,`DTSTAMP:${date(Date.now())}`,`DTSTART:${date(lead.confirmed_showing_at)}`,`DTEND:${date(Date.parse(lead.confirmed_showing_at)+30*60000)}`,`SUMMARY:${escape('Showing with Golestan Team')}`,`LOCATION:${escape(address)}`,`DESCRIPTION:${escape('Confirmed showing. Questions? Contact Golestan Homes. Allow 30 minutes; confirm duration with the team.')}`,'STATUS:CONFIRMED','END:VEVENT','END:VCALENDAR',''].join('\r\n');
+  return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Toronto House Market//Showing//EN','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',`UID:thm-${lead.id}@torontohousemarket.com`,`DTSTAMP:${date(Date.now())}`,`DTSTART:${date(lead.confirmed_showing_at)}`,`DTEND:${date(Date.parse(lead.confirmed_showing_at)+30*60000)}`,`SUMMARY:${escape('Showing with Golestan Team')}`,`LOCATION:${escape(address)}`,`DESCRIPTION:${escape('Confirmed showing. Questions? Contact our team. Allow 30 minutes; confirm duration with the team.')}`,'STATUS:CONFIRMED','END:VEVENT','END:VCALENDAR',''].join('\r\n');
 }
 async function removeLead(request,env,id) {
   if(!authorized(request,env))return json7({ok:false,error:'Unauthorized'},401);
@@ -4644,8 +4661,10 @@ async function buildPropertyReport(env, lead, property2, requestId = null) {
   if (!ai) diagnosticLog("warn", "ai_narrative_diagnostic", { request_id: requestId, provider: "deterministic_fallback", model: null, provider_latency_ms: null, fallback_used: true, schema_validation_result: "not_available", error_category: "providers_exhausted" });
   const narrative = groundReportNarrative(ai?.narrative || fallback, facts, valuation, comparables, comp.policy || {});
   const valueRating = buildValueRating(facts, valuation, comp.policy || {}, comparables.length);
-  return {
+  return reportWithoutUnsupportedRating({
     schema_version: 5,
+    method_version: "community-size-v112",
+    template_version: "thm-report-v114",
     generated_at: (/* @__PURE__ */ new Date()).toISOString(),
     report_type: "THM AI buyer intelligence brief",
     prompt_version: "evidence-first-v2-20260906",
@@ -4674,7 +4693,7 @@ async function buildPropertyReport(env, lead, property2, requestId = null) {
       "School boundaries, permits, zoning, taxes, environmental conditions and measurements require verification with the responsible authority.",
       "Realtor.ca, HouseSigma and other consumer portals are not scraped; they may be incorporated only through an authorized licensed feed."
     ]
-  };
+  });
 }
 __name(buildPropertyReport, "buildPropertyReport");
 async function generateAiNarrative(env, facts, valuation, comparables, property2, publicResearch = null, requestId = null) {
@@ -4957,7 +4976,7 @@ function buildEmail(job, lead) {
   } else if (reason === "buyer_request_confirmation") {
     subject = job.payload?.vow_action_link ? `Verify your email to start the report for ${address}` : `We received your request for ${address}`;
     heading = job.payload?.vow_action_link ? "Verify your email to start your report" : "Your request is in";
-    intro = job.payload?.vow_action_link ? "Click the secure link below to start your private Buyer Decision Report." : showing ? "Your AI report is being prepared for email. Golestan Team will also contact you to confirm your showing request." : "Your AI buyer report is being prepared and will arrive in a separate email. You can choose a showing later from your report.";
+    intro = job.payload?.vow_action_link ? "Click the secure link below to start your private Buyer Decision Report." : showing ? "Your AI report is being prepared for email. Our team will also contact you to confirm your showing request." : "Your AI buyer report is being prepared and will arrive in a separate email. You can choose a showing later from your report.";
     rows = [["Property", address], ["Requested time", timing], ["Buyer report", job.payload?.vow_action_link ? "Starts after email verification" : "Preparing - sent in a separate email"]];
   } else if (reason === "admin_assignment" || job.job_type === "notify_agent" && reason !== "agent_sla_reminder") {
     subject = `New lead assigned: ${address}`;
@@ -4986,12 +5005,12 @@ function buildEmail(job, lead) {
     rows = [["Buyer", lead.name], ["Mobile", lead.mobile], ["Email", lead.email]];
   } else if(reason==='buyer_showing_requested' || reason==='showing_time_requested'){
     subject=`Showing time requested: ${address}`;heading='Showing time requested';
-    intro=reason==='buyer_showing_requested'?'Your preferred time is saved. Golestan Team will confirm availability with the listing side.':'Confirm this requested time with the buyer and listing side, then enter the final appointment in the dashboard.';
+    intro=reason==='buyer_showing_requested'?'Your preferred time is saved. Our team will confirm availability with the listing side.':'Confirm this requested time with the buyer and listing side, then enter the final appointment in the dashboard.';
     rows=[["Property",address],["Preferred time",timing],...(reason==='showing_time_requested'?[["Buyer",lead.name],["Mobile",lead.mobile]]:[])];
   } else if (reason === "buyer_appointment_confirmed") {
     subject = `Showing update for ${address}`;
     heading = "Your appointment is confirmed";
-    intro = lead.confirmed_showing_at ? 'Golestan Team has confirmed your showing. Open your appointment below to add it to your calendar. Questions? Contact Golestan Homes.' : 'Your Realtor has marked the showing as confirmed. Contact the team for the final date and time.';
+    intro = lead.confirmed_showing_at ? 'Our team has confirmed your showing. Open your appointment below to add it to your calendar. Questions? Contact our team.' : 'Your Realtor has marked the showing as confirmed. Contact the team for the final date and time.';
     rows = [["Property", address], ["Agent", agent],...(lead.confirmed_showing_at?[["Confirmed time",`${formatToronto(lead.confirmed_showing_at)} · Toronto time`]]:[])];
   } else if (reason === "owner_status_update") {
     subject = `Lead status: ${String(job.payload?.status || lead.status).replaceAll("_", " ")} \u2014 ${address}`;
@@ -5049,9 +5068,9 @@ function reportWithoutUnsupportedRating(input) {
   const v = report.valuation;
   const validRange = [v.low, v.midpoint, v.high].every(n => Number(n) > 0 && Number.isFinite(Number(n))) && Number(v.low) <= Number(v.midpoint) && Number(v.midpoint) <= Number(v.high);
   if (comparables.length < 3 || comparables.length !== supplied.length || !validRange || !v.available) {
-    const basis = isCondominiumProperty({PropertySubType:facts.property_type}) && comparables.length!==supplied.length ? "Condo comparisons must match the same community, home type and interior size range. Mismatched or unverified sizes were excluded." : clean5(v.basis, 900);
+    const basis = isCondominiumProperty({PropertySubType:facts.property_type}) && comparables.length!==supplied.length ? "Condo comparisons must match the same community, home type and interior size range. Mismatched or unverified sizes were excluded." : clean5(v.evidence_basis ?? v.basis, 900);
     const reason = `${comparables.length} qualifying sold comparables were returned for this report. ${basis || "The available data does not establish whether matching local sales are absent or retrieval was incomplete."} No value rating or price range is provided. This does not prove there are no comparable sales in the market. Ask your Realtor to verify the local sold evidence.`;
-    report.valuation = { ...v, available: false, low: null, midpoint: null, high: null, basis: reason };
+    report.valuation = { ...v, available: false, low: null, midpoint: null, high: null, evidence_basis: basis, basis: reason };
     report.value_rating = { available: false, score: null, label: "Value rating unavailable", reason };
   } else {
     report.value_rating = buildValueRating(facts, v, policy, comparables.length);
@@ -5152,13 +5171,13 @@ function propertyReportEmail(address, agentData, input, options = {}) {
   const disclaimer = "Preliminary decision support, not an appraisal or guarantee of value. Confirm listing status, measurements, taxes, legal use and sold evidence with your Realtor before relying on them.";
   const priceGraphic = reportPriceGraphic(report);
   const suggestion = reportPriceSuggestion(report);
-  const contactText = `Questions about the price or the home? Call Golestan Homes: 647-890-4704. ${active ? `Choose a showing time: ${appointmentUrl}` : ''}`;
-  const contactHtml = `<p style="font-size:20px;line-height:1.3;font-weight:bold;color:#183330;margin:0 0 8px">Questions? Let’s talk about this home.</p><p style="font-size:14px;line-height:1.5;color:#496259;margin:0 0 14px">Ask about the price, the report or your next move.</p><p style="margin:0 0 10px"><a href="tel:+16478904704" style="display:block;text-align:center;padding:15px 12px;background:#183330;color:white;border-radius:9px;text-decoration:none;font-size:16px;font-weight:bold">Call Golestan Homes</a></p>${active ? `<p style="margin:0"><a href="${html(appointmentUrl)}" style="display:block;text-align:center;padding:14px 12px;border:1px solid #196b60;color:#196b60;border-radius:9px;text-decoration:none;font-size:16px;font-weight:bold">Choose a showing time →</a></p><p style="font-size:12px;color:#61746c;line-height:1.5;margin:10px 0 0">Choose your preferred time. We’ll confirm it with the listing side.</p>` : ''}`;
-  const cashbackText = active ? 'YOUR BUYER BENEFIT: Up to $10,000 cashback on an eligible purchase with Golestan Homes. Ask about your eligibility and terms.' : '';
-  const cashbackHtml = active ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#edf5f1;border-radius:12px;margin:0 0 22px"><tr><td style="padding:18px"><p style="margin:0 0 7px;color:#466e60;font-size:11px;font-weight:bold;letter-spacing:1px">YOUR BUYER BENEFIT</p><p style="margin:0;color:#153e33;font-family:Arial,Helvetica,sans-serif;font-size:25px;font-weight:bold;line-height:1.25">Up to $10,000 cashback</p><p style="margin:8px 0 0;color:#496259;font-size:14px;line-height:1.5">On an eligible purchase with Golestan Homes. Ask us about eligibility and terms.</p></td></tr></table>` : '';
+  const contactText = `Questions about the price or the home? Contact the team: 647-890-4704. ${active ? `Choose a showing time: ${appointmentUrl}` : ''}`;
+  const contactHtml = `<p style="font-size:20px;line-height:1.3;font-weight:bold;color:#183330;margin:0 0 8px">Questions? Let’s talk about this home.</p><p style="font-size:14px;line-height:1.5;color:#496259;margin:0 0 14px">Ask about the price, the report or your next move.</p><p style="margin:0 0 10px"><a href="tel:+16478904704" style="display:block;text-align:center;padding:15px 12px;background:#183330;color:white;border-radius:9px;text-decoration:none;font-size:16px;font-weight:bold">Contact the team</a></p>${active ? `<p style="margin:0"><a href="${html(appointmentUrl)}" style="display:block;text-align:center;padding:14px 12px;border:1px solid #196b60;color:#196b60;border-radius:9px;text-decoration:none;font-size:16px;font-weight:bold">Choose a showing time →</a></p><p style="font-size:12px;color:#61746c;line-height:1.5;margin:10px 0 0">Choose your preferred time. We’ll confirm it with the listing side.</p>` : ''}`;
+  const cashbackText = active ? 'YOUR BUYER BENEFIT: Up to $10,000 cashback on an eligible purchase through Toronto House Market. Ask about your eligibility and terms.' : '';
+  const cashbackHtml = active ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#edf5f1;border-radius:12px;margin:0 0 22px"><tr><td style="padding:18px"><p style="margin:0 0 7px;color:#466e60;font-size:11px;font-weight:bold;letter-spacing:1px">YOUR BUYER BENEFIT</p><p style="margin:0;color:#153e33;font-family:Arial,Helvetica,sans-serif;font-size:25px;font-weight:bold;line-height:1.25">Up to $10,000 cashback</p><p style="margin:8px 0 0;color:#496259;font-size:14px;line-height:1.5">On an eligible purchase through Toronto House Market. Ask us about eligibility and terms.</p></td></tr></table>` : '';
   const ratingText = rating.available ? `Value rating: ${rating.score}/10 — ${rating.label}` : 'Value rating unavailable. Review the sold evidence below with the team.';
   const textParts = [title,address,status,`Prepared ${generated}`,"YOUR PRICE PICTURE",verdict,priceGraphic.text,suggestion.available?suggestion.text:null,ratingText,cashbackText,contactText,"HOME AT A GLANCE",factsRead,"Recent comparable sales",evidence,`Observed sold prices: ${observedRange}. This may differ from the modelled range.`,locality,size,...comps.map((c,i)=>`${i+1}. ${c.address} · ${cad(c.soldPrice)} · ${c.soldDate} · ${c.livingAreaRange || (c.buildingAreaTotal ? c.buildingAreaTotal+' sq ft' : 'Size not reported')} · ${c.distanceKm != null ? `${c.distanceKm} km` : 'Distance unavailable'}`),"WHAT THE NUMBERS SAY",v.basis,"KNOWN MONTHLY COSTS",...costs,"CHECK BEFORE AN OFFER",...checks,...questions,contactText,actionNote,generatedMode,disclaimer,TEAM_NAMES+' · Sales Representatives',TEAM_BROKERAGE];
-  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="format-detection" content="telephone=no,address=no,date=no,email=no"><title>${html(title)}</title><style>a[x-apple-data-detectors]{color:inherit!important;font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;text-decoration:none!important}.report-address,.report-address a{color:#ffffff!important;font-family:Arial,Helvetica,sans-serif!important;font-weight:700!important;text-decoration:none!important}@media(max-width:480px){.report-section{padding:20px 16px!important}.report-address{font-size:23px!important}}</style></head><body style="margin:0;background:#f7f7f2;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} · ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:16px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden"><tr><td style="padding:26px 22px;background:#183330;color:#fff"><p style="color:#b9dccc;font-size:12px;letter-spacing:1px;margin:0 0 8px">${html(title)}</p><h1 class="report-address" style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:700;color:#ffffff;line-height:1.3;margin:8px 0 12px;overflow-wrap:anywhere"><a href="${html(viewPropertyUrl)}" style="font-family:Arial,Helvetica,sans-serif;font-size:inherit;font-weight:700;line-height:inherit;color:#ffffff!important;text-decoration:none!important">${html(address)}</a></h1><p style="font-size:16px;line-height:1.5;margin:0;color:#e5e7eb">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section('YOUR PRICE PICTURE',`${priceGraphic.html}${suggestion.available?paragraph(suggestion.text):''}<p style="font-size:12px;color:#61746c;line-height:1.5;margin:0">${html(ratingText)}</p>`)}${section('GOLESTAN HOMES',cashbackHtml+contactHtml)}${section('HOME AT A GLANCE',paragraph(factsRead))}${section('Recent comparable sales',paragraph(evidence)+paragraph(`These sales span ${observedRange}. The estimate also considers how closely each home matches.`)+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>`+paragraph([locality,size].filter(Boolean).join(' ')))}${section('WHAT THE NUMBERS SAY',paragraph(v.basis || reason))}${section('KNOWN MONTHLY COSTS',bullets(costs))}${section('CHECK BEFORE AN OFFER',bullets(checks)+(questions.length ? label('QUESTIONS TO ASK US')+bullets(questions) : ''))}${section('YOUR NEXT MOVE',contactHtml)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6"><strong style="color:#183330">${html(TEAM_NAMES)}</strong><br>Sales Representatives<br><strong>${html(TEAM_BROKERAGE)}</strong><br><a href="tel:+16478904704" style="color:#196b60">Call Golestan Homes</a><br><br>${html(generatedMode)}<br>${html(disclaimer)}<br>Toronto House Market</td></tr></table></td></tr></table></body></html>`;
+  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="format-detection" content="telephone=no,address=no,date=no,email=no"><title>${html(title)}</title><style>a[x-apple-data-detectors]{color:inherit!important;font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;text-decoration:none!important}.report-address,.report-address a{color:#ffffff!important;font-family:Arial,Helvetica,sans-serif!important;font-weight:700!important;text-decoration:none!important}@media(max-width:480px){.report-section{padding:20px 16px!important}.report-address{font-size:23px!important}}</style></head><body style="margin:0;background:#f7f7f2;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} · ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:16px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:660px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden"><tr><td style="padding:26px 22px;background:#183330;color:#fff"><p style="color:#b9dccc;font-size:12px;letter-spacing:1px;margin:0 0 8px">${html(title)}</p><h1 class="report-address" style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:700;color:#ffffff;line-height:1.3;margin:8px 0 12px;overflow-wrap:anywhere"><a href="${html(viewPropertyUrl)}" style="font-family:Arial,Helvetica,sans-serif;font-size:inherit;font-weight:700;line-height:inherit;color:#ffffff!important;text-decoration:none!important">${html(address)}</a></h1><p style="font-size:16px;line-height:1.5;margin:0;color:#e5e7eb">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section('YOUR PRICE PICTURE',`${priceGraphic.html}${suggestion.available?paragraph(suggestion.text):''}<p style="font-size:12px;color:#61746c;line-height:1.5;margin:0">${html(ratingText)}</p>`)}${section('YOUR BUYER BENEFIT',cashbackHtml+contactHtml)}${section('HOME AT A GLANCE',paragraph(factsRead))}${section('Recent comparable sales',paragraph(evidence)+paragraph(`These sales span ${observedRange}. The estimate also considers how closely each home matches.`)+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>`+paragraph([locality,size].filter(Boolean).join(' ')))}${section('WHAT THE NUMBERS SAY',paragraph(v.basis || reason)+paragraph(/condo|apartment/i.test(f.property_type || '') ? 'Condo method: same community, same home type and same interior size range. A price estimate requires at least 3 qualifying sales. Reports may change when the listing facts, qualifying sales or method change.' : 'A price estimate requires at least 3 qualifying sold homes. Reports may change when the listing facts or qualifying sales change.'))}${section('KNOWN MONTHLY COSTS',bullets(costs))}${section('CHECK BEFORE AN OFFER',bullets(checks)+(questions.length ? label('QUESTIONS TO ASK US')+bullets(questions) : ''))}${section('YOUR NEXT MOVE',contactHtml)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6"><strong style="color:#183330">${html(TEAM_NAMES)}</strong><br>Sales Representatives<br><strong>${html(TEAM_BROKERAGE)}</strong><br><a href="tel:+16478904704" style="color:#196b60">Contact the team</a><br><br>${html(generatedMode)}<br>${html(disclaimer)}<br>Toronto House Market</td></tr></table></td></tr></table></body></html>`;
   return {subject:`AI Property Report Ready: ${address} | ${rating.available ? `Value Rating ${rating.score}/10` : active ? 'Realtor Review' : 'Property Review'}`,html:htmlBody,text:textParts.filter(Boolean).join('\n\n')};
 }
 __name(propertyReportEmail, "propertyReportEmail");
@@ -5328,9 +5347,9 @@ function pdfEscape(value) {
 }
 __name(pdfEscape, "pdfEscape");
 function emailDocument(subject, heading, intro, rows, link, linkLabel = "Open lead dashboard") {
-  const tableRows = rows.map(([label, value]) => `<tr><td style="padding:8px 12px;color:#687286;font:600 12px Arial,sans-serif;border-bottom:1px solid #edf0f5">${html(label)}</td><td style="padding:8px 12px;color:#11182b;font:600 14px Arial,sans-serif;border-bottom:1px solid #edf0f5">${html(value || "\u2014")}</td></tr>`).join("");
-  const cta = link ? `<tr><td style="padding:22px 0 0"><a href="${html(link)}" style="display:inline-block;background:#3155f5;color:#fff;text-decoration:none;font:700 14px Arial,sans-serif;padding:12px 18px;border-radius:9px">${html(linkLabel)}</a></td></tr>` : "";
-  const htmlBody = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="X-UA-Compatible" content="IE=edge"></head><body style="margin:0;background:#f4f6fa"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:28px 12px"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#fff;border-radius:16px"><tr><td style="padding:28px"><p style="margin:0 0 8px;color:#3155f5;font:700 12px Arial,sans-serif">TORONTO HOUSE MARKET</p><h1 style="margin:0 0 12px;color:#11182b;font:700 24px Arial,sans-serif;line-height:1.25">${html(heading)}</h1><p style="margin:0 0 20px;color:#566178;font:400 15px Arial,sans-serif;line-height:1.55">${html(intro)}</p><table width="100%" cellpadding="0" cellspacing="0" border="0">${tableRows}</table><table cellpadding="0" cellspacing="0" border="0">${cta}</table><p style="margin:24px 0 0;color:#8a93a5;font:400 11px Arial,sans-serif;line-height:1.5">Automated operational message from Toronto House Market.</p></td></tr></table></td></tr></table></body></html>`;
+  const tableRows = rows.map(([label, value]) => `<tr><td style="padding:13px 8px;color:#526861;font:600 13px Arial,Helvetica,sans-serif;border-bottom:1px solid #e0e8e3">${html(label)}</td><td style="padding:13px 8px;color:#183330;font:400 16px Arial,Helvetica,sans-serif;border-bottom:1px solid #e0e8e3">${html(value || "\u2014")}</td></tr>`).join("");
+  const cta = link ? `<tr><td style="padding:22px 0 0"><a href="${html(link)}" style="display:inline-block;background:#196b60;color:#fff;text-decoration:none;font:700 16px Arial,Helvetica,sans-serif;padding:12px 18px;border-radius:9px">${html(linkLabel)}</a></td></tr>` : "";
+  const htmlBody = `<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="X-UA-Compatible" content="IE=edge"></head><body style="margin:0;background:#f7f7f2"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:28px 12px"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:660px;background:#fff;border-radius:16px"><tr><td style="padding:28px"><p style="margin:0 0 8px;color:#196b60;font:700 12px Arial,Helvetica,sans-serif">TORONTO HOUSE MARKET</p><h1 style="margin:0 0 12px;color:#183330;font:700 28px Arial,Helvetica,sans-serif;line-height:1.25">${html(heading)}</h1><p style="margin:0 0 20px;color:#526861;font:400 16px Arial,Helvetica,sans-serif;line-height:1.55">${html(intro)}</p><table width="100%" cellpadding="0" cellspacing="0" border="0">${tableRows}</table><table cellpadding="0" cellspacing="0" border="0">${cta}</table><p style="margin:24px 0 0;color:#8a93a5;font:400 11px Arial,Helvetica,sans-serif;line-height:1.5">Toronto House Market · Property reports &amp; private showings.</p></td></tr></table></td></tr></table></body></html>`;
   const textBody = [heading, intro, ...rows.map(([a, b]) => `${a}: ${b || "\u2014"}`), link ? `${linkLabel}: ${link}` : ""].filter(Boolean).join("\n\n");
   return { subject, html: htmlBody, text: textBody };
 }

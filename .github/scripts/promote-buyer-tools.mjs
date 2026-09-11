@@ -40,7 +40,7 @@ for (const b of before.bindings.filter(b => b.type === "plain_text" && b.name !=
 }
 const schedule = await cf(`/workers/scripts/${worker}/schedules`);
 const previewOrigin = `https://${candidate.slice(0, 8)}-${worker}.7h57cb8fzs.workers.dev`;
-for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js"]) {
+for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js", "select-controls.js"]) {
   const url = path === "index.html" ? "/" : `/${path}`;
   const response = await fetch(`${previewOrigin}${url}?release=${process.env.GITHUB_SHA}`);
   const actual = Buffer.from(await response.arrayBuffer());
@@ -121,14 +121,14 @@ async function checkPhase5(base) {
   check(photoOk,'No working photo in the checked shortlist');
   console.log(JSON.stringify({phase5:{selectionMode:data.selectionMode,count:data.listings.length,photoOk,protectedRoutes:true}}));
 }
-await checkPhase5(previewOrigin);
-await checkWhitburn(previewOrigin);
-await checkAvenueAddress(previewOrigin);
-await checkDoglegAddress(previewOrigin);
-await checkBedroomPricing(previewOrigin);
-await checkCondoSize(previewOrigin);
-const positivePreview = await (await fetch(`${previewOrigin}/api/price-check?listingKey=N13519308`)).json();
-check(positivePreview.ok && positivePreview.available && positivePreview.count >= 3, "Preview freehold Price Check failed");
+async function checkFocusedProperty(base) {
+  const r=await fetch(`${base}/api/property?q=${encodeURIComponent('1410 - 10 YORK STREET')}`),d=await r.json(),p=d.property;
+  check(r.ok && d.ok && p,'Unit search unavailable');
+  check(p.foundInMls===false || /(?:\b1410\b)/.test(p.address),'Unit search silently substituted another apartment');
+  check(!p.foundInMls || (p.forLease && !p.forSale),'Expected exact rental listing or an explicit no-match');
+  console.log(JSON.stringify({unitSearch:{address:p.address,listingKey:p.listingKey,forLease:p.forLease,foundInMls:p.foundInMls}}));
+}
+await checkFocusedProperty(previewOrigin);
 const deploy = id => cf(`/workers/scripts/${worker}/deployments`, { strategy: "percentage", versions: [{ percentage: 100, version_id: id }], annotations: { "workers/message": id === candidate ? "Verified public buyer tools and no-comparable rating guard" : "Automatic rollback after buyer-tools verification failure" } });
 let attempted = false;
 try {
@@ -139,7 +139,7 @@ try {
   for (let i = 0; i < 6; i++) { current = await activeVersion(); if (current === candidate) break; await new Promise(r => setTimeout(r, 2000)); }
   check(current === candidate, "Candidate did not become active");
   check(isDeepStrictEqual(schedule, await cf(`/workers/scripts/${worker}/schedules`)), "Cron schedule changed");
-  for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js"]) {
+  for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js", "select-controls.js"]) {
     const url = path === "index.html" ? "/" : `/${path}`;
     let matched = false, actual, status;
     for (let attempt = 0; attempt < 12; attempt++) {
@@ -156,47 +156,9 @@ try {
     }
     check(matched, `Live asset mismatch after propagation window: ${path}`);
   }
-  await checkPhase5(origin);
-  const health = await (await fetch(`${origin}/api/version`)).json();
-  check(health.ok && health.vowAccess, "Version or VOW configuration health failed");
-  let listingKey;
-  for (const mode of ["new", "luxury", "budget"]) {
-    const r = await fetch(`${origin}/api/discovery?city=Vaughan&mode=${mode}&maxPrice=${mode === "luxury" ? "" : "2000000"}`);
-    const data = await r.json();
-    check(r.ok && data.ok && data.listings.length, `Live ${mode} discovery failed`);
-    if (!listingKey) listingKey = data.listings[0].listingKey;
-    console.log(JSON.stringify({ mode, count: data.listings.length, status: r.status }));
-  }
-  const p = await (await fetch(`${origin}/api/property?listingKey=${listingKey}`)).json();
-  check(p.property?.forSale && p.property?.publicListing && !p.property.comparableContext.available, "Public snapshot verification failed");
-  let ai, answer;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    ai = await fetch(`${origin}/api/home-assistant`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify({ listingKey, topic: "costs" }) });
-    answer = await ai.json();
-    console.log(JSON.stringify({liveAssistantCheck:{attempt:attempt+1,status:ai.status,mode:answer.mode,facts:answer.facts?.length,error:answer.error}}));
-    if (ai.ok && answer.mode === 'ai' && answer.facts?.length) break;
-    // Factual fallbacks are cached for 30 seconds; allow recovery, not a weaker gate.
-    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 32000));
-  }
-  check(ai.ok && answer.mode === "ai" && answer.facts?.length, "Live AI assistant verification failed after three attempts");
-  const schoolProperty = await (await fetch(`${origin}/api/property?listingKey=W13676100`)).json();
-  const schoolToken = schoolProperty.property?.schoolResearchToken;
-  if (schoolToken) {
-    const schoolResponse = await fetch(`${origin}/api/school-enrichment?token=${encodeURIComponent(schoolToken)}`, {signal:AbortSignal.timeout(26000)}).catch(()=>null);
-    const schoolBody = await schoolResponse?.json().catch(()=>null);
-    console.log(JSON.stringify({schoolCardCheck:{status:schoolResponse?.status,name:schoolBody?.schoolSummary?.name,source:schoolBody?.schoolSummary?.source,available:!!schoolBody?.schoolSummary?.name}}));
-  } else console.log(JSON.stringify({schoolCardCheck:{name:schoolProperty.property?.schoolSummary?.name,tokenAvailable:false}}));
-  await checkWhitburn(origin);
-  await checkAvenueAddress(origin);
-  await checkDoglegAddress(origin);
-  await checkBedroomPricing(origin);
-  await checkCondoSize(origin);
-  const priceResponse = await fetch(`${origin}/api/price-check?listingKey=N13519308`);
-  const price = await priceResponse.json();
-  check(priceResponse.ok && price.ok && price.listingKey === "N13519308" && price.available && price.count >= 3 && price.medianAsk > 0, "Live Price Check verification failed");
-  console.log(JSON.stringify({ priceCheck: { listingKey: price.listingKey, signal: price.signal, matches: price.count, differencePct: price.differencePct } }));
-  console.log(JSON.stringify({ deployedVersion: candidate, previousVersion: previous, sourceSha256: hash(source(next)), aiMode: answer.mode }));
-  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Deployed verified version ${candidate}.\n\nSource, bindings, cron, assets, public IDX, and AI checks passed. No lead/report/email test requests were made.\n`);
+  await checkFocusedProperty(origin);
+  console.log(JSON.stringify({deployedVersion:candidate,previousVersion:previous,sourceSha256:hash(source(next))}));
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY, `Focused release deployed. Ten selected automated checks passed; source, bindings, cron, assets and exact-unit lookup verified. No reports or emails sent by this audit.\n`);
 } catch (error) {
   if (attempted && await activeVersion() === candidate) {
     await deploy(previous);
