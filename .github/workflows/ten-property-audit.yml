@@ -28,13 +28,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           PREVIEW_ONLY: "true"
-          EXPECTED_ACTIVE_SHA: 4f124754e9e31ae7a4e76ee8afbe1b7f2b3cdbe801d6bbda36c6d671c324dcb4
+          EXPECTED_ACTIVE_SHA: aef867846f470ed66e7e50e2080f1fe911b0e3ed2ccba5215907b826df9bdbba
         run: node .github/scripts/ten-property-audit.mjs
       - name: Promote verified seller flow with rollback guards
         if: contains(github.event.head_commit.message, '[release]')
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          EXPECTED_BEFORE_SHA: 4f124754e9e31ae7a4e76ee8afbe1b7f2b3cdbe801d6bbda36c6d671c324dcb4
+          EXPECTED_BEFORE_SHA: aef867846f470ed66e7e50e2080f1fe911b0e3ed2ccba5215907b826df9bdbba
         run: |
           node --input-type=module -e 'import fs from "node:fs"; process.env.CANDIDATE_VERSION_ID=JSON.parse(fs.readFileSync("audit-output/release.json")).candidate; await import("./.github/scripts/promote-buyer-tools.mjs");'

@@ -46,9 +46,20 @@ Keep GitHub → Cloudflare Worker + Supabase. Do not migrate hosting or recreate
 Seller verification: three synthetic seller scenarios cover capture, validation, target independence, same-building condo rules and missing-evidence handling. Three previously unused condo addresses were checked in the public seller UI (one per Toronto, Richmond Hill and Vaughan); see tests/seller-address-sample.json. No live test leads or test emails were sent. Larger condo size bands are retained exactly when supplied by the listing. Preview commits do not promote; include [release] in the final commit message after review.
 
 ## Seller revision — 2026-09-14
+Superseded valuation policy: Seller Evidence v1 now runs independently of buildComparableContext (buyer model). See the latest section below.
 - Address-first single form, optional collapsed home details, simple upgrade chips for work within ten years, optional minimum/maximum expectations. No triangle.
 - Report subject recovery checks up to three exact-address/unit records from the last ten years, including expired/cancelled listings, and records field provenance. Ambiguous cities are not silently selected. Missing owner facts may use recovered specifications; old asking prices never enter valuation.
 - Email has two labelled bands on one scale: sold-based AI value and owner expectations. Owner goals cannot change the valuation.
 - Upgrade contribution is a separate AI-assisted judgment estimate, not measured ROI. Category ceiling assumptions, overlap reduction and 6% combined cap are explicit; zero is possible. Never added automatically to the sold-derived value. No dollar guess without sufficient sold evidence. Condo shared roof/exterior/basement work needs review.
 - Version 2 profiles preserve legacy target-price support and use the existing JSON capture without a schema migration. Admin/team summaries show minimum–maximum.
 - Verification remains three synthetic scenarios and at most the three addresses already in tests/seller-address-sample.json. No live leads or emails created.
+
+## Independent Seller Evidence v1
+- Historical subject lookup uses street-scoped, recent-tail paginated records with select fallback, rather than number-only equality and a fixed first page. Exact address/unit/city checks remain. HTTP failure is distinguished from no matching home.
+- Seller valuation has its own ranking/calculation. Distinct sold homes only; same subtype and community or verified condo building. Freehold interior-size midpoint tolerance 25%; condo exact range retained. Bedroom count and lot frontage affect similarity. Owner goals and upgrade guesses do not influence price.
+- Up to eight ranked homes; weighted median and weighted 20th/80th percentile spread with explicit heuristic uncertainty floors. This is not a calibrated statistical confidence interval or an appraisal. No arbitrary buyer ±10% price cluster.
+- Normally sales within 365 days. Sales up to 1095 days require a local repeat-sale trend from at least five distinct homes, recent anchors, compatible size/type, available remarks without known renovations, and bounded rate/dispersion. Unreported renovations remain a limitation. Both declining and flat trends are supported.
+- Insufficient evidence produces a short next-step email, not an empty AI valuation with repeated upgrade placeholders. Upgrades remain owner-reported judgment ranges, separate from sold value.
+- Admin seller cards have a read-only fresh evidence check using existing admin authorization; no new credential, auth bypass, saved lead/report mutation or email send.
+- Validation: three synthetic scenarios only. Live protected MLS requests remain unverified because supplied credentials returned 401 in this environment despite the user's dashboard working. Do not claim that 33 Russett or another live seller now has a verified estimate.
+- Model design informed by IAAO sales-comparison principles (https://www.iaao.org/wp-content/uploads/StandardOnMassAppraisal.pdf); heuristic coefficients are not claimed to be IAAO-approved or Toronto-calibrated.

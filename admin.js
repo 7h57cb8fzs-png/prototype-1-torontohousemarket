@@ -29,6 +29,17 @@ function renderLeads(leads){
   document.querySelectorAll('select[data-agent-id]').forEach(s=>s.addEventListener('change',()=>assignLead(s.dataset.agentId,s.value,s)));
   document.querySelectorAll('[data-remove-lead]').forEach(b=>b.addEventListener('click',()=>removeLead(b.dataset.removeLead,b)));
   document.querySelectorAll('[data-confirm-lead]').forEach(form=>form.addEventListener('submit',e=>{e.preventDefault();confirmAppointment(form.dataset.confirmLead,form);}));
+  for(const lead of visible.filter(x=>x.lead_mode==='seller'&&x.property_snapshot?.sellerProfile)){
+    const article=document.querySelector(`[data-remove-lead="${lead.id}"]`)?.closest('article');if(!article)continue;
+    const button=document.createElement('button'),result=document.createElement('div');
+    button.type='button';button.textContent='Check seller estimate · no email';
+    result.setAttribute('role','status');result.style.cssText='white-space:pre-wrap;line-height:1.6;margin:12px 0';
+    button.addEventListener('click',async()=>{button.disabled=true;result.textContent='Checking historical records and sold evidence…';try{
+      const r=await api('/api/admin/seller-preview?lead_id='+encodeURIComponent(lead.id)),v=r.valuation;
+      result.textContent=[r.address,v.available?`Estimated range: ${money(v.low)}–${money(v.high)} · ${v.confidence} confidence`:v.basis,`Historical records: ${r.history?.length||0} · Selected sold homes: ${r.comparables?.length||0}`,...(r.comparables||[]).map(c=>`${c.address} · ${money(c.soldPrice)} · ${c.soldDate}${c.timeAdjustmentPct?` · Time-adjusted indication ${money(c.adjustedPrice)} (${c.timeAdjustmentPct}%)`:''}`),'Read-only check. No lead changes or emails.'].join('\n');
+    }catch(e){result.textContent=e.message;}finally{button.disabled=false;}});
+    article.append(button,result);
+  }
 }
 $('leadFilter').addEventListener('change',()=>renderLeads(leadData));
 $('addLead').addEventListener('click',()=>{$('manualLeadForm').reset();manualRequestKey=crypto.randomUUID();$('manualLeadForm').hidden=false;$('manualError').textContent='';$('manualName').focus();});

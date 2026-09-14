@@ -850,7 +850,7 @@ async function queryPropertyCount(baseFilters, env) {
   }
 }
 __name(queryPropertyCount, "queryPropertyCount");
-async function querySoldComparableRows(baseFilters, env, top, startSkip = 0) {
+async function querySoldComparableRows(baseFilters, env, top, startSkip = 0, selectFields = COMPARABLE_SELECT_FIELDS) {
   // This AMPRE VOW feed returns sold fields but rejects filters and sorting on
   // those fields. Locate the tail of each permitted local-history result set,
   // then scan only its newest bounded window and qualify sold rows locally.
@@ -875,9 +875,9 @@ async function querySoldComparableRows(baseFilters, env, top, startSkip = 0) {
   let nextUrl = null;
   const maxPages = Math.max(1, Math.ceil(top / pageSize));
   for (let page = 0; page < maxPages && rows.length < top; page++) {
-    let result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "", effectiveStartSkip, COMPARABLE_SELECT_FIELDS);
+    let result = nextUrl ? await queryPropertiesPage(nextUrl, env) : await queryPropertiesDetailed(baseFilters, env, pageSize, "", effectiveStartSkip, selectFields);
     if (page === 0 && effectiveStartSkip > 0 && result.meta.status === 200 && !result.rows.length) {
-      result = await queryPropertiesDetailed(baseFilters, env, pageSize, "", 0, COMPARABLE_SELECT_FIELDS);
+      result = await queryPropertiesDetailed(baseFilters, env, pageSize, "", 0, selectFields);
       audit.push({ queryScope: "local_history_skip_fallback", page, requestedSkip: effectiveStartSkip, ...result.meta });
     }
     audit.push({ queryScope: "local_exact_subtype_page", page, requestedSkip: page === 0 ? effectiveStartSkip : null, ...result.meta });
@@ -3148,6 +3148,7 @@ var worker_v11_default = {
     if (url.pathname === "/api/admin/settings" && request.method === "GET") return adminSettings(request, env);
     if (url.pathname === "/api/admin/settings" && request.method === "PATCH") return updateSettings(request, env);
     if (url.pathname === "/api/admin/vow/diagnostics" && request.method === "GET") return vowDiagnostics(request, env);
+    if (url.pathname === "/api/admin/seller-preview" && request.method === "GET") return sellerPreview(request, env);
     if (url.pathname === "/api/admin/vow/active-sample" && request.method === "GET") return vowActiveSample(request, env);
     if (url.pathname === "/api/admin/vow/diagnostic-console" && request.method === "GET") return adminDiagnosticConsole();
     if (url.pathname === "/api/admin/vow/query-diagnostics" && request.method === "GET") return vowQueryDiagnostics(request, env);
@@ -5536,13 +5537,18 @@ function sellerExactHistoryMatch(parsed,row,city) {
 async function resolveSellerSubject(address,profile,env) {
   const parsed=parseAddress5(address);
   if(!parsed.number||!parsed.name)return null;
-  const filters=[`StreetNumber eq '${escapeOData2(parsed.number)}'`,`contains(UnparsedAddress,'${escapeOData2(`${parsed.number} ${displayToken2(parsed.name)}`)}')`];
+  // Search by street first. Number-only equality and a fixed first page can miss
+  // the subject in historical feeds. Query helpers retain HTTP/paging evidence.
+  const filters=[`contains(StreetName,'${escapeOData2(displayToken2(parsed.name))}')`,`contains(UnparsedAddress,'${escapeOData2(displayToken2(parsed.name))}')`];
   const inferredCity=profile.city||SELLER_CITIES.find(city=>new RegExp(`(?:,|\\s)${city.replace(/ /g,'\\s+')}\\s*(?:,|$)`,'i').test(address))||'';
-  const candidates=new Map();
+  const candidates=new Map(),audit=[];
   for(const filter of filters){
-    for(const row of await runQuery2(filter,env,500))if(sellerExactHistoryMatch(parsed,row,inferredCity)&&row.ListingKey)candidates.set(row.ListingKey,row);
+    const result=await querySoldComparableRows([filter],env,1000,1000,[...COMPARABLE_SELECT_FIELDS,'OriginalEntryTimestamp','BuildingAreaUnits','BedroomsAboveGrade','BedroomsBelowGrade','KitchensTotal','PublicRemarks']);
+    audit.push(...result.audit);
+    for(const row of result.rows)if(sellerExactHistoryMatch(parsed,row,inferredCity)&&row.ListingKey)candidates.set(row.ListingKey,row);
     if(candidates.size)break;
   }
+  if(!audit.some(a=>a.status===200))throw new Error('Historical MLS lookup could not be completed.');
   const rows=[...candidates.values()];
   if(!inferredCity&&new Set(rows.map(r=>normalizeText(r.City))).size!==1)return null;
   const recent=rows.filter(r=>{const date=Date.parse(r.OriginalEntryTimestamp||r.ModificationTimestamp||'');return Number.isFinite(date)&&date<=Date.now()+86400000&&date>=Date.now()-10*365.25*86400000;}).sort((a,b)=>recordTime3(b)-recordTime3(a));
@@ -5557,14 +5563,129 @@ async function resolveSellerSubject(address,profile,env) {
   for(const field of fields){const source=records.find(r=>r[field]!==undefined&&r[field]!==null&&r[field]!=='');if(source){result[field]=source[field];sources[field]=source.ListingKey;}}
   result._sellerHistory=records.map(r=>({listingKey:r.ListingKey,status:r.StandardStatus||r.MlsStatus||r.ContractStatus||'Recorded listing',recordedAt:r.OriginalEntryTimestamp||r.ModificationTimestamp}));
   result._sellerFactSources=sources;
+  result._sellerLookupAudit=audit;
   return result;
+}
+
+// Seller Evidence v1: independent of the buyer cluster/rating algorithm.
+// Ranking and uncertainty floors are transparent product heuristics, not a
+// statistically calibrated appraisal or a claimed prediction interval.
+async function sellerPreview(request,env) {
+  if(!authorized(request,env))return json7({ok:false,error:'Unauthorized'},401);
+  const id=new URL(request.url).searchParams.get('lead_id');
+  if(!/^[0-9a-f-]{36}$/i.test(id||''))return json7({ok:false,error:'A valid seller lead is required.'},400);
+  const lead=await loadLeadForReport(env,id);
+  if(lead?.lead_mode!=='seller'||!lead.property_snapshot?.sellerProfile)return json7({ok:false,error:'Seller details not found.'},404);
+  try{
+    const property=await loadSellerPropertyForReport(env,lead,'seller-preview');
+    const report=await buildSellerReport({...env,AI:null},lead,property,'seller-preview');
+    return json7({ok:true,readOnly:true,address:property.address,valuation:report.valuation,history:report.seller.evidence.history,comparables:report.comparables,policy:report.comparable_policy},200,{'Cache-Control':'private, no-store'});
+  }catch{return json7({ok:false,error:'The evidence check could not be completed. No email was sent.'},502);}
+}
+function sellerSale(record) {
+  const status=`${record.StandardStatus||''} ${record.MlsStatus||''} ${record.ContractStatus||''}`;
+  if(/lease|rent/i.test(`${status} ${record.TransactionType||''}`))return null;
+  const price=firstFiniteNumber(record,['ClosePrice','SoldPrice','SalePrice','PurchaseContractPrice','ClosedPrice','FinalSalePrice']);
+  // A modification date is NOT a sale date.
+  const date=validDate(firstValue(record,['PurchaseContractDate','SoldDate','CloseDate','ContractDate','ClosingDate']));
+  if(!price||price<50000||!date||!/sold|closed|deal firm/i.test(status))return null;
+  const age=(Date.now()-date.getTime())/86400000;
+  return age>=0&&age<=1095?{record,price,date,age}:null;
+}
+function sellerHomeKey(record) {
+  const p=parseAddress5(record.UnparsedAddress||buildAddress(record));
+  if(!p.number||!p.name)return null;
+  return [p.number,p.name,p.suffix,p.direction,normalizeText(record.UnitNumber||p.unit||''),normalizeText(record.City||'').replace(/^toronto\s+[cew]\d{2}$/,'toronto')].join('|');
+}
+function sellerArea(record) {
+  const unit=normalizeText(record.BuildingAreaUnits||record.LivingAreaUnits||'');
+  if(unit&&!['square feet','sqft','sq ft','ft2','ft²'].includes(unit))return null;
+  const range=String(record.LivingAreaRange||'').replace(/,/g,'').trim();
+  if(range&&!/^\d+(?:\s*[-–]\s*\d+)?(?:\s*sq\s*ft)?$/i.test(range))return null;
+  const b=livingAreaBounds(record);return b&&(b.low+b.high)/2>100?(b.low+b.high)/2:null;
+}
+function sellerWeightedQuantile(rows,q) {
+  const sorted=[...rows].sort((a,b)=>a.value-b.value||String(a.key).localeCompare(String(b.key)));
+  const threshold=sorted.reduce((n,r)=>n+r.weight,0)*q;let sum=0;
+  for(const r of sorted){sum+=r.weight;if(sum>=threshold)return r.value;}
+  return sorted.at(-1)?.value??null;
+}
+function sellerLocalTrend(sales) {
+  const groups=new Map();
+  for(const s of sales){const key=sellerHomeKey(s.record);if(key){const rows=groups.get(key)||[];rows.push(s);groups.set(key,rows);}}
+  const rates=[];
+  for(const rows of groups.values()){
+    rows.sort((a,b)=>a.age-b.age);const recent=rows[0];if(recent.age>180)continue;
+    const old=rows.find(r=>r.age-recent.age>=180&&r.age-recent.age<=1095&&exactComparableType(recent.record,r.record)&&comparableHasCompatibleSize(recent.record,r.record));
+    if(!old)continue;
+    // Known alterations invalidate repeat-sale trend evidence.
+    if(!recent.record.PublicRemarks||!old.record.PublicRemarks)continue;
+    const remarks=`${recent.record.PublicRemarks} ${old.record.PublicRemarks}`;
+    if(/renovat|addition|rebuilt|newly built|gut(ted)?/i.test(remarks))continue;
+    const rate=Math.log(recent.price/old.price)*365/(old.age-recent.age);
+    if(Number.isFinite(rate)&&Math.abs(rate)<=.25)rates.push(rate);
+  }
+  const median=values=>{const a=[...values].sort((x,y)=>x-y),m=Math.floor(a.length/2);return a.length%2?a[m]:(a[m-1]+a[m])/2;};
+  const rate=rates.length>=5?median(rates):null;
+  const spread=rate===null?null:median(rates.map(r=>Math.abs(r-rate)));
+  return {available:rate!==null&&spread<=.08,annualLogRate:rate,pairs:rates.length,dispersion:spread,
+    note:'Repeat-sale trend from at least five local homes; unreported improvements may still affect it.'};
+}
+function calculateSellerEvidence(subject,records) {
+  const area=sellerArea(subject),condo=isCondominiumProperty(subject);
+  const missing=[];
+  if(!subject.PropertySubType||subject.PropertySubType==='unknown')missing.push('home type');
+  if(!area)missing.push('interior size');
+  if(!hasExactCommunity(subject.CityRegion)&&!(condo&&subject.PostalCode&&subject.UnitNumber))missing.push('community');
+  if(missing.length)return {...unavailableComp(`Please confirm the ${missing.join(' and ')} so we can value the correct home.`),missingFacts:missing,policy:{model:'seller-evidence-v1'}};
+  const local=dedupe(records).filter(r=>exactComparableType(subject,r)&&sellerComparableGeography(subject,r)&&!sellerSameHome(subject,r)).map(sellerSale).filter(Boolean);
+  const trend=sellerLocalTrend(local);
+  const unique=new Map();
+  for(const s of local){const key=sellerHomeKey(s.record);if(key&&(!unique.has(key)||s.age<unique.get(key).age))unique.set(key,s);}
+  const candidates=[];
+  for(const [key,s] of unique){
+    const ca=sellerArea(s.record);if(!ca)continue;
+    const ratio=ca/area;
+    if(condo?!condoHasSameSizeRange(subject,s.record):(ratio<.75||ratio>1.25))continue;
+    if(s.age>365&&!trend.available)continue;
+    const building=condo&&verifiedSameCondoBuilding(subject,s.record);
+    const beds=numberOrNull(subject.BedroomsAboveGrade??subject.BedroomsTotal),cb=numberOrNull(s.record.BedroomsAboveGrade??s.record.BedroomsTotal);
+    const bedScore=beds!==null&&cb!==null?Math.exp(-Math.abs(beds-cb)*.3):.65;
+    const lot=numberOrNull(subject.LotWidth),clot=numberOrNull(s.record.LotWidth);
+    const lotScore=!condo&&lot>0&&clot>0?Math.exp(-Math.abs(Math.log(lot/clot))):.75;
+    const similarity=.55*Math.exp(-Math.abs(Math.log(ratio))*3)+.2*bedScore+.15*(building?1:.85)+.1*lotScore;
+    const factor=trend.available?Math.exp(trend.annualLogRate*s.age/365):1;
+    if(factor<.65||factor>1.5)continue;
+    candidates.push({...s,key,similarity,weight:similarity**3*Math.exp(-s.age/540),value:s.price*factor,factor,building});
+  }
+  // Select on physical similarity and freshness, never on the owner's target.
+  const selected=candidates.sort((a,b)=>b.weight-a.weight||a.key.localeCompare(b.key)).slice(0,8);
+  const comps=selected.map(c=>({...publicComparable({record:c.record,price:c.price,closeDate:c.date.toISOString().slice(0,10),similarity:Math.round(c.similarity*100),sameBuilding:c.building,sameRegion:sameText(subject.CityRegion,c.record.CityRegion)}),adjustedPrice:Math.round(c.value/1000)*1000,timeAdjustmentPct:Math.round((c.factor-1)*1000)/10,ageDays:Math.round(c.age)}));
+  const policy={model:'seller-evidence-v1',windowDays:trend.available?1095:365,trend,eligibleSales:candidates.length,distinctHomes:selected.length,condoExactSize:condo,ownerTargetUsed:false,upgradePremiumAdded:false};
+  if(selected.length<3)return {...unavailableComp('Fewer than three sufficiently similar sold homes were recovered. The team needs to review the remaining evidence.'),comparables:comps,policy};
+  const mid=sellerWeightedQuantile(selected,.5),q20=sellerWeightedQuantile(selected,.2),q80=sellerWeightedQuantile(selected,.8);
+  const age=selected.reduce((n,r)=>n+r.age,0)/selected.length;
+  const spread=(q80-q20)/mid,margin=(selected.length<5?.12:.08)+(age>180?.04:0)+(trend.available?.02:0);
+  const low=Math.floor(Math.min(q20,mid*(1-margin))/5000)*5000,high=Math.ceil(Math.max(q80,mid*(1+margin))/5000)*5000;
+  return {available:true,rangeLow:low,midpoint:Math.round(mid/5000)*5000,rangeHigh:high,confidence:selected.length>=5&&age<=180&&spread<.2?'Medium':'Low',comparables:comps,policy,
+    methodology:'Seller Evidence v1 ranks distinct sold homes by interior size, bedrooms, building/community and lot frontage. Freehold size may differ by up to 25%; condo size bands must match. Weighted median and price spread form a preliminary range with an uncertainty allowance. Sales older than one year qualify only with a supported local repeat-sale trend. This is not a statistically calibrated confidence interval. Owner expectations and upgrade estimates do not set the value.'};
+}
+async function buildSellerEvidence(subject,env) {
+  const initial=calculateSellerEvidence(subject,[]);if(initial.missingFacts)return initial;
+  const filters=[];
+  if(hasExactCommunity(subject.CityRegion))filters.push(`contains(CityRegion,'${odataString(subject.CityRegion)}')`);
+  if(subject.StreetName)filters.push(`contains(StreetName,'${odataString(displayToken2(subject.StreetName))}')`);
+  const records=[],audit=[];
+  for(const filter of filters){const result=await querySoldComparableRows([filter],env,800,1000,[...COMPARABLE_SELECT_FIELDS,'OriginalEntryTimestamp','BuildingAreaUnits','BedroomsAboveGrade','PublicRemarks']);records.push(...result.rows);audit.push(...result.audit);}
+  if(!audit.some(a=>a.status===200))return {...unavailableComp('The sold-data service could not complete this check. Your request needs a data retry, not a guessed value.'),dataUnavailable:true};
+  return {...calculateSellerEvidence(subject,records),diagnostics:{queryAudit:audit}};
 }
 async function loadSellerPropertyForReport(env,lead,requestId) {
   const profile=lead.property_snapshot.sellerProfile;
   const address=lead.resolved_address||lead.metadata?.property_input||'';
   const protectedEnv={...env,AMPRE_TOKEN:env.AMPRE_VOW_TOKEN};
-  let raw=null;
-  if(env.AMPRE_VOW_TOKEN)raw=await resolveSellerSubject(address,profile,protectedEnv).catch(()=>null);
+  let raw=null,lookupError=null;
+  if(env.AMPRE_VOW_TOKEN)try{raw=await resolveSellerSubject(address,profile,protectedEnv);}catch{lookupError='Historical MLS lookup could not be completed.';}
   const verifiedCommunity=raw&&hasExactCommunity(raw.CityRegion)?raw.CityRegion:null;
   const community=verifiedCommunity||profile.community||null;
   const parsed=parseAddress5(address);
@@ -5573,11 +5694,10 @@ async function loadSellerPropertyForReport(env,lead,requestId) {
   const size=profile.sizeBand!=='unknown'?profile.sizeBand:raw?.LivingAreaRange||null;
   const beds=profile.beds??raw?.BedroomsAboveGrade??raw?.BedroomsTotal??null;
   const subject={...raw,ListingKey:raw?.ListingKey||'owner-subject',UnparsedAddress:address,StreetNumber:parsed.number,StreetName:parsed.name,StreetSuffix:parsed.suffix,StreetDirSuffix:parsed.direction,UnitNumber:parsed.unit,City:city,CityRegion:community,PostalCode:raw?.PostalCode||profile.postal,PropertySubType:homeType,PropertyType:/condo/i.test(homeType)?'Residential Condo & Other':'Residential Freehold',LivingAreaRange:size,BuildingAreaTotal:size?null:raw?.BuildingAreaTotal??null,BedroomsTotal:beds,BedroomsAboveGrade:beds,BedroomsBelowGrade:profile.belowBeds,ListPrice:null,ClosePrice:null,SoldPrice:null,SalePrice:null,_sellerReport:true};
-  const knownSize=!!livingAreaBounds(subject);
-  const condo=isCondominiumProperty(subject);
-  const canCompare=homeType!=='unknown'&&knownSize && (hasExactCommunity(community)||(condo&&subject.PostalCode&&parsed.number&&parsed.name&&parsed.suffix));
-  let comp=unavailableComp(!knownSize?'Confirm the interior size to match this home with sold properties.':!canCompare?'Confirm the community to keep the comparisons relevant to this home.':'Sold evidence is temporarily unavailable. The team can review the home details with you.');
-  if(canCompare&&env.AMPRE_VOW_TOKEN)comp=await buildComparableContext(subject,protectedEnv,false,requestId).catch(()=>unavailableComp('The sold-data check could not be completed. The team will review the evidence before suggesting a price.'));
+  let comp=calculateSellerEvidence(subject,[]);
+  if(!comp.missingFacts&&env.AMPRE_VOW_TOKEN)comp=await buildSellerEvidence(subject,protectedEnv).catch(()=>({...unavailableComp('The sold-data check could not be completed. The team will retry it.'),dataUnavailable:true}));
+  if(lookupError&&!raw)comp={...comp,basis:lookupError+' We need to retry the data check.',dataUnavailable:true};
+  if(!env.AMPRE_VOW_TOKEN&&!comp.missingFacts)comp={...comp,basis:'The historical and sold-data service is not configured.',dataUnavailable:true};
   const listingFactsAgree=!!raw&&sameText(raw.PropertySubType,homeType)&&comparableHasCompatibleSize(subject,raw);
   return {address,listingKey:raw?.ListingKey||null,propertySubType:homeType,cityRegion:community,city,postalCode:subject.PostalCode,livingAreaRange:subject.LivingAreaRange,beds,basement:profile.basement==='unknown'?raw?.Basement||'unknown':profile.basement,kitchens:profile.kitchens??raw?.KitchensTotal??raw?.KitchensAboveGrade??null,forSale:false,marketStatus:'Seller review',sellerProfile:profile,comparableContext:comp,sellerEvidence:{listingMatched:!!raw,listingFactsAgree,communitySource:verifiedCommunity?'MLS record':'owner reported',factsSource:raw?'Owner input and matched listing history':'Owner reported',history:raw?._sellerHistory||[],fieldSources:raw?._sellerFactSources||{},communityConflict:!!verifiedCommunity&&!!profile.community&&!sameText(verifiedCommunity,profile.community)}};
 }
@@ -5610,13 +5730,17 @@ function estimateSellerUpgrades(profile,valuation,homeType) {
   return {methodVersion:'seller-upgrade-judgment-v1',available:high!==null,low:high!==null?0:null,high,items,disclosure:'AI-assisted judgment estimate — a rough guess, not measured resale returns or an inspection. Assumes sound work within the past 10 years. Zero is possible where buyers expect the upgrade or comparable homes already have it. Combined estimates allow for overlap and are not added to the AI value range.',assumptions:'Uses the midpoint of the matched sold range, category-specific judgment ceilings and a 6% combined cap; multiple upgrades receive an overlap reduction. Owner expectations do not affect the estimate.'};
 }
 async function buildSellerReport(env,lead,property,requestId) {
-  const profile=property.sellerProfile,comp=property.comparableContext||{},comparables=(comp.comparables||[]).slice(0,5);
+  const profile=property.sellerProfile,comp=property.comparableContext||{},comparables=(comp.comparables||[]).slice(0,8);
   const valid=comp.available===true&&comparables.length>=3&&Number.isFinite(comp.rangeLow)&&comp.rangeLow>0&&Number.isFinite(comp.rangeHigh)&&comp.rangeHigh>=comp.rangeLow;
   const evidence=property.sellerEvidence||{};
   // Even matching MLS details cannot verify today's renovation quality or condition.
   const confidence=valid?(evidence.listingFactsAgree&&comp.confidence==='High'?'Medium':comp.confidence==='Medium'&&evidence.listingFactsAgree?'Medium':'Low'):'Unavailable';
   const valuation={available:valid,low:valid?comp.rangeLow:null,midpoint:valid?comp.midpoint:null,high:valid?comp.rangeHigh:null,confidence,basis:valid?`${comparables.length} matching sold homes · ${property.cityRegion||'same building'} · up to ${comp.policy?.windowDays||300} days.`:comp.basis||'More matched sales are needed.',methodology:'Same community, home type and interior size. Condos in the same verified building may qualify despite a different community label. We start with 100 days, widen to 300 if needed, then screen and weight matching sold prices. Owner target and renovation spending do not change the calculated window.'};
   const upgrades=profile.upgrades.map(u=>({...u,label:SELLER_UPGRADES[u.id].label,check:SELLER_UPGRADES[u.id].check}));
+  valuation.methodology=comp.methodology||'Seller Evidence v1 uses historical home specifications and ranked sold evidence, independently of buyer ratings. No value is supplied until the essential facts and sufficient matched sales are available.';
+  valuation.missingFacts=comp.missingFacts||[];
+  valuation.dataUnavailable=comp.dataUnavailable===true;
+  valuation.model='seller-evidence-v1';
   const position=sellerExpectedRange(profile,valuation);
   const upgradeEstimates=estimateSellerUpgrades(profile,valuation,property.propertySubType);
   const first=valid?`The available sales support an early window of ${cad(valuation.low)}–${cad(valuation.high)}. ${profile.targetPrice?position.note:'Your home’s condition and improvements are the next things to review.'}`:'Your home details are saved. A reliable price window needs more matching evidence; the report below shows what we can review now.';
@@ -5644,6 +5768,15 @@ function sellerReportEmail(address,report) {
   const expected=seller.target_range||sellerExpectedRange(profile,v), estimates=seller.upgrade_estimates||estimateSellerUpgrades(profile,v,facts.property_type);
   const range=(low,high)=>low===high?cad(low):`${cad(low)}–${cad(high)}`;
   const available=v.available===true&&v.low>0&&v.high>=v.low;
+  if(!available){
+    const missing=v.missingFacts||[];
+    const title=v.dataUnavailable?'We need to complete the data check':missing.length?'One more detail before we estimate':'Your home needs a closer comparison';
+    const question=missing.length?`Could you reply with the ${missing.join(', ')}? A previous MLS number or floor plan can also help.`:'Please reply with any previous MLS number or recent floor plan so the team can complete your review.';
+    const selected=(seller.upgrades||[]).map(u=>u.label).join(', ');
+    const expectation=expected.low!==null?range(expected.low,expected.high):'Open to guidance';
+    const body=`<h1 style="font-size:25px;line-height:1.3">${html(title)}</h1><p>${html(address)}</p><p>${html(v.basis)}</p><p>${html(question)}</p><p>Your expected range: <strong>${html(expectation)}</strong></p>${selected?`<p>Upgrades saved: ${html(selected)}.</p>`:''}<p>We have not produced a valuation yet. Your details are saved; no need to submit another report request.</p><p><a href="tel:${TEAM_PHONE}" style="display:block;padding:16px;background:#196b60;color:#fff!important;text-align:center;text-decoration:none;border-radius:10px">Help complete my home estimate</a></p><p style="font-size:12px">${html(TEAM_NAMES)} · Sales Representatives<br>${html(TEAM_BROKERAGE)}</p>`;
+    return {subject:`Your seller estimate — next step: ${address}`,html:`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;background:#f6f7f2;font-family:Arial,Helvetica,sans-serif;color:#183b36"><div style="max-width:600px;margin:20px auto;padding:24px;background:#fff;font-size:16px;line-height:1.6"><p style="font-size:12px;letter-spacing:1px">TORONTO HOUSE MARKET · SELLER REVIEW</p>${body}</div></body></html>`,text:[title,address,v.basis,question,`Your expected range: ${expectation}`,selected?`Upgrades saved: ${selected}`:'','No valuation has been produced yet. Reply to this email to complete your review.',TEAM_NAMES,TEAM_BROKERAGE].filter(Boolean).join('\n\n')};
+  }
   const aiRange=available?range(v.low,v.high):'A closer review is needed';
   const ownerRange=expected.low!==null?range(expected.low,expected.high):'Open to guidance';
   const p='font-size:15px;line-height:1.6;color:#526b65;margin:10px 0;';
@@ -5658,7 +5791,7 @@ function sellerReportEmail(address,report) {
   const price=`<div style="padding:20px;background:#edf5ef;border:1px solid #d9e7df;border-radius:12px"><p style="${k}">AI value · based on sold homes</p><strong class="price" style="font-size:28px;line-height:1.3;color:#183b36;display:block">${html(aiRange)}</strong>${available?band(v.low,v.high,'#227b68'):''}<p style="${p}">${html(available?`${v.confidence} confidence · ${report.comparables.length} selected sales`:v.basis)}</p></div><div style="margin-top:14px;padding:20px;border:1px solid #dce7e1;border-radius:12px"><p style="${k}">Your expected minimum–maximum</p><strong class="price" style="font-size:24px;line-height:1.3;color:#183b36;display:block">${html(ownerRange)}</strong>${available&&expected.low!==null?band(expected.low,expected.high,'#6d7e96'):''}<p style="${p}">${html(expected.note)}</p></div>${available&&expected.low!==null?`<p style="font-size:12px;line-height:1.5;color:#63786f">Both bars use the same scale. Green is the sold-based AI value; slate is your expected range.</p>`:''}<p style="font-size:12px;line-height:1.6;color:#63786f">An early estimate, not an appraisal or promised sale price. Your expectations and upgrade estimates have not been added to the AI value.</p>`;
   const upgrades=estimates.items.length?`<table width="100%" cellpadding="0" cellspacing="0">${estimates.items.map(u=>`<tr><td style="padding:14px 0;border-bottom:1px solid #e4ece7"><strong>${html(u.label)}</strong><p style="${p}font-size:13px;margin:4px 0">${html(u.reason)}</p><strong style="font-size:19px;color:#1c6d60">${html(u.available?range(u.low,u.high):'Needs review')}</strong></td></tr>`).join('')}</table>${estimates.available?`<div style="padding:18px;background:#edf5ef;border-radius:12px;margin-top:18px"><p style="${k}">Combined potential contribution</p><strong style="font-size:25px">${html(range(estimates.low,estimates.high))}</strong><p style="${p}font-size:13px">Allows for overlap between improvements.</p></div>`:''}<p style="${p}font-size:13px">${html(estimates.disclosure)}</p><p style="font-size:12px;line-height:1.6;color:#63786f">${html(estimates.assumptions)}</p>`:`<p style="${p}">No upgrades selected. Reply with any work completed in the past 10 years that you would like us to review.</p>`;
   const histories=(seller.evidence?.history||[]).map(h=>`${h.status} · MLS ${h.listingKey} · ${String(h.recordedAt||'').slice(0,10)}`);
-  const comps=(report.comparables||[]).map(c=>`<tr><td style="padding:16px 0;border-bottom:1px solid #e4ece7"><strong style="font-size:16px;line-height:1.4">${html(c.address)}</strong><p style="${p}margin:5px 0"><span style="white-space:nowrap">${html(c.livingAreaRange||c.buildingAreaTotal||'Size unconfirmed')}${c.livingAreaRange||c.buildingAreaTotal?' sq ft':''}</span> · ${html(c.beds??'—')} bed · ${html(c.cityRegion||'Same building')}</p><strong style="font-size:20px">${html(cad(c.soldPrice))}</strong><span style="font-size:13px;color:#63786f"> · Sold ${html(c.soldDate||'date to confirm')}</span>${c.geographyNote?`<p style="${p}">${html(c.geographyNote)}</p>`:''}</td></tr>`).join('');
+  const comps=(report.comparables||[]).map(c=>`<tr><td style="padding:16px 0;border-bottom:1px solid #e4ece7"><strong style="font-size:16px;line-height:1.4">${html(c.address)}</strong><p style="${p}margin:5px 0"><span style="white-space:nowrap">${html(c.livingAreaRange||c.buildingAreaTotal||'Size unconfirmed')}${c.livingAreaRange||c.buildingAreaTotal?' sq ft':''}</span> · ${html(c.beds??'—')} bed · ${html(c.cityRegion||'Same building')}</p><strong style="font-size:20px">${html(cad(c.soldPrice))}</strong><span style="font-size:13px;color:#63786f"> · Sold ${html(c.soldDate||'date to confirm')}</span>${c.timeAdjustmentPct?`<p style="${p}font-size:13px">Time-adjusted indication: ${html(cad(c.adjustedPrice))} (${html(c.timeAdjustmentPct)}%). Actual sold price is shown above.</p>`:''}${c.geographyNote?`<p style="${p}">${html(c.geographyNote)}</p>`:''}</td></tr>`).join('');
   const evidence=`<p style="${p}">${html([facts.neighbourhood,facts.property_type&&facts.property_type!=='unknown'?facts.property_type:'Home type to confirm',facts.living_area?facts.living_area+' sq ft':'Interior size to confirm'].filter(Boolean).join(' · '))}</p>${histories.length?`<p style="${k}margin-top:18px">Past records checked for home details</p>${histories.map(h=>`<p style="${p}font-size:13px">${html(h)}</p>`).join('')}<p style="${p}font-size:13px">Past listings help recover specifications. Terminated and expired asking prices do not set this valuation.</p>`:''}${seller.evidence?.communityConflict?`<p style="${p}">The matched record has a different community label from your entry. We used the recorded community; please ask the team to confirm it.</p>`:''}<table width="100%" cellpadding="0" cellspacing="0">${comps||`<tr><td style="${p}">Not enough matching sold homes were returned. The team can review the missing details with you.</td></tr>`}</table><p style="font-size:12px;line-height:1.6;color:#63786f">${html(v.methodology)} Listing history and owner-reported details need confirmation against the home today.</p>`;
   const next=`${report.ai_note?`<p style="${p}">${html(report.ai_note)}</p>`:''}${profile.notes?`<p style="${k}">Your notes</p><p style="${p}">${html(profile.notes)}</p>`:''}${(report.narrative?.preparation_checks||[]).slice(0,4).map(t=>`<p style="${p}">• ${html(t)}</p>`).join('')}<p style="${p}">Let’s review your upgrades, expected range and timing together.</p><a href="tel:${TEAM_PHONE}" style="display:block;background:#196b60;border-radius:10px;padding:17px 12px;color:#fff!important;text-align:center;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700">Discuss my home’s value</a><p style="${p}font-size:13px;text-align:center">Or reply to this email with your questions.</p><p style="font-size:12px;line-height:1.6;color:#63786f">${html(TEAM_NAMES)} · Sales Representatives<br>${html(TEAM_BROKERAGE)}<br>Realtor response target: within 28 minutes, 9 AM–9 PM.</p>`;
   const htmlBody=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important}.title a{color:#fff!important;text-decoration:none!important;font:inherit!important}@media(max-width:480px){.pad{padding:22px 16px!important}.title{font-size:24px!important}.price{font-size:23px!important}}</style></head><body style="margin:0;background:#f6f7f2;font-family:Arial,Helvetica,sans-serif;color:#183b36"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:680px;background:#fff;border:1px solid #dce5df;border-radius:18px;overflow:hidden"><tr><td class="pad" style="padding:30px;background:#183b36;border-radius:18px 18px 0 0"><p style="${k}color:#b8d6cc">TORONTO HOUSE MARKET · SELLER REPORT</p><h1 class="title" style="margin:10px 0;font-family:Arial,Helvetica,sans-serif;font-size:29px;line-height:1.25;color:#fff"><span style="color:#fff!important">${html(address)}</span></h1><p style="font-size:13px;line-height:1.5;color:#c9ded6">Prepared ${html(formatToronto(report.generated_at))} · Toronto time</p></td></tr>${section('Your home, in numbers','AI value. Your expectations.',price)}${section('Your improvements','What could your upgrades contribute?',upgrades)}${section('Recent sold comparisons','The homes behind the estimate.',evidence)}${section('Your selling plan','Make the next move with clarity.',next)}</table></td></tr></table></body></html>`;
@@ -5667,6 +5800,7 @@ function sellerReportEmail(address,report) {
 }
 
 export {
+  calculateSellerEvidence, sellerLocalTrend, sellerSale,
   validateSellerProfile, resolveSellerSubject, estimateSellerUpgrades, sellerComparableGeography, sellerSameHome, buildSellerReport, sellerTargetPosition, sellerReportEmail, qualifiedSoldComparableRows,
   normalizeNorthAmericanPhone, condoHasSameSizeRange,
   buildComparableContext,
