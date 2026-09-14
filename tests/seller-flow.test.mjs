@@ -1,14 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
-import {validateSellerProfile,createBuyerRequest,loadPropertyForReport,buildPropertyReport,sellerComparableGeography,sellerSameHome,qualifiedSoldComparableRows,buildSellerReport,buildEmail} from '../worker-v11.js';
+import {validateSellerProfile,resolveSellerSubject,estimateSellerUpgrades,createBuyerRequest,loadPropertyForReport,buildPropertyReport,sellerComparableGeography,sellerSameHome,qualifiedSoldComparableRows,buildSellerReport,buildEmail} from '../worker-v11.js';
 const profileInput={homeType:'Detached',city:'Toronto',community:'Example Community',sizeBand:'1500-2000',beds:3,belowBeds:1,basement:'finished',entrance:'yes',kitchens:2,postal:'M6E1A1',condition:'maintained',upgrades:[{id:'kitchen',recency:'0_2',documents:true}],targetPrice:1200000,timing:'3_6',notes:'Owner-provided details <script>never execute</script>',ownerConsent:true,contactConsent:true};
 const subject={ListingKey:'C00000001',UnparsedAddress:'101 Example Street, Toronto',StreetNumber:'101',StreetName:'Example',StreetSuffix:'Street',City:'Toronto',CityRegion:'Example Community',PropertySubType:'Detached',LivingAreaRange:'1500-2000',BedroomsTotal:3,PostalCode:'M6E1A1',_sellerReport:true};
 const sold=(n,overrides={})=>({...subject,ListingKey:`C0000000${n}`,StreetNumber:String(101+n),UnparsedAddress:`${101+n} Example Street, Toronto`,StandardStatus:'Closed',TransactionType:'For Sale',ClosePrice:1050000+n*10000,PurchaseContractDate:new Date(Date.now()-35*86400000).toISOString().slice(0,10),...overrides});
 const property=(profile,extra={})=>({address:'101 Example Street, Toronto · Demonstration only',propertySubType:profile.homeType,cityRegion:profile.community,city:profile.city,livingAreaRange:profile.sizeBand,sellerProfile:profile,sellerEvidence:{listingMatched:true,listingFactsAgree:true},comparableContext:{available:true,confidence:'Medium',rangeLow:1020000,midpoint:1060000,rangeHigh:1100000,policy:{windowDays:100},comparables:[2,3,4].map(n=>({address:`${101+n} Example Street · Demo`,propertySubType:profile.homeType,cityRegion:profile.community,livingAreaRange:profile.sizeBand,beds:3,soldPrice:1030000+n*10000,soldDate:new Date(Date.now()-35*86400000).toISOString().slice(0,10)}))},...extra});
 
 test('seller scenario 1: detached evidence, independent target, atomic request capture and seller email',async t=>{
-  const profile=validateSellerProfile(profileInput);
+  const profile=validateSellerProfile({...profileInput,targetMin:1150000,targetMax:1250000,upgrades:[{id:'kitchen',recency:'within_10',documents:false},{id:'bathrooms',recency:'within_10',documents:false}]});
+  assert.throws(()=>validateSellerProfile({...profileInput,targetMin:1200000,targetMax:1000000}));
+  assert.throws(()=>validateSellerProfile({...profileInput,targetMin:1200000}));
   assert.throws(()=>validateSellerProfile({...profileInput,ownerConsent:false}));
   assert.throws(()=>validateSellerProfile({...profileInput,targetPrice:'1000000'}));
   assert.throws(()=>validateSellerProfile({...profileInput,upgrades:[{id:'__proto__',recency:'0_2',documents:true}]}));
@@ -19,7 +21,13 @@ test('seller scenario 1: detached evidence, independent target, atomic request c
   assert.deepEqual(report.valuation,alternate.valuation);assert.equal(report.seller.target_position.label,'Above the window');
   const email=buildEmail({job_type:'email_buyer'},{lead_mode:'seller',resolved_address:report.facts.address,property_reports:[{report_payload:report}]});
   assert.match(email.html,/YOUR|Your improvements/);assert.match(email.html,/tel:\+16478904704/);assert.match(email.html,/\&lt;script\&gt;/);assert.doesNotMatch(email.html,/<script>|showing.html|Buyer Decision Report|cashback/);
-  assert.match(email.text,/100,000 above/);
+  assert.match(email.text,/50,000 above/);
+  assert.match(email.html,/AI-assisted judgment estimate/);assert.doesNotMatch(email.html,/triangle|Three views/);
+  assert.equal(report.seller.target_range.low,1150000);
+  const upgradeEstimate=report.seller.upgrade_estimates;assert.equal(upgradeEstimate.items.length,2);assert(upgradeEstimate.high>0);
+  assert(upgradeEstimate.high<upgradeEstimate.items.reduce((sum,i)=>sum+i.high,0));
+  assert.deepEqual(upgradeEstimate,estimateSellerUpgrades({...profile,targetMin:5000000,targetMax:6000000},report.valuation,'Detached'));
+  assert.equal(estimateSellerUpgrades({...profile,upgrades:[{id:'roof'}]},report.valuation,'Condo Apartment').available,false);
   writeFileSync(new URL('./fixtures/seller-report-example.html',import.meta.url),email.html);
   let captured;
   t.mock.method(globalThis,'fetch',async(url,options)=>{assert(String(url).includes('/rpc/create_phase5_request'));captured=JSON.parse(options.body).p_request;return new Response(JSON.stringify({lead_id:'11111111-2222-4333-8444-555555555555',report_queued:true}),{status:200});});
@@ -29,11 +37,15 @@ test('seller scenario 1: detached evidence, independent target, atomic request c
   assert.equal(r.status,201);assert.equal(captured.lead_mode,'seller');assert.equal(captured.listing_key,null);assert.equal(captured.showing_requested,false);assert.equal(captured.property_snapshot.sellerProfile.targetPrice,1200000);assert.equal(captured.property_snapshot.listPrice,undefined);
 });
 
-test('seller scenario 2: condo same-building exception preserves size and exact unit',async()=>{
+test('seller scenario 2: condo same-building exception preserves size and exact unit',async t=>{
   const a={...subject,PropertySubType:'Condo Apartment',PropertyType:'Residential Condo & Other',LivingAreaRange:'600-699',City:'Richmond Hill',CityRegion:'Example North',UnparsedAddress:'10 Example Avenue 401, Richmond Hill',StreetNumber:'10',StreetName:'Example',StreetSuffix:'Avenue',UnitNumber:'401',PostalCode:'L4B1A1'};
   const b={...a,ListingKey:'N00000002',UnitNumber:'501',UnparsedAddress:'10 Example Avenue 501, Richmond Hill',CityRegion:'Example South',StandardStatus:'Closed',ClosePrice:630000,TransactionType:'For Sale',PurchaseContractDate:new Date(Date.now()-40*86400000).toISOString().slice(0,10)};
   assert.equal(validateSellerProfile({...profileInput,homeType:'Condo Apartment',sizeBand:'1400-1599'}).sizeBand,'1400-1599');
   assert.throws(()=>validateSellerProfile({...profileInput,homeType:'Condo Apartment',sizeBand:'900-500'}));
+  const historyRows=[{...a,ListingKey:'N_HISTORY_NEW',StandardStatus:'Expired',OriginalEntryTimestamp:new Date(Date.now()-365*86400000).toISOString(),ModificationTimestamp:new Date(Date.now()-350*86400000).toISOString(),LivingAreaRange:null},{...a,ListingKey:'N_HISTORY_OLD',StandardStatus:'Canceled',OriginalEntryTimestamp:new Date(Date.now()-700*86400000).toISOString(),ModificationTimestamp:new Date(Date.now()-690*86400000).toISOString()},b];
+  t.mock.method(globalThis,'fetch',async url=>{const decoded=decodeURIComponent(String(url));const full=historyRows.find(r=>decoded.includes(`('${r.ListingKey}')`));return new Response(JSON.stringify(full||{value:historyRows}),{status:200});});
+  const recovered=await resolveSellerSubject(a.UnparsedAddress,{city:''},{AMPRE_TOKEN:'fixture-only'});
+  assert.equal(recovered.UnitNumber,'401');assert.equal(recovered.LivingAreaRange,'600-699');assert.equal(recovered._sellerHistory.length,2);assert.equal(recovered._sellerFactSources.LivingAreaRange,'N_HISTORY_OLD');
   assert(sellerComparableGeography(a,b));assert(!sellerSameHome(a,b));
   assert.equal(qualifiedSoldComparableRows(a,[b],300).length,1);
   assert.equal(qualifiedSoldComparableRows(a,[{...b,LivingAreaRange:'700-799'}],300).length,0);
@@ -46,12 +58,12 @@ test('seller scenario 2: condo same-building exception preserves size and exact 
 });
 
 test('seller scenario 3: unlisted home with uncertain size/community still produces an honest review',async()=>{
-  const profile=validateSellerProfile({...profileInput,city:'Vaughan',community:'',sizeBand:'unknown',targetPrice:900000,upgrades:[],notes:''});
+  const profile=validateSellerProfile({...profileInput,homeType:'unknown',beds:null,condition:'unknown',city:'',community:'',sizeBand:'unknown',targetPrice:900000,upgrades:[],notes:''});
   const lead={lead_mode:'seller',resolved_address:'33 Example Court, Vaughan',property_snapshot:{sellerProfile:profile}};
   const p=await loadPropertyForReport({},lead);
   assert.equal(p.comparableContext.available,false);assert.equal(p.sellerEvidence.listingMatched,false);
   const report=await buildPropertyReport({},lead,p);
-  assert.equal(report.report_type,'THM Seller Price Perspective');assert.equal(report.valuation.available,false);assert.equal(report.valuation.low,null);assert.equal(report.seller.target_position.label,'Target saved');
+  assert.equal(report.report_type,'THM Seller Price Perspective');assert.equal(report.valuation.available,false);assert.equal(report.valuation.low,null);assert.equal(report.seller.upgrade_estimates.available,false);assert.equal(report.seller.target_position.label,'Target saved');
   assert.match(report.valuation.basis,/Confirm the interior size/);
   const email=buildEmail({job_type:'email_buyer'},{...lead,property_reports:[{report_payload:report}]});
   assert.match(email.html,/A closer review is needed/);assert.match(email.html,/\$900,000/);assert.doesNotMatch(email.html,/appraisal value|low estimate|high estimate|Invalid Date|undefined/);

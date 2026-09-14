@@ -44,3 +44,11 @@ Keep GitHub → Cloudflare Worker + Supabase. Do not migrate hosting or recreate
 - Seller email uses Market evidence / Improvements / Owner target, plus a target-position graphic and call/reply actions. Seller requests stay out of showing scheduling.
 
 Seller verification: three synthetic seller scenarios cover capture, validation, target independence, same-building condo rules and missing-evidence handling. Three previously unused condo addresses were checked in the public seller UI (one per Toronto, Richmond Hill and Vaughan); see tests/seller-address-sample.json. No live test leads or test emails were sent. Larger condo size bands are retained exactly when supplied by the listing. Preview commits do not promote; include [release] in the final commit message after review.
+
+## Seller revision — 2026-09-14
+- Address-first single form, optional collapsed home details, simple upgrade chips for work within ten years, optional minimum/maximum expectations. No triangle.
+- Report subject recovery checks up to three exact-address/unit records from the last ten years, including expired/cancelled listings, and records field provenance. Ambiguous cities are not silently selected. Missing owner facts may use recovered specifications; old asking prices never enter valuation.
+- Email has two labelled bands on one scale: sold-based AI value and owner expectations. Owner goals cannot change the valuation.
+- Upgrade contribution is a separate AI-assisted judgment estimate, not measured ROI. Category ceiling assumptions, overlap reduction and 6% combined cap are explicit; zero is possible. Never added automatically to the sold-derived value. No dollar guess without sufficient sold evidence. Condo shared roof/exterior/basement work needs review.
+- Version 2 profiles preserve legacy target-price support and use the existing JSON capture without a schema migration. Admin/team summaries show minimum–maximum.
+- Verification remains three synthetic scenarios and at most the three addresses already in tests/seller-address-sample.json. No live leads or emails created.
