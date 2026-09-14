@@ -1,12 +1,7 @@
 /* Phase 6 · seller reports. Owner expectations never enter the valuation input. */
 (() => {
   const $ = id => document.getElementById(id);
-  const upgradeOptions = [
-    ['kitchen','Kitchen','Cabinets, counters & appliances'],['bathrooms','Bathrooms','Fixtures, finishes & layout'],['flooring','Floors & finishes','Flooring, paint & lighting'],
-    ['basement','Basement','Finish, layout or extra living space'],['windows','Windows & doors','Replacements & insulation'],['roof','Roof','Materials & replacement'],
-    ['systems','Heating & cooling','Furnace, heat pump or A/C'],['exterior','Outdoor space','Landscaping, deck or exterior'],['layout','Layout & additions','Open plan or added living area']
-  ];
-  let address = '', matched = null, requestKey = crypto.randomUUID();
+  let address = '', matched = null, verification = null, requestKey = crypto.randomUUID();
   const esc = text => String(text ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const setValue = (id,value) => {if(value!=null){$(id).value=String(value);$(id).dispatchEvent(new Event('change',{bubbles:true}));}};
   function fillSizes(value = '') {
@@ -19,7 +14,6 @@
   }
   $('sellerType').addEventListener('change',()=>fillSizes($('sellerSize').value));
   fillSizes();
-  $('sellerUpgradeGrid').innerHTML=upgradeOptions.map(([id,label])=>`<label class="seller-upgrade"><input type="checkbox" data-upgrade="${id}"><span>${label}</span><span class="seller-upgrade-check" aria-hidden="true">✓</span></label>`).join('');
   function validateForm(){const invalid=[...$('sellerForm').querySelectorAll('input,select,textarea')].find(el=>!el.disabled&&!el.checkValidity());if(!invalid)return true;if(invalid.closest('details'))invalid.closest('details').open=true;invalid.reportValidity();invalid.focus();return false;}
   $('sellerChangeAddress').addEventListener('click',()=>{$('sellerBuilder').hidden=true;$('sellerLookup').scrollIntoView({block:'center',behavior:'smooth'});$('sellerAddress').focus();});
   $('sellerLookup').addEventListener('submit',async event=>{
@@ -28,17 +22,18 @@
     if(!/^\d+[A-Za-z]?\s+\S+/.test(entered) && !/^(unit|suite|apt|#)\s*\w+/i.test(entered)){$('sellerLookupStatus').textContent='Enter the street number and street name, including the unit for a condo.';return;}
     $('sellerFind').disabled=true;$('sellerLookupStatus').textContent='Looking for home details…';
     try {
-      const response=await fetch(`/api/property?q=${encodeURIComponent(entered)}&mode=public_snapshot`,{signal:AbortSignal.timeout(25000)});
-      const data=await response.json();const p=data?.property;
-      matched=response.ok && p?.listingKey && !p.displayRestricted ? p : null;
-    }catch{matched=null;}
+      const response=await fetch(`/api/seller/address?q=${encodeURIComponent(entered)}`,{signal:AbortSignal.timeout(25000)});
+      const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Address check unavailable.');
+      verification=data;matched=null;
+    }catch{matched=null;verification={verified:false,address:entered,city:'',message:'The address check could not finish. Check the address and city; you can still request a historical search.'};}
     // Keep the matched canonical address and exact unit; otherwise retain the entered address.
-    address=matched?.address||entered;requestKey=crypto.randomUUID();
+    address=verification?.address||entered;requestKey=crypto.randomUUID();
     $('sellerForm').reset();fillSizes();
     $('sellerHomeDetails').open=false;
     $('sellerSelectedAddress').textContent=address;
     $('sellerMatch').hidden=false;$('sellerPhoto').hidden=true;
-    $('sellerMatchText').textContent=matched?'Address matched to a listing record. You can check or correct its details below.':'No public listing match yet. You can continue; we’ll check available older records for your report. Add any home details you know below.';
+    $('sellerMatchText').textContent=verification.message;
+    if(verification.city)setValue('sellerCity',String(verification.city).startsWith('Toronto')?'Toronto':verification.city);
     if(matched){
       setValue('sellerType',matched.propertySubType);fillSizes(matched.livingAreaRange);
       const city=String(matched.city||'').startsWith('Toronto')?'Toronto':matched.city;
@@ -50,8 +45,8 @@
       if(photo && (/^https:\/\//.test(photo)||/^\/api\//.test(photo))){$('sellerPhoto').src=photo;$('sellerPhoto').hidden=false;}
     }
     if(!$('sellerCity').value){const cities=[...$('sellerCity').options].map(o=>o.value).filter(Boolean);const city=cities.find(city=>entered.toLowerCase().includes(city.toLowerCase()));if(city)setValue('sellerCity',city);}
-    $('sellerLookupStatus').textContent=matched?'Home details ready to review.':'Add your home details to continue.';
-    $('sellerBuilder').hidden=false;$('sellerSuccess').hidden=true;$('sellerFind').disabled=false;$('sellerAddressBadge').textContent=matched?'ADDRESS MATCHED':'ADDRESS TO CONFIRM';$('sellerFactsSummary').textContent=[matched?.propertySubType,matched?.livingAreaRange?matched.livingAreaRange+' sq ft':null,matched?.cityRegion].filter(Boolean).join(' · ');$('sellerBuilder').scrollIntoView({block:'start',behavior:'smooth'});
+    $('sellerLookupStatus').textContent=verification.verified?'Address matched. Your report comes next.':'Check your address, or continue with a historical search.';
+    $('sellerBuilder').hidden=false;$('sellerSuccess').hidden=true;$('sellerFind').disabled=false;$('sellerAddressBadge').textContent=verification.verified?'ADDRESS MATCHED':'ADDRESS TO CONFIRM';$('sellerFactsSummary').textContent=[matched?.propertySubType,matched?.livingAreaRange?matched.livingAreaRange+' sq ft':null,matched?.cityRegion].filter(Boolean).join(' · ');$('sellerBuilder').scrollIntoView({block:'start',behavior:'smooth'});
     window.gtag?.('event','seller_address_started',{lookup_matched:!!matched});
   });
   function phone(value){
@@ -71,13 +66,13 @@
     if(targetMin!==null||targetMax!==null){if(targetMin===null||targetMax===null)priceError='Enter both minimum and maximum, or leave both blank.';else if(!Number.isFinite(targetMin)||!Number.isFinite(targetMax)||targetMin<50000||targetMax>100000000)priceError='Enter a valid price range between $50,000 and $100,000,000.';else if(targetMin>targetMax)priceError='The maximum must be at least the minimum.';}
     $('sellerTargetMin').setCustomValidity(priceError);if(!validateForm())return;
     const optionalNumber=id=>$(id).value===''?null:Number($(id).value);
-    const profile={version:2,homeType:$('sellerType').value||'unknown',city:$('sellerCity').value,community:$('sellerCommunity').value.trim(),sizeBand:$('sellerSize').value||'unknown',beds:optionalNumber('sellerBeds'),belowBeds:optionalNumber('sellerBelowBeds'),basement:$('sellerBasement').value,entrance:$('sellerEntrance').value,kitchens:optionalNumber('sellerKitchens'),postal:$('sellerPostal').value.trim(),condition:document.querySelector('[name=condition]:checked')?.value||'unknown',upgrades:upgradeOptions.filter(([id])=>document.querySelector(`[data-upgrade="${id}"]`).checked).map(([id])=>({id,recency:'within_10',documents:false})),targetMin,targetMax,targetPrice:null,timing:$('sellerTiming').value,notes:$('sellerNotes').value.trim(),ownerConsent:$('sellerOwnerConsent').checked,contactConsent:$('sellerContactConsent').checked};
+    const profile={version:2,homeType:$('sellerType').value||'unknown',city:$('sellerCity').value,community:$('sellerCommunity').value.trim(),sizeBand:$('sellerSize').value||'unknown',beds:optionalNumber('sellerBeds'),belowBeds:optionalNumber('sellerBelowBeds'),basement:$('sellerBasement').value,entrance:$('sellerEntrance').value,kitchens:optionalNumber('sellerKitchens'),postal:$('sellerPostal').value.trim(),condition:'unknown',upgrades:[],targetMin,targetMax,targetPrice:null,timing:$('sellerTiming').value,notes:'',ownerConsent:$('sellerOwnerConsent').checked,contactConsent:$('sellerContactConsent').checked};
     $('sellerSubmit').disabled=true;$('sellerSubmit').textContent='Preparing your request…';$('sellerError').textContent='';
     try {
       const response=await fetch('/api/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lead_mode:'seller',showing_requested:false,name:$('sellerName').value.trim(),email:$('sellerEmail').value.trim(),mobile,property_input:address,resolved_address:address,seller_profile:profile,request_key:requestKey,page_url:location.href,website:$('sellerWebsite').value})});
       const data=await response.json();if(!response.ok||!data.ok||!data.lead_id)throw new Error(data.error||'Your request could not be saved. Please try again.');
       $('sellerBuilder').hidden=true;$('sellerSuccess').hidden=false;$('sellerSuccessNote').textContent=`We’ve saved your review for ${address}. Your seller report will be sent to ${$('sellerEmail').value.trim()}.`;$('sellerSuccess').focus();$('sellerSuccess').scrollIntoView({block:'center',behavior:'smooth'});window.gtag?.('event','seller_report_requested');
-    }catch(error){$('sellerError').textContent=error.message||'Please try again.';}finally{$('sellerSubmit').disabled=false;$('sellerSubmit').textContent='Get my AI value report';}
+    }catch(error){$('sellerError').textContent=error.message||'Please try again.';}finally{$('sellerSubmit').disabled=false;$('sellerSubmit').textContent='Get my selling price report';}
   });
   const initial=new URLSearchParams(location.search).get('address');if(initial)$('sellerAddress').value=initial.slice(0,500);
 })();
