@@ -19,3 +19,6 @@ Primary documentation checked on 2026-09-15:
 - https://developers.google.com/maps/documentation/places/web-service/place-details
 - https://developers.google.com/maps/documentation/places/web-service/policies
 - https://developers.google.com/maps/documentation/places/web-service/session-pricing
+
+## Owner activation — 2026-09-15
+The owner added GOOGLE_PLACES_API_KEY as a Cloudflare runtime secret. Production returned a Google address suggestion for the existing Lonsdale sample, and keyboard selection filled its municipality. The dashboard save also rebuilt Worker source and removed PUBLIC_DISCOVERY_ENABLED. The single-box release uses that exact deployed source as its base, changes only address error copy/version, and restores the established discovery setting. Quotas and billing alerts have not been independently verified.

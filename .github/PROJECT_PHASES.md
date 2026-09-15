@@ -138,3 +138,10 @@ Superseded valuation policy: Seller Evidence v1 now runs independently of buildC
 ## Restore single address box — 2026-09-15
 - User rejected the separate condo unit field. Both forms return to one address box. Unit-first and street-first condo formats are parsed without moving the unit out of the visible address; choosing an address or city preserves that unit. No hidden former unit can carry to a new property.
 - Address suggestion UI and optional city entry remain. Error copy refers to adding Unit and the number in the same address box, without real-home examples. Google Places activation remains dependent on the owner’s account/key. Google Cloud navigation timed out in the connected browser during setup.
+
+## Single address box and live Google activation — 2026-09-15
+- User configured GOOGLE_PLACES_API_KEY in Cloudflare. Verified live suggestions and address selection on production. Condo unit-first input stays in one box; selecting its building preserves Unit 1405 and fills Richmond Hill. No separate unit field on buyer or seller.
+- Production source was rebuilt by the dashboard and PUBLIC_DISCOVERY_ENABLED was removed during that save. Used the exact current source (d6da4a8acb53bf55a5df16b1bd162c6934555ad05c94988f8d9f03a50f0d8b61) as the release base, changing only address error copy/version. Restored the established discovery flag and added it to wrangler configuration.
+- Published version 632f2362-ba9e-4f66-8dbe-e1f45c99e329; rollback 8e7ee114-a217-4893-a5a2-ee12d331c2dd. Source SHA256 15af5cc85d4544abd03ea9dbbf1891ef6415cb3e74ac992ce4cba311a42540da. Release commit 94aa07ad04c3a586c6a7d9a025f1600b96ac59c1; successful run 35011555219.
+- All 46 focused tests and all 15 preview/live asset checks passed. No report requests, leads or emails created. Mobile buyer preview visually checked. Google results verified on production; preview-host suggestion requests did not yield visible results, so no live provider claim relies on the preview.
+- Google quotas and billing alerts have not been independently verified. Protected seller diagnostics remain blocked; this release makes no new valuation-verification claim.
