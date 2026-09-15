@@ -63,3 +63,14 @@ Superseded valuation policy: Seller Evidence v1 now runs independently of buildC
 - Admin seller cards have a read-only fresh evidence check using existing admin authorization; no new credential, auth bypass, saved lead/report mutation or email send.
 - Validation: three synthetic scenarios only. Live protected MLS requests remain unverified because supplied credentials returned 401 in this environment despite the user's dashboard working. Do not claim that 33 Russett or another live seller now has a verified estimate.
 - Model design informed by IAAO sales-comparison principles (https://www.iaao.org/wp-content/uploads/StandardOnMassAppraisal.pdf); heuristic coefficients are not claimed to be IAAO-approved or Toronto-calibrated.
+
+
+## Seller off-market revision — 2026-09-15 (preview)
+- Baseline is the restored Phase 6 deployment `287a06e2-ef44-4fef-8ef7-7e24d752ba23`; SHA256 `7b2fd318de7863416865c7f95a75829d0006a5189f80c22522e51e1ec4afd119`. Do not deploy main/worker-v13.
+- Remove upgrades from seller form and seller email. Keep the existing page design, public address lookup, buyer assets and buyer report calculations. No database/schema migration.
+- Recover exact street number/name/type/direction, city and unit from protected VOW history. Query unavailable records, then all statuses to catch relisting. Follow provider cursors, disclose incomplete retrieval, and sort the recovered records by listing entry/contract date rather than sync edits. Keep provenance when an older record fills missing specifications.
+- Seller Evidence v2: exact subtype and community, verified same-building condo exception, same condo size band. Freehold area tolerance 25%; missing-area fallback requires recorded bedrooms and comparable lot frontage, disclosed with lower confidence. Prefer area-known comparables when at least three qualify.
+- Prefer qualified sold homes within 100 days; expand to 300 days only when necessary. Three distinct sold homes minimum. No historical asking price, owner target, upgrade guess or assumed appreciation enters valuation. Recent active asks are separately dated and labelled as competition.
+- Seller email shows estimated midpoint, range, current status, history, sold evidence, active competition, owner expectations and contact actions. Missing history is not described as confirmed off-market; provider errors/incomplete scans are not described as zero market evidence.
+- Eight focused tests passed (three synthetic seller scenarios plus five existing buyer email checks). One broader Phase 5 test expects the old literal brand `Golestan Homes`; it fails identically on baseline and candidate and was not altered.
+- Protected MLS verification requires the existing admin login. No live leads, report jobs or emails have been created during this revision. Preview workflow `.github/workflows/seller-evidence-preview.yml` preserves bindings and verifies all 12 application assets without promotion.

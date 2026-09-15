@@ -36,7 +36,7 @@ function renderLeads(leads){
     result.setAttribute('role','status');result.style.cssText='white-space:pre-wrap;line-height:1.6;margin:12px 0';
     button.addEventListener('click',async()=>{button.disabled=true;result.textContent='Checking historical records and sold evidence…';try{
       const r=await api('/api/admin/seller-preview?lead_id='+encodeURIComponent(lead.id)),v=r.valuation;
-      result.textContent=[r.address,v.available?`Estimated range: ${money(v.low)}–${money(v.high)} · ${v.confidence} confidence`:v.basis,`Historical records: ${r.history?.length||0} · Selected sold homes: ${r.comparables?.length||0}`,...(r.comparables||[]).map(c=>`${c.address} · ${money(c.soldPrice)} · ${c.soldDate}${c.timeAdjustmentPct?` · Time-adjusted indication ${money(c.adjustedPrice)} (${c.timeAdjustmentPct}%)`:''}`),'Read-only check. No lead changes or emails.'].join('\n');
+      result.textContent=[r.address,v.available?`Estimated range: ${money(v.low)}–${money(v.high)} · ${v.confidence} confidence`:v.basis,`Historical records: ${r.history?.length||0} · Selected sold homes: ${r.comparables?.length||0}`,...(r.comparables||[]).map(c=>`${c.address} · ${money(c.soldPrice)} · ${c.soldDate}${c.timeAdjustmentPct?` · Time-adjusted indication ${money(c.adjustedPrice)} (${c.timeAdjustmentPct}%)`:''}`),...(r.activeComparables||[]).map(c=>`${c.address} · Asking ${money(c.askingPrice)}`),r.diagnostics?JSON.stringify(r.diagnostics,null,2):'','Read-only check. No lead changes or emails.'].join('\n');
     }catch(e){result.textContent=e.message;}finally{button.disabled=false;}});
     article.append(button,result);
   }

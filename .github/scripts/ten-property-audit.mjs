@@ -31,7 +31,8 @@ const names=v=>v.bindings.filter(b=>b.name!=='ASSETS').map(b=>`${b.name}:${b.typ
 assert.deepEqual(names(after),names(before));
 for(const b of before.bindings.filter(b=>b.type==='plain_text')) assert.ok(after.bindings.some(a=>a.name===b.name&&a.text===b.text));
 assert.equal((await cf(`/workers/scripts/${worker}/deployments`)).deployments[0].versions[0].version_id,active);
-const release={active,candidate,preview,beforeSha:hash(source),candidateSha:hash(readFileSync('worker-v11.js'))};
+const previewAlias=log.match(/https:\/\/report-audit-[^\s]+\.workers\.dev/i)?.[0]||null;
+const release={active,candidate,preview,previewAlias,beforeSha:hash(source),candidateSha:hash(readFileSync('worker-v11.js'))};
 writeFileSync('audit-output/release.json',JSON.stringify(release,null,2));
 console.log(JSON.stringify(release));
 if (process.env.PREVIEW_ONLY === 'true') {

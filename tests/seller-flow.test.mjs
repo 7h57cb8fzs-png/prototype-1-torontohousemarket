@@ -60,6 +60,8 @@ test('seller scenario 2: condo same-building exception preserves size and exact 
   historyRows[1].OriginalEntryTimestamp='2010-01-01T00:00:00Z';
   historyRows[1].ModificationTimestamp=new Date().toISOString();
   const recovered=await resolveSellerSubject(a.UnparsedAddress,{city:''},{AMPRE_TOKEN:'fixture-only'});
+  const withoutCommas=await resolveSellerSubject('10 Example Avenue Unit 401 Richmond Hill ON L4B 1A1',{city:''},{AMPRE_TOKEN:'fixture-only'});
+  assert.equal(withoutCommas?.UnitNumber,'401');
   assert.equal(recovered.ListingKey,'N_HISTORY_NEW');assert.equal(recovered.UnitNumber,'401');assert.equal(recovered.LivingAreaRange,'600-699');assert.equal(recovered._sellerHistory.length,2);assert.equal(recovered._sellerFactSources.LivingAreaRange,'N_HISTORY_OLD');
   assert(sellerComparableGeography(a,b));assert(!sellerSameHome(a,b));
   assert.equal(qualifiedSoldComparableRows(a,[b],300).length,1);
