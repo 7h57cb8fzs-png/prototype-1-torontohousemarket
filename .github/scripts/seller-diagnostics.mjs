@@ -1,12 +1,13 @@
 import {spawn} from 'node:child_process';
 // Never expose request headers, query strings, application logs or MLS data.
-const child=spawn('npx',['--yes','wrangler@4.129.0','tail','prototype-1-torontohousemarket','--format','json'],{detached:true,stdio:['ignore','pipe','pipe']});
+const child=spawn('npx',['--yes','wrangler@4.129.0','tail','prototype-1-torontohousemarket','--format','json','--version-id','9039b6ee-62a2-4a2f-96fe-8502d8d7c87b'],{detached:true,stdio:['ignore','pipe','pipe']});
 let buffer='';
 child.stderr.on('data',()=>{});
 child.stdout.on('data',chunk=>{buffer+=chunk;});
 console.log('Observing request outcomes for 180 seconds.');
 const timer=setTimeout(()=>{try{process.kill(-child.pid,'SIGTERM');}catch{}},180000);
-child.on('close',()=>{
+child.on('close',(exitCode,signal)=>{
+  console.log(JSON.stringify({tailExitCode:exitCode,tailSignal:signal}));
   clearTimeout(timer);
   let start=-1,depth=0,quoted=false,escape=false,count=0;
   for(let i=0;i<buffer.length;i++){
