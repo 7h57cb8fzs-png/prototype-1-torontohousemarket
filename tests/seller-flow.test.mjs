@@ -27,6 +27,12 @@ test('seller scenario 1: detached evidence, independent target, atomic request c
   assert.equal(sellerSale(old),null);
   assert.deepEqual(market,calculateSellerEvidence(subject,[...marketRows,old]));
   assert.equal(market.policy.windowDays,100);
+  const sparse=calculateSellerEvidence(subject,[sold(2),sold(3),sold(4,{PurchaseContractDate:new Date(Date.now()-358*86400000).toISOString()})]);
+  assert.equal(sparse.available,true);assert.equal(sparse.policy.windowDays,365);assert.equal(sparse.confidence,'Low');
+  assert.equal(calculateSellerEvidence(subject,[sold(2),sold(3),old]).available,false);
+  const partialReport=await buildSellerReport({}, {},property(profile,{comparableContext:{...sparse,policy:{...sparse.policy,retrievalCapped:true}}}));
+  const partialEmail=buildEmail({job_type:'email_buyer'},{lead_mode:'seller',resolved_address:partialReport.facts.address,property_reports:[{report_payload:partialReport}]});
+  assert.match(partialEmail.html,/up to 365 days/);assert.match(partialEmail.html,/did not cover every matching market record/);assert.match(partialEmail.text,/did not cover every matching market record/);
   const noSize=calculateSellerEvidence({...subject,LivingAreaRange:null,LotWidth:25},[sold(2,{LotWidth:24}),sold(3,{LotWidth:25}),sold(4,{LotWidth:26})]);
   assert.equal(noSize.available,true);assert.equal(noSize.policy.missingSizeFallback,true);assert.equal(noSize.confidence,'Low');
   const active=sellerActiveComparisons(subject,[sold(22,{StandardStatus:'Active',ContractStatus:'Available',ClosePrice:null,ListPrice:1400000}),sold(23,{StandardStatus:'Active',ContractStatus:'Available',TransactionType:'For Lease',ClosePrice:null,ListPrice:3000}),sold(24,{StandardStatus:'Active',ContractStatus:'Available',CityRegion:'Elsewhere',ListPrice:1000000})]);
