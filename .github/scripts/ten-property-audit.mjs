@@ -17,6 +17,8 @@ const before=await cf(`/workers/workers/${worker}/versions/${active}?include=mod
 const source=Buffer.from(before.modules.find(m=>m.name==='worker-v11.js').content_base64,'base64');
 console.log(JSON.stringify({activeVersion:active,activeSourceSha:hash(source)}));
 assert.equal(hash(source),process.env.EXPECTED_ACTIVE_SHA,'Production changed since review');
+// Restore the established discovery setting if a dashboard secret save removed it.
+if (!before.bindings.some(b => b.name === 'PUBLIC_DISCOVERY_ENABLED')) before.bindings.push({name:'PUBLIC_DISCOVERY_ENABLED',type:'plain_text',text:'true'});
 const args=['--yes','wrangler@4.129.0','versions','upload','--no-bundle','--preview-alias','report-audit'];
 for(const b of before.bindings) if(b.type==='plain_text') args.push('--var',`${b.name}:${b.text}`);
 let log;
