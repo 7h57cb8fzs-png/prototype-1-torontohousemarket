@@ -5562,7 +5562,7 @@ function sellerListingTime(record) {
 async function sellerQueryRows(filters,env,limit=1000) {
   const rows=[],audit=[],seen=new Set();let next=null,complete=false,sorted=true;
   for(let page=0;page<Math.ceil(limit/100);page++){
-    const result=next?await queryPropertiesPage(next,env):await queryPropertiesDetailed(filters,env,100,'ModificationTimestamp desc,ListingKey desc',0);
+    const result=next?await queryPropertiesPage(next,env):await queryPropertiesDetailed(filters,env,100,'',0);
     audit.push({scope:filters.join(' and '),page,...result.meta});
     if([401,403].includes(result.meta.status))throw new Error('Historical data access was rejected by the listing provider.');
     if(result.meta.status!==200)break;
@@ -5584,20 +5584,16 @@ async function resolveSellerSubject(address,profile,env,diagnostics={}) {
   const number=escapeOData2(parsed.number);
   const scope=`contains(StreetName,'${street}')`;
   const exactScope=`${scope} and StreetNumber eq '${number}'`;
-  const queries=[
-    `${exactScope} and ContractStatus eq 'Unavailable'`,
-    exactScope,
-    `contains(UnparsedAddress,'${number} ${street}')`,
-    scope
-  ];
+  // AMPRE's current contract rejects equality/sort combinations. Single street
+  // tokens work; archived imports can also use uppercase street names.
+  const token=parsed.name.split(' ').sort((a,b)=>b.length-a.length)[0];
+  const queries=[...new Set([displayToken2(token),token.toUpperCase()])].map(t=>`contains(StreetName,'${escapeOData2(t)}')`);
   const candidates=new Map(),audit=[];let complete=false;
-  for(const [index,filter] of queries.entries()){
-    const result=await sellerQueryRows([filter],env,index===3?2000:500);audit.push(...result.audit);
+  for(const filter of queries){
+    const result=await sellerQueryRows([filter],env,2000);audit.push(...result.audit);
     diagnostics.queries.push({filter,complete:result.complete,rows:result.rows.length,audit:result.audit,exactMatches:result.rows.filter(r=>sellerExactHistoryMatch(parsed,r,city)).length,sample:result.rows.slice(0,2).map(r=>({address:r.UnparsedAddress,number:r.StreetNumber,street:r.StreetName,suffix:r.StreetSuffix,unit:r.UnitNumber,city:r.City,status:r.StandardStatus,recordedAt:r.OriginalEntryTimestamp}))});
     for(const row of result.rows)if(sellerExactHistoryMatch(parsed,row,city)&&row.ListingKey)candidates.set(row.ListingKey,row);
-    // Always check all statuses after the unavailable search: the property may
-    // have been relisted. Only an exhausted address scope verifies the latest.
-    if(index>0&&result.complete){complete=true;if(candidates.size)break;}
+    if(result.complete)complete=true;
   }
   if(!complete&&audit.some(a=>a.status===200))throw new Error('The exact-address MLS history search is incomplete; retry required.');
   if(!audit.some(a=>a.status===200))throw new Error('Historical MLS lookup could not be completed.');
@@ -5750,25 +5746,35 @@ function sellerActiveComparisons(subject,records) {
 }
 async function buildSellerEvidence(subject,env) {
   const initial=calculateSellerEvidence(subject,[]);if(initial.missingFacts)return initial;
-  const region=hasExactCommunity(subject.CityRegion)?`contains(CityRegion,'${odataString(subject.CityRegion)}')`:null;
-  const type=`contains(PropertySubType,'${odataString(String(subject.PropertySubType).trim())}')`;
-  const local=region||`contains(StreetName,'${odataString(subject.StreetName)}')`;
+  // Multiword contains queries return no matches on this feed. Retrieve one
+  // distinctive token; exact city/community/type/unit qualification remains local.
+  const token=String(subject.CityRegion||subject.StreetName||'').split(/[\s-]+/).filter(Boolean).sort((a,b)=>b.length-a.length)[0];
+  const local=hasExactCommunity(subject.CityRegion)?`contains(CityRegion,'${odataString(token)}')`:`contains(StreetName,'${odataString(token)}')`;
   const records=[],audit=[];let capped=false;
-  // Query unavailable and current inventory separately so active stock cannot
-  // crowd closed sales out of a single mixed result window.
-  for(const status of ['Unavailable','Available']){
-    const result=await sellerQueryRows([local,type,`ContractStatus eq '${status}'`],env,status==='Unavailable'?1000:300);
-    records.push(...result.rows);audit.push(...result.audit);capped||=result.capped;
+  const first=await sellerQueryRows([local],env,300);records.push(...first.rows);audit.push(...first.audit);capped=first.capped;
+  if(first.capped){
+    // Check the opposite end as well when a large community exceeds the budget.
+    // Qualifying sale dates are always verified; offset order is not a sale date.
+    const tail=await querySoldComparableRows([local],env,1200,1000,null);
+    records.push(...tail.rows);audit.push(...tail.audit);capped=true;
   }
-  // A denied/filter-incompatible query is not proof that the neighbourhood has
-  // no sales. Use the permitted local query and qualify status in code.
-  if(!calculateSellerEvidence(subject,records).available){const result=await sellerQueryRows([local],env,1000);records.push(...result.rows);audit.push(...result.audit);capped||=result.capped;}
-  if(isCondominiumProperty(subject)&&region&&subject.StreetName){const result=await sellerQueryRows([`contains(StreetName,'${odataString(subject.StreetName)}')`,`StreetNumber eq '${odataString(subject.StreetNumber)}'`],env,300);records.push(...result.rows);audit.push(...result.audit);capped||=result.capped;}
+  if(subject.StreetName&&(!calculateSellerEvidence(subject,records).available||isCondominiumProperty(subject))){
+    const streetToken=String(subject.StreetName).split(' ').sort((a,b)=>b.length-a.length)[0];
+    const street=await sellerQueryRows([`contains(StreetName,'${odataString(displayToken2(streetToken))}')`],env,300);
+    records.push(...street.rows);audit.push(...street.audit);
+  }
+  const postal=String(subject.PostalCode||'').replace(/\s/g,'').slice(0,3).toUpperCase();
+  if(/^[A-Z]\d[A-Z]$/.test(postal)&&!calculateSellerEvidence(subject,records).available){
+    const fallback=await querySoldComparableRows([`startswith(PostalCode,'${postal}')`],env,1200,1000,null);
+    records.push(...fallback.rows);audit.push(...fallback.audit);
+    capped ||= fallback.audit.some(a=>a.totalCount>1200)||!fallback.audit.some(a=>a.status===200);
+  }
   if(!audit.some(a=>a.status===200))return {...unavailableComp('The historical listing service could not complete the check. We need to restore that connection before estimating.'),dataUnavailable:true,diagnostics:{queryAudit:audit}};
   const result=calculateSellerEvidence(subject,records),active=sellerActiveComparisons(subject,records);
   if(capped&&result.confidence==='Medium')result.confidence='Low';
   if(capped&&!result.available){result.dataUnavailable=true;result.basis='The MLS search returned incomplete market evidence. The team needs to complete the data check before estimating.';}
-  return {...result,activeComparables:active,diagnostics:{queryAudit:audit,rowsRecovered:dedupe(records).length,soldRows:records.filter(r=>sellerSale(r)).length,capped},policy:{...result.policy,activeAsksUsedForValuation:false,retrievalCapped:capped}};
+  const unique=dedupe(records);
+  return {...result,activeComparables:active,diagnostics:{queryAudit:audit,rowsRecovered:unique.length,soldRows:unique.filter(r=>sellerSale(r)).length,capped,subject:{type:subject.PropertySubType,community:subject.CityRegion,size:subject.LivingAreaRange,beds:subject.BedroomsAboveGrade,lot:subject.LotWidth},recentLocal:unique.filter(r=>sellerComparableGeography(subject,r)&&exactComparableType(subject,r)).slice(-5).map(r=>({address:r.UnparsedAddress,type:r.PropertySubType,size:r.LivingAreaRange,status:r.StandardStatus,soldDate:r.PurchaseContractDate,soldPrice:r.ClosePrice}))},policy:{...result.policy,activeAsksUsedForValuation:false,retrievalCapped:capped}};
 }
 async function loadSellerPropertyForReport(env,lead,requestId) {
   const profile={...lead.property_snapshot.sellerProfile,upgrades:[],condition:'unknown'};
@@ -5788,6 +5794,7 @@ async function loadSellerPropertyForReport(env,lead,requestId) {
   if(!comp.missingFacts&&env.AMPRE_VOW_TOKEN)comp=await buildSellerEvidence(subject,protectedEnv).catch(()=>({...unavailableComp('The sold-data check could not be completed. The team will retry it.'),dataUnavailable:true}));
   if(lookupError&&!raw)comp={...comp,available:false,basis:lookupError+' We need to retry the data check.',dataUnavailable:true};
   if(!env.AMPRE_VOW_TOKEN)comp={...comp,basis:'The historical and sold-data service is not configured.',dataUnavailable:true};
+  if(!raw&&!lookupError&&env.AMPRE_VOW_TOKEN)comp={...comp,basis:'The connected MLS feed did not return an exact historical record for this address. Confirm the street number, city and unit, or provide the previous MLS number.'};
   if(!raw&&comp.available)comp={...comp,available:false,basis:'The exact property could not be verified in MLS history. Confirm the address, city and unit before pricing.'};
   const listingFactsAgree=!!raw&&sameText(raw.PropertySubType,homeType)&&comparableHasCompatibleSize(subject,raw);
   return {address,listingKey:raw?.ListingKey||null,propertySubType:homeType,cityRegion:community,city,postalCode:subject.PostalCode,livingAreaRange:subject.LivingAreaRange,beds,basement:profile.basement==='unknown'?raw?.Basement||'unknown':profile.basement,kitchens:profile.kitchens??raw?.KitchensTotal??raw?.KitchensAboveGrade??null,forSale:raw?isActiveForSale(raw):null,marketStatus:raw?(isActiveForSale(raw)?'Currently listed for sale':/closed|sold|expired|terminated|withdrawn|cancel|suspend|leased|rented|unavailable/i.test(`${raw.StandardStatus||''} ${raw.MlsStatus||''} ${raw.ContractStatus||''}`)?'Not currently listed for sale':'Listing status unconfirmed'):'Listing status unconfirmed',sellerProfile:profile,comparableContext:comp,sellerEvidence:{listingMatched:!!raw,listingFactsAgree,communitySource:verifiedCommunity?'MLS record':'owner reported',factsSource:raw?'Owner input and matched listing history':'Owner reported',history:raw?._sellerHistory||[],diagnostics:{historyLookup:lookupDiagnostics,historyQuery:raw?._sellerLookupAudit||[],comparisons:comp.diagnostics||null},fieldSources:raw?._sellerFactSources||{},communityConflict:!!verifiedCommunity&&!!profile.community&&!sameText(verifiedCommunity,profile.community)}};

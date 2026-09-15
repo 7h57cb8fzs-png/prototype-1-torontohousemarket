@@ -75,7 +75,7 @@ test('seller scenario 2: condo same-building exception preserves size and exact 
     const u=new URL(url);lookups.push(u);const filter=u.searchParams.get('$filter')||'';
     if(u.searchParams.has('$skip'))throw new Error('Oldest-tail query must not be used');
     if(u.searchParams.get('$skiptoken')==='next')return Response.json({value:[{...b,ListingKey:'N04',UnitNumber:'701',UnparsedAddress:'10 Example Avenue 701, Richmond Hill'}]});
-    if(filter.includes("'Unavailable'"))return Response.json({value:[b,{...b,ListingKey:'N03',UnitNumber:'601',UnparsedAddress:'10 Example Avenue 601, Richmond Hill'}],'@odata.nextLink':"https://query.ampre.ca/odata/Property?$skiptoken=next"});
+    if(filter.includes('CityRegion'))return Response.json({value:[b,{...b,ListingKey:'N03',UnitNumber:'601',UnparsedAddress:'10 Example Avenue 601, Richmond Hill'},{...b,ListingKey:'N06',UnitNumber:'801',UnparsedAddress:'10 Example Avenue 801, Richmond Hill',StandardStatus:'Active',ContractStatus:'Available',ClosePrice:null,ListPrice:710000}],'@odata.nextLink':"https://query.ampre.ca/odata/Property?$skiptoken=next"});
     if(filter.includes("'Available'"))return Response.json({value:[{...b,ListingKey:'N06',UnitNumber:'801',UnparsedAddress:'10 Example Avenue 801, Richmond Hill',StandardStatus:'Active',ContractStatus:'Available',ClosePrice:null,ListPrice:710000}]});
     return Response.json({value:[]});
   });
