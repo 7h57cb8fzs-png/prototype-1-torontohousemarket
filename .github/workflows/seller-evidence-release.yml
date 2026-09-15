@@ -31,5 +31,5 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           EXPECTED_BEFORE_SHA: d6da4a8acb53bf55a5df16b1bd162c6934555ad05c94988f8d9f03a50f0d8b61
-          CANDIDATE_VERSION_ID: 261982d4-544f-4edf-9164-466164cb25b9
+          CANDIDATE_VERSION_ID: b3250b07-c2d0-42a2-b0e2-dcc472697e4b
         run: node .github/scripts/promote-buyer-tools.mjs
