@@ -1,11 +1,6 @@
 /* Phase 6 · seller reports. Owner expectations never enter the valuation input. */
 (() => {
   const $ = id => document.getElementById(id);
-  const upgradeOptions = [
-    ['kitchen','Kitchen','Cabinets, counters & appliances'],['bathrooms','Bathrooms','Fixtures, finishes & layout'],['flooring','Floors & finishes','Flooring, paint & lighting'],
-    ['basement','Basement','Finish, layout or extra living space'],['windows','Windows & doors','Replacements & insulation'],['roof','Roof','Materials & replacement'],
-    ['systems','Heating & cooling','Furnace, heat pump or A/C'],['exterior','Outdoor space','Landscaping, deck or exterior'],['layout','Layout & additions','Open plan or added living area']
-  ];
   let address = '', matched = null, requestKey = crypto.randomUUID();
   const esc = text => String(text ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const setValue = (id,value) => {if(value!=null){$(id).value=String(value);$(id).dispatchEvent(new Event('change',{bubbles:true}));}};
@@ -19,7 +14,6 @@
   }
   $('sellerType').addEventListener('change',()=>fillSizes($('sellerSize').value));
   fillSizes();
-  $('sellerUpgradeGrid').innerHTML=upgradeOptions.map(([id,label])=>`<label class="seller-upgrade"><input type="checkbox" data-upgrade="${id}"><span>${label}</span><span class="seller-upgrade-check" aria-hidden="true">✓</span></label>`).join('');
   function validateForm(){const invalid=[...$('sellerForm').querySelectorAll('input,select,textarea')].find(el=>!el.disabled&&!el.checkValidity());if(!invalid)return true;if(invalid.closest('details'))invalid.closest('details').open=true;invalid.reportValidity();invalid.focus();return false;}
   $('sellerChangeAddress').addEventListener('click',()=>{$('sellerBuilder').hidden=true;$('sellerLookup').scrollIntoView({block:'center',behavior:'smooth'});$('sellerAddress').focus();});
   $('sellerLookup').addEventListener('submit',async event=>{
@@ -71,7 +65,7 @@
     if(targetMin!==null||targetMax!==null){if(targetMin===null||targetMax===null)priceError='Enter both minimum and maximum, or leave both blank.';else if(!Number.isFinite(targetMin)||!Number.isFinite(targetMax)||targetMin<50000||targetMax>100000000)priceError='Enter a valid price range between $50,000 and $100,000,000.';else if(targetMin>targetMax)priceError='The maximum must be at least the minimum.';}
     $('sellerTargetMin').setCustomValidity(priceError);if(!validateForm())return;
     const optionalNumber=id=>$(id).value===''?null:Number($(id).value);
-    const profile={version:2,homeType:$('sellerType').value||'unknown',city:$('sellerCity').value,community:$('sellerCommunity').value.trim(),sizeBand:$('sellerSize').value||'unknown',beds:optionalNumber('sellerBeds'),belowBeds:optionalNumber('sellerBelowBeds'),basement:$('sellerBasement').value,entrance:$('sellerEntrance').value,kitchens:optionalNumber('sellerKitchens'),postal:$('sellerPostal').value.trim(),condition:document.querySelector('[name=condition]:checked')?.value||'unknown',upgrades:upgradeOptions.filter(([id])=>document.querySelector(`[data-upgrade="${id}"]`).checked).map(([id])=>({id,recency:'within_10',documents:false})),targetMin,targetMax,targetPrice:null,timing:$('sellerTiming').value,notes:$('sellerNotes').value.trim(),ownerConsent:$('sellerOwnerConsent').checked,contactConsent:$('sellerContactConsent').checked};
+    const profile={version:2,homeType:$('sellerType').value||'unknown',city:$('sellerCity').value,community:$('sellerCommunity').value.trim(),sizeBand:$('sellerSize').value||'unknown',beds:optionalNumber('sellerBeds'),belowBeds:optionalNumber('sellerBelowBeds'),basement:$('sellerBasement').value,entrance:$('sellerEntrance').value,kitchens:optionalNumber('sellerKitchens'),postal:$('sellerPostal').value.trim(),condition:'unknown',upgrades:[],targetMin,targetMax,targetPrice:null,timing:$('sellerTiming').value,notes:'',ownerConsent:$('sellerOwnerConsent').checked,contactConsent:$('sellerContactConsent').checked};
     $('sellerSubmit').disabled=true;$('sellerSubmit').textContent='Preparing your request…';$('sellerError').textContent='';
     try {
       const response=await fetch('/api/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lead_mode:'seller',showing_requested:false,name:$('sellerName').value.trim(),email:$('sellerEmail').value.trim(),mobile,property_input:address,resolved_address:address,seller_profile:profile,request_key:requestKey,page_url:location.href,website:$('sellerWebsite').value})});
