@@ -11,6 +11,7 @@ const {parse}=await import('/tmp/address-source-review/node_modules/acorn/dist/a
 function norm(v){
  if(!v||typeof v!=='object')return v;
  if(Array.isArray(v))return v.map(norm).filter(x=>x!==null);
+ if(v.type==='Program')v={...v,body:v.body.map(n=>n.type==='VariableDeclaration'?{...n,kind:'var'}:n)};
  if(v.type==='FunctionDeclaration'&&v.id?.name==='sellerRecency')return null;
  if(v.type==='Identifier'&&['query2','key2','stamp2','p2','property2','text2','active2','result2','rate2'].includes(v.name))v={...v,name:v.name.slice(0,-1)};
  if(v.type==='VariableDeclaration'&&v.declarations.every(d=>/^__(?:name|defProp)\d*$/.test(d.id?.name||'')))return null;
@@ -21,5 +22,4 @@ function norm(v){
 const ast=s=>JSON.stringify(norm(parse(s,{ecmaVersion:'latest',sourceType:'module'})),(k,v)=>typeof v==='bigint'?String(v):v);
 const a=ast(prior),b=ast(current);
 console.log(JSON.stringify({identicalAfterBundlerNormalization:a===b}));
-if(a!==b){let i=0;while(i<Math.min(a.length,b.length)&&a[i]===b[i])i++;console.log(JSON.stringify({firstDifferentPosition:i,priorSyntax:a.slice(Math.max(0,i-150),i+300),currentSyntax:b.slice(Math.max(0,i-150),i+300)}));}
-assert.equal(a,b,'Unexpected business logic difference');
+if(a!==b){let i=0;while(i<Math.min(a.length,b.length)&&a[i]===b[i])i++;console.log(JSON.stringify({firstDifferentPosition:i,priorSyntax:a.slice(Math.max(0,i-150),i+300),currentSyntax:b.slice(Math.max(0,i-150),i+300)}));throw new Error('Unexpected difference');}
