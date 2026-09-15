@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="description" content="Get an AI buyer report for any GTA home. Understand comparable prices, explore the details and request a private showing when you’re ready." />
+  <meta name="description" content="Get an AI buyer report for any GTA home. Understand comparable prices, explore the details and request a fast showing when you’re ready." />
   <title>AI Home Insights | Toronto House Market</title>
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-44826VKX1E"></script>
   <script>
@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=seller-v121-20260911" />
+  <link rel="stylesheet" href="/styles.css?v=129" />
 </head>
 <body>
 <header class="site-header">
@@ -21,15 +21,15 @@
       <span class="brand-mark">THM</span>
       <span class="brand-name">Toronto House Market</span>
     </a>
-    <div class="nav-actions"><a class="seller-nav-link" href="/seller.html">Selling a home?</a><button id="headerReportButton" class="nav-cta" type="button">AI report + showing</button></div>
+    <div class="nav-actions"><a class="seller-nav-link" href="/seller.html">Home value <span aria-hidden="true">↗</span></a><button id="headerReportButton" class="nav-cta" type="button">Get my AI report <span aria-hidden="true">→</span></button></div>
   </div>
 </header>
 
 <main id="top">
   <section class="hero" id="lookup">
     <div class="wrap hero-inner">
-      <div class="speed-chip">AI PROPERTY REPORTS · PRIVATE SHOWINGS</div>
-      <h1>Get the AI property report.<br><span>Book your private showing.</span></h1>
+      <div class="speed-chip">AI PROPERTY REPORTS · FAST SHOWINGS</div>
+      <h1>Get the AI property report.<br><span>See it within 24 hours.*</span></h1>
       <p class="hero-copy">Get the AI buyer report for a home you like. See the sold comparisons, understand the price and add a fast showing whenever you’re ready.</p>
 
       <form id="analysisForm" class="search-box" novalidate>
@@ -44,7 +44,7 @@
 
       <div class="hero-included" id="reportIncluded">
         <article><span class="included-icon" aria-hidden="true">✦</span><div><strong>Your AI buyer report</strong><p>Sold comparisons · price window · confidence · key checks</p></div></article>
-        <article><span class="included-icon" aria-hidden="true">↗</span><div><strong>Your private showing</strong><p>Optional · 1–24 hour target*</p></div></article>
+        <article><span class="included-icon" aria-hidden="true">↗</span><div><strong>Your fast showing</strong><p>Optional · Within 24 hours*</p></div></article>
       </div>
       <p class="seller-entry">Thinking of selling? <a href="/seller.html">Explore your home’s price &amp; potential →</a></p>
       <p class="speed-disclaimer">*Target only. Actual showing time depends on listing, seller and property-access availability.</p>
@@ -271,7 +271,7 @@
           <label>MOBILE<input id="leadMobile" name="mobile" type="tel" autocomplete="tel-national" inputmode="tel" required maxlength="24" aria-describedby="mobileHelp" /><small id="mobileHelp">10-digit number, with optional +1.</small></label>
         </div>
         <label>EMAIL<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required /></label>
-        <label id="showingChoiceWrap" class="showing-choice"><input id="showingChoice" type="checkbox" /><span class="showing-checkmark" aria-hidden="true"></span><span class="showing-choice-copy"><strong>Add a private showing</strong><small>Optional · your report is included either way.</small></span></label>
+        <label id="showingChoiceWrap" class="showing-choice"><input id="showingChoice" type="checkbox" /><span class="showing-checkmark" aria-hidden="true"></span><span class="showing-choice-copy"><strong>Add a fast showing</strong><small>Optional · within 24 hours, subject to availability.</small></span></label>
         <div id="showingOptions" class="hidden showing-options">
           <label><span id="nextStepLabel">PREFERRED TIMING</span><select id="showingTiming" name="showing_timing"><option value="asap">Earliest available</option><option value="preferred_time">Choose a date &amp; time</option></select></label>
           <div id="showingCalendarFields" class="two-col hidden"><label>DATE<input id="showingDate" type="date" /></label><label>TIME · TORONTO<select id="showingTime"></select></label></div>
@@ -315,6 +315,6 @@
 </div>
 
 <div id="mobileShowing" class="mobile-showing hidden"><div><small>AI REPORT · SHOWING OPTIONAL</small><strong id="mobileAsking"></strong></div><button id="mobileShowingButton" class="primary-btn" type="button">Get my AI report</button></div>
-<script src="/app.js?v=seller-v121-20260911" defer></script>
+<script src="/form-inputs.js?v=129" defer></script><script src="/app.js?v=129" defer></script>
 <script src="/select-controls.js?v=114" defer></script></body>
 </html>

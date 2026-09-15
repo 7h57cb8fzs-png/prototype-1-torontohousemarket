@@ -9,8 +9,8 @@
   <meta property="og:url" content="https://torontohousemarket.com/seller.html">
   <link rel="canonical" href="https://torontohousemarket.com/seller.html">
   <title>Your Home’s Value | Toronto House Market</title>
-  <link rel="stylesheet" href="/styles.css?v=seller-v125">
-  <link rel="stylesheet" href="/seller.css?v=127">
+  <link rel="stylesheet" href="/styles.css?v=129">
+  <link rel="stylesheet" href="/seller.css?v=129">
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-44826VKX1E"></script>
   <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-44826VKX1E');</script>
 </head>
@@ -29,14 +29,14 @@
         <span class="seller-kicker"><span class="seller-kicker-dot" aria-hidden="true"></span> THE HOMEOWNER’S NEXT MOVE</span>
         <h1 id="sellerTitle">Your home’s value.<br><em>A clearer picture.</em></h1>
         <p>Thinking of selling, or just curious? See what recent sales and today’s competition could mean for your home—even if it isn’t listed.</p>
-        <form id="sellerLookup" class="seller-lookup">
+        <form id="sellerLookup" class="seller-lookup" novalidate>
           <label for="sellerAddress">Start with your home’s address</label>
           <div class="seller-address-control">
             <span class="seller-address-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" width="21" height="21"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.8" stroke="currentColor" stroke-width="1.6"/></svg></span>
             <input id="sellerAddress" autocomplete="street-address" required maxlength="300" placeholder="Street address, unit and city" aria-describedby="sellerLookupStatus">
             <button class="primary-btn" id="sellerFind" type="submit">Find my home <span aria-hidden="true">→</span></button>
           </div>
-          <p id="sellerLookupStatus" role="status">Include your unit for a condo. Your home doesn’t need to be listed.</p>
+          <p id="sellerLookupStatus" role="status">Condo: 9201 Yonge St, Unit 1405, Richmond Hill. House: 18 Ferris Rd, Toronto.</p>
         </form>
         <div class="seller-proof"><span>Private email report</span><span>No obligation to list</span></div>
       </section>
@@ -70,7 +70,7 @@
           <p class="seller-help">We’ll check available past listings when preparing your report. Correct anything that has changed, or add what you know.</p>
           <div class="seller-fields">
             <label>Home type<select id="sellerType"><option value="">Not sure yet</option><option>Detached</option><option>Semi-Detached</option><option>Att/Row/Townhouse</option><option>Condo Apartment</option><option>Condo Townhouse</option><option>Duplex</option></select></label>
-            <label>City<select id="sellerCity"><option value="">Confirm city</option><option>Toronto</option><option>Richmond Hill</option><option>Vaughan</option><option>Markham</option><option>Aurora</option><option>Newmarket</option><option>King</option><option>Mississauga</option><option>Brampton</option><option>Oakville</option><option>Burlington</option><option>Milton</option><option>Pickering</option><option>Ajax</option><option>Whitby</option><option>Oshawa</option></select></label>
+            <label>City<select id="sellerCity" required><option value="">Confirm city</option><option>Toronto</option><option>Richmond Hill</option><option>Vaughan</option><option>Markham</option><option>Aurora</option><option>Newmarket</option><option>King</option><option>Mississauga</option><option>Brampton</option><option>Oakville</option><option>Burlington</option><option>Milton</option><option>Pickering</option><option>Ajax</option><option>Whitby</option><option>Oshawa</option></select></label>
             <label>Community<input id="sellerCommunity" maxlength="100" autocomplete="off"><small>Neighbourhood name; leave blank if unsure.</small></label>
             <label>Interior size<select id="sellerSize"><option value="">Not sure yet</option></select><small>Use your floor plan or listing size; exclude basement area for a house.</small></label>
             <label>Bedrooms above ground<input id="sellerBeds" type="number" min="0" max="20" step="1" inputmode="numeric"></label>
@@ -82,11 +82,11 @@
           </div>
         </details>
 
-        <details class="seller-home-details seller-expectations">
-          <summary>Have a price in mind? <span class="seller-optional">Optional</span></summary>
+        <section class="seller-expectations" aria-labelledby="sellerExpectationsTitle">
+          <h3 id="sellerExpectationsTitle">Have a price in mind? <span class="seller-optional">Optional</span></h3>
           <p class="seller-help">We’ll compare your expectations with the evidence. Your target won’t change the estimate.</p>
           <div class="seller-price-inputs"><label>Minimum · CAD<input id="sellerTargetMin" inputmode="numeric" autocomplete="off" placeholder="e.g. 900,000"></label><label>Maximum · CAD<input id="sellerTargetMax" inputmode="numeric" autocomplete="off" placeholder="e.g. 1,000,000"></label></div>
-        </details>
+        </section>
 
         <section class="seller-form-section" aria-labelledby="sellerDeliveryTitle">
           <span class="seller-kicker">DELIVERED TO YOUR INBOX</span>
@@ -95,7 +95,7 @@
           <div class="seller-fields">
             <label>Your name<input id="sellerName" autocomplete="name" required maxlength="160" placeholder="First and last name"></label>
             <label>Email<input id="sellerEmail" type="email" autocomplete="email" required maxlength="254" placeholder="you@example.com"></label>
-            <label>Mobile<input id="sellerMobile" type="tel" autocomplete="tel" inputmode="tel" required placeholder="(647) 555-0123"><small>For follow-up about your property review.</small></label>
+            <label>Mobile<input id="sellerMobile" maxlength="24" type="tel" autocomplete="tel" inputmode="tel" required placeholder="(647) 555-0123"><small>For follow-up about your property review.</small></label>
             <label>When might you sell?<select id="sellerTiming"><option value="exploring">Just exploring</option><option value="0_3">Within 3 months</option><option value="3_6">3–6 months</option><option value="6_12">6–12 months</option></select></label>
           </div>
           <div class="seller-consents">
@@ -121,7 +121,7 @@
     </section>
 
     <section class="seller-team-note" aria-label="Your local real estate team">
-      <div><span class="seller-kicker">A LOCAL TEAM, WHEN YOU’RE READY</span><h2>Every number starts a conversation.</h2><p>Alireza &amp; Mehrdad Golestan <span aria-hidden="true">·</span> Sales Representatives</p></div>
+      <div><span class="seller-kicker">A LOCAL TEAM, WHEN YOU’RE READY</span><h2>Every number starts a conversation.</h2><p>Questions about your home’s value? Let’s talk through your options.</p></div>
       <div class="seller-team-action"><a href="tel:+16478904704">Talk about your home <span aria-hidden="true">↗</span></a><small>Response target: 28 minutes · 9 AM–9 PM</small></div>
     </section>
   </main>
@@ -129,7 +129,8 @@
   <footer class="team-footer">
     <div class="wrap seller-footer-inner"><div><strong>Toronto House Market</strong><p>Alireza Golestan &amp; Mehrdad Golestan · Sales Representatives<br>CENTURY 21 Leading Edge Realty Inc., Brokerage</p></div><small>Preliminary market guidance, not an appraisal or a guaranteed sale price.</small></div>
   </footer>
-  <script src="/seller.js?v=127" defer></script>
+  <script src="/form-inputs.js?v=129" defer></script>
+  <script src="/seller.js?v=129" defer></script>
   <script src="/select-controls.js?v=114" defer></script>
 </body>
 </html>

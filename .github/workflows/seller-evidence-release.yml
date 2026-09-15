@@ -21,12 +21,14 @@ jobs:
         run: |
           node --check worker-v11.js
           node --check seller.js
+          node --check form-inputs.js
+          node --check app.js
           node --check admin.js
-          node --test tests/seller-flow.test.mjs tests/email-copy.test.mjs
+          node --test tests/seller-flow.test.mjs tests/email-copy.test.mjs tests/address-search.test.mjs tests/form-validation.test.mjs
       - name: Publish the verified preview with rollback protection
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          EXPECTED_BEFORE_SHA: 90e854d35333f036f8a4fc5a33df185fbbd8302f68112b7cba59dbfa8d3b5eab
+          EXPECTED_BEFORE_SHA: 871df70ace83b34fefbf43f7f0ddffb22f6f5a31b6740f12bd9de8dc3fa2b050
           CANDIDATE_VERSION_ID: 78fc6552-9f2f-4053-95db-ab83c0ff561b
         run: node .github/scripts/promote-buyer-tools.mjs

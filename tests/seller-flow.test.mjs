@@ -176,7 +176,7 @@ test('seller scenario 2: condo same-building exception preserves size and exact 
   const report=await buildSellerReport({}, {},property(profile,{comparableContext:{available:false,basis:'Only one matching sale was found.',comparables:[{address:b.UnparsedAddress,soldPrice:630000,soldDate:b.PurchaseContractDate,livingAreaRange:'600-699'}]}}));
   assert.equal(report.valuation.available,false);assert.equal(report.seller.target_position.label,'Open to guidance');
   const email=buildEmail({job_type:'email_buyer'},{lead_mode:'seller',resolved_address:a.UnparsedAddress,property_reports:[{report_payload:report}]});
-  assert.match(email.html,/Only one matching sale/);assert.doesNotMatch(email.html,/Green: market window/);
+  assert.match(email.html,/not enough closely matching sales/);assert.doesNotMatch(email.html,/Green: market window/);
 });
 
 test('seller scenario 3: unlisted home address verification and honest missing-evidence handling',async t=>{
@@ -191,5 +191,5 @@ test('seller scenario 3: unlisted home address verification and honest missing-e
   assert.equal(report.report_type,'THM Seller Price Perspective');assert.equal(report.valuation.available,false);assert.equal(report.valuation.low,null);assert.equal(report.seller.upgrade_estimates.available,false);assert.equal(report.seller.target_position.label,'Target saved');
   assert.match(report.valuation.basis,/not configured/);assert(report.valuation.missingFacts.includes('home type'));
   const email=buildEmail({job_type:'email_buyer'},{...lead,property_reports:[{report_payload:report}]});
-  assert.match(email.html,/We need to complete the data check/);assert.match(email.html,/\$900,000/);assert.doesNotMatch(email.html,/Needs review|AI value · based on sold homes|appraisal value|low estimate|high estimate|Invalid Date|undefined/);
+  assert.match(email.html,/couldn’t complete the market check/);assert.match(email.html,/\$900,000/);assert.doesNotMatch(email.html,/Needs review|AI value · based on sold homes|appraisal value|low estimate|high estimate|Invalid Date|undefined/);
 });

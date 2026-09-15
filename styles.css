@@ -681,3 +681,17 @@ input[type=number]{-moz-appearance:textfield;appearance:textfield}input::-webkit
 
 /* Seller entry keeps the buyer search primary. */
 .seller-nav-link{font-size:14px;font-weight:650;text-decoration:none;color:#196b60;margin-right:18px}.seller-entry{font-size:14px;line-height:1.6;margin:18px 0;color:#63776d}.seller-entry a{color:#196b60;font-weight:650;text-underline-offset:4px}@media(max-width:650px){.seller-nav-link{display:none}.seller-entry{font-size:13px}}
+
+/* Consistent, readable feedback for every public entry form. */
+.field-error{display:block;color:#ad2929!important;font-size:12px!important;line-height:1.5;font-weight:500;margin:6px 0 0}
+.field-error[hidden]{display:none!important}
+:is(.lead-form,.discovery-form) input:focus,:is(.lead-form,.discovery-form) select:focus,.thm-select-trigger:focus-visible{border-color:#87928b;box-shadow:none;outline:1px solid #87928b;outline-offset:1px}
+.search-box:focus-within{border-color:#87928b;box-shadow:0 0 0 1px #87928b}
+input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.thm-select-trigger[aria-invalid=true]{border-color:#b83131!important;outline-color:#b83131!important}
+.search-box:has(input[aria-invalid=true]){border-color:#b83131;box-shadow:0 0 0 1px #b83131}
+.nav-actions{gap:10px}
+.nav-actions .seller-nav-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:10px 15px;border:1px solid #cbd6d0;border-radius:10px;font-size:13px;font-weight:600;color:#183330;text-decoration:none;white-space:nowrap}
+.nav-actions .seller-nav-link:hover{background:#edf2ed}
+.nav-actions .nav-cta{display:inline-flex;align-items:center;justify-content:center;gap:12px;min-height:44px;border-radius:10px;padding:11px 19px;font-size:14px;white-space:nowrap}
+@media(max-width:650px){.nav-actions{gap:7px}.nav-actions .seller-nav-link{font-size:11px;padding:8px 9px;gap:5px}.nav-actions .nav-cta{font-size:11px;padding:8px 11px;gap:6px}.nav-actions .seller-nav-link span{display:none}.nav{gap:10px}.brand-name{font-size:12px;max-width:85px}}
+@media(max-width:380px){.nav-actions .seller-nav-link{padding:8px 6px}.nav-actions .nav-cta{padding:8px 8px}.nav-actions .nav-cta span{display:none}.brand{gap:6px}.brand-name{font-size:11px}.brand-mark{width:30px;height:30px;font-size:10px}}

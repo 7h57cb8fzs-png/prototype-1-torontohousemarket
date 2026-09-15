@@ -99,6 +99,8 @@ for (const button of document.querySelectorAll("[data-scroll]")) {
   });
 }
 
+propertyInput.addEventListener("input",()=>{setInputStatus("", "Condo: 9201 Yonge St, Unit 1405, Richmond Hill. You can also use an MLS number or listing link.");});
+
 analysisForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (loading) return;
@@ -110,6 +112,7 @@ analysisForm.addEventListener("submit", async (event) => {
     return;
   }
 
+  propertyInput.setAttribute("aria-invalid","false");
   activePropertyInput = value;
   setLoading(true);
   hideResult();
@@ -118,7 +121,7 @@ analysisForm.addEventListener("submit", async (event) => {
   const mls = detectMlsKey(value);
   const apiUrl = mls && !/^https?:\/\//i.test(value)
     ? `/api/property?listingKey=${encodeURIComponent(mls)}`
-    : `/api/property?q=${encodeURIComponent(value)}`;
+    : `/api/property?q=${encodeURIComponent(value)}&strict_address=1`;
 
   try {
     const response = await fetch(apiUrl, { headers: { Accept: "application/json" }, cache: "no-store" });
@@ -157,6 +160,7 @@ function setLoading(value) {
 function setInputStatus(type, text) {
   inputStatus.className = `input-status ${type || ""}`.trim();
   inputStatus.textContent = text;
+  propertyInput.setAttribute("aria-invalid",String(type==="error"));
 }
 
 function hideResult() {
@@ -525,7 +529,7 @@ function openLeadModal(mode, includeShowing = false) {
   if (["showing","buyer_report"].includes(mode)) {
     modalEyebrow.textContent = "AI BUYER REPORT";
     modalTitle.textContent = "Your AI report starts here.";
-    modalCopy.textContent = "We’ll email your sold comparisons, price guidance and key checks. Add a private showing if you’d like a closer look.";
+    modalCopy.textContent = "We’ll email your sold comparisons, price guidance and key checks. Add a fast showing—we aim for within 24 hours, subject to availability.";
     nextStepLabel.textContent = "WHEN DO YOU WANT TO SEE IT?";
     showingTiming.innerHTML = `<option value="asap">Earliest available</option><option value="preferred_time">Choose a date &amp; time</option>`;
     $("showingTime").innerHTML = Array.from({length:24},(_,i)=>{const hour=9+Math.floor(i/2), minute=i%2?"30":"00",value=`${String(hour).padStart(2,"0")}:${minute}`;return `<option value="${value}">${hour>12?hour-12:hour}:${minute} ${hour>=12?"PM":"AM"}</option>`;}).join("");
@@ -568,7 +572,6 @@ function syncShowingChoice() {
   $('showingDate').required=calendar; $('showingTime').required=calendar;
   leadSubmit.textContent=showing?'Get report + request showing':'Get my AI report';
 }
-$('leadMobile').addEventListener('input',()=> $('leadMobile').removeAttribute('aria-invalid'));
 $('showingChoice').addEventListener('change',syncShowingChoice);
 showingTiming.addEventListener('change',syncShowingChoice);
 
@@ -586,7 +589,7 @@ leadModal.addEventListener("click", (event) => { if (event.target === leadModal)
 
 leadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!liveListing) return;
+  if (!liveListing || !THMInputs.validate(leadForm)) return;
 
   const form = new FormData(leadForm);
   const name = String(form.get("name") || "").trim();

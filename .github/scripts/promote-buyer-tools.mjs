@@ -41,7 +41,7 @@ for (const b of before.bindings.filter(b => b.type === "plain_text" && b.name !=
 }
 const schedule = await cf(`/workers/scripts/${worker}/schedules`);
 const previewOrigin = `https://${candidate.slice(0, 8)}-${worker}.7h57cb8fzs.workers.dev`;
-for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js", "select-controls.js", "seller.html", "seller.js", "seller.css"]) {
+for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js", "select-controls.js", "form-inputs.js", "seller.html", "seller.js", "seller.css"]) {
   const url = path === "index.html" ? "/" : `/${path}`;
   const response = await fetch(`${previewOrigin}${url}?release=${process.env.GITHUB_SHA}`);
   const actual = Buffer.from(await response.arrayBuffer());
@@ -132,7 +132,7 @@ try {
   for (let i = 0; i < 6; i++) { current = await activeVersion(); if (current === candidate) break; await new Promise(r => setTimeout(r, 2000)); }
   check(current === candidate, "Candidate did not become active");
   check(isDeepStrictEqual(schedule, await cf(`/workers/scripts/${worker}/schedules`)), "Cron schedule changed");
-  for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js", "select-controls.js", "seller.html", "seller.js", "seller.css"]) {
+  for (const path of ["index.html", "app.js", "styles.css", "admin.html", "admin.js", "admin.css", "showing.html", "showing.js", "select-controls.js", "form-inputs.js", "seller.html", "seller.js", "seller.css"]) {
     const url = path === "index.html" ? "/" : `/${path}`;
     let matched = false, actual, status;
     for (let attempt = 0; attempt < 12; attempt++) {
