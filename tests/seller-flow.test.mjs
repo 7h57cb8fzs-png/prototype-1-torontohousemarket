@@ -51,6 +51,18 @@ test('recent same-building condo sales take priority without using asking prices
   assert.deepEqual(calculateSellerEvidence(home,[...own,...other,...active]),result);
 });
 
+test('freehold exact-size cohorts take priority only when enough qualify in the time window',()=>{
+  const exact=[sold(2),sold(3),sold(4)];
+  const adjacent=[sold(5,{LivingAreaRange:null,BuildingAreaTotal:1400,ClosePrice:700000}),sold(6,{LivingAreaRange:null,BuildingAreaTotal:1400,ClosePrice:710000})];
+  const result=calculateSellerEvidence(subject,[...exact,...adjacent]);
+  assert.equal(result.policy.freeholdExactSizeOnly,true);
+  assert.equal(result.comparables.length,3);
+  assert.deepEqual(result,calculateSellerEvidence(subject,exact.concat(adjacent.map(r=>({...r,ClosePrice:2000000})))),'Price must not determine the comparison cohort.');
+  const sparse=calculateSellerEvidence(subject,[exact[0],...adjacent]);
+  assert.equal(sparse.policy.freeholdExactSizeOnly,false);
+  assert.equal(sparse.comparables.length,3);
+});
+
 test('a completed empty case variant cannot hide incomplete seller MLS history',async t=>{
   const history={...subject,OriginalEntryTimestamp:'2025-01-01T00:00:00Z'};
   let pages=0,fullRecordReads=0;

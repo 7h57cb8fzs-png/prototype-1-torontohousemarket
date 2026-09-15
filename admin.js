@@ -73,7 +73,7 @@ $('sellerAuditForm').addEventListener('submit',async e=>{
   const addresses=[...new Set($('sellerAuditAddresses').value.split(/\n/).map(v=>v.trim()).filter(Boolean))];
   if(!addresses.length||addresses.length>8){$('sellerAuditStatus').textContent='Enter one to eight addresses.';return;}
   $('sellerAuditRun').disabled=true;$('sellerAuditResults').replaceChildren();
-  let completed=0;
+  let completed=0,failed=0;
   try{
     for(const address of addresses){
       $('sellerAuditStatus').textContent=`Checking ${completed+1} of ${addresses.length}: ${address}`;
@@ -86,9 +86,9 @@ $('sellerAuditForm').addEventListener('submit',async e=>{
         label.textContent='Evidence and pricing details';pre.className='seller-audit-json';pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px';
         const {emailPreview,...evidence}=r;pre.textContent=JSON.stringify(evidence,null,2);detail.append(label,pre);article.append(detail);
         if(emailPreview){const preview=document.createElement('details'),caption=document.createElement('summary'),frame=document.createElement('iframe');caption.textContent='Preview this email report';frame.title='Seller email report for '+address;frame.setAttribute('sandbox','');frame.style.cssText='width:100%;height:900px;border:0;margin-top:12px';frame.srcdoc=emailPreview.html;preview.append(caption,frame);article.append(preview);}
-      }catch(error){summary.textContent='Check failed: '+error.message;}
+      }catch(error){failed++;summary.textContent='Check failed: '+error.message;}
       completed++;
     }
-    $('sellerAuditStatus').textContent=`${completed} checks completed. No leads, report jobs or emails were created.`;
+    $('sellerAuditStatus').textContent=`${completed-failed} of ${completed} checks succeeded${failed?`; ${failed} failed`:""}. No leads, report jobs or emails were created.`;
   }finally{$('sellerAuditRun').disabled=false;}
 });
