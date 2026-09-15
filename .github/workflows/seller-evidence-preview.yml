@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: thm-guarded-production
+  group: thm-seller-preview
   cancel-in-progress: false
 jobs:
   preview:
