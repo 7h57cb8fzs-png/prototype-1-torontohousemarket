@@ -3192,6 +3192,7 @@ async function publicProperty(request, env, ctx) {
     if(!addressEntry.ok)return json7({ok:false,error:addressEntry.error,inputError:true},400);
     publicUrl.searchParams.set("q",addressEntry.address);
   }
+  if(publicUrl.searchParams.get("validate_only")==="1")return addressEntry?json7({ok:true,normalizedAddress:addressEntry.address,city:addressEntry.city,unit:addressEntry.parsed.unit},200,{'Cache-Control':'no-store'}):json7({ok:false,inputError:true,error:'Enter a street address, including the city and condo unit.'},400);
   publicUrl.searchParams.set("mode", "public_snapshot");
   publicUrl.searchParams.set("snapshot_version", VERSION4);
   const cacheKey = new Request(publicUrl.toString(), { method: "GET" });

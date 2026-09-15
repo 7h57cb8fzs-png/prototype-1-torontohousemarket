@@ -23,6 +23,12 @@ test('malformed, incomplete and ambiguous inputs are rejected before any MLS que
  const missingUnit=validateAddressEntry('9201 Yonge St, Richmond Hill',{requireCity:true,requireUnit:true});assert.equal(missingUnit.ok,false);assert.match(missingUnit.error,/Add the condo unit/);
 });
 
+test('seller format preflight confirms the exact unit without waiting for MLS',async t=>{
+ t.mock.method(globalThis,'fetch',()=>{throw new Error('Format preflight must not query MLS');});
+ const response=await worker.fetch(new Request('https://torontohousemarket.com/api/property?strict_address=1&validate_only=1&q='+encodeURIComponent('175 Bamburgh Circ 306, Toronto')),{},{});
+ assert.equal(response.status,200);const body=await response.json();assert.equal(body.normalizedAddress,'175 Bamburgh Circle Unit 306, Toronto');assert.equal(body.unit,'306');assert.equal(body.city,'Toronto');
+});
+
 test('the two Bamburgh report formats recover the exact archived unit, never a neighbour',async t=>{
  // Synthetic MLS records reproduce the parser failure; no real prices or customer data.
  const matching={ListingKey:'DEMO-BAMBURGH-306',StreetNumber:'175',StreetName:'Bamburgh',StreetSuffix:'Circ',UnitNumber:'306',City:'Toronto E05',UnparsedAddress:'175 Bamburgh Circ 306 Toronto E05 ON M1W 3X8',StandardStatus:'Canceled',OriginalEntryTimestamp:'2026-08-01T00:00:00Z'};
