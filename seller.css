@@ -1,6 +1,6 @@
 /* Seller edition: a quiet, address-first invitation to a private property report. */
-.seller-page{--seller-ink:#183e36;--seller-teal:#216d60;--seller-muted:#65746a;--seller-line:#dce4da;background:#f7f7f0;color:var(--seller-ink)}
-.seller-page .site-header{background:rgba(247,247,240,.95);border-bottom:1px solid var(--seller-line)}
+.seller-page{--seller-ink:#123f39;--seller-teal:#216d60;--seller-muted:#65746a;--seller-line:#dce4da;background:#f5f2eb;color:var(--seller-ink)}
+.seller-page .site-header{background:rgba(245,242,235,.95);border-bottom:1px solid var(--seller-line)}
 .seller-page .nav{height:76px}
 .seller-page .brand{color:var(--seller-ink)}
 .seller-page .brand-mark{width:37px;height:37px;border-radius:11px;background:var(--seller-ink);box-shadow:none}
@@ -20,7 +20,7 @@
 .seller-intro>p{max-width:480px;font-size:16px;line-height:1.75;color:var(--seller-muted);margin:0}
 .seller-lookup{margin:33px 0 18px}
 .seller-lookup>label{font-size:13px;font-weight:650;display:block;margin-bottom:10px}
-.seller-address-control{display:flex;align-items:center;gap:0;padding:5px;border:1px solid #bccdc1;border-radius:13px;background:white;box-shadow:0 6px 18px #183e3605}
+.seller-address-control{display:flex;align-items:center;gap:0;padding:5px;border:1px solid #bccdc1;border-radius:13px;background:white;box-shadow:0 6px 18px #123f3905}
 .seller-address-icon{display:flex;align-items:center;padding-left:10px;color:#4c7a68;flex-shrink:0}
 .seller-page .seller-address-control input{border:0;border-radius:7px;background:transparent;min-height:50px;padding:11px 10px;font-size:14px;flex:1;min-width:0}
 .seller-page .primary-btn{display:inline-flex;align-items:center;justify-content:center;gap:14px;min-height:50px;border-radius:9px;padding:13px 19px;background:var(--seller-ink);color:#fff;font-size:13px;font-weight:650;text-decoration:none;line-height:1.4;box-shadow:none}
@@ -99,7 +99,7 @@
 .seller-team-action>a:hover{color:var(--seller-teal);border-color:var(--seller-teal)}
 .seller-team-action>a>span{font-size:18px;font-weight:400}
 .seller-team-action>small{font-size:10px;color:#708171}
-.seller-page .team-footer{padding:28px 0;background:#183e36}
+.seller-page .team-footer{padding:28px 0;background:#123f39}
 .seller-footer-inner{display:flex;justify-content:space-between;align-items:center;gap:40px;max-width:1120px}
 .seller-footer-inner strong{font-size:14px;letter-spacing:-.01em}
 .seller-page .seller-footer-inner p{font-size:11px;line-height:1.8;color:#c0d2c5;margin:9px 0 0}

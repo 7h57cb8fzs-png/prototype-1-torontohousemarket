@@ -71,7 +71,7 @@
       const response=await fetch('/api/lead',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lead_mode:'seller',showing_requested:false,name:$('sellerName').value.trim(),email:$('sellerEmail').value.trim(),mobile,property_input:address,resolved_address:address,seller_profile:profile,request_key:requestKey,page_url:location.href,website:$('sellerWebsite').value})});
       const data=await response.json();if(!response.ok||!data.ok||!data.lead_id)throw new Error(data.error||'Your request could not be saved. Please try again.');
       $('sellerBuilder').hidden=true;$('sellerSuccess').hidden=false;$('sellerSuccessNote').textContent=`We’ve saved your review for ${address}. Your seller report will be sent to ${$('sellerEmail').value.trim()}.`;$('sellerSuccess').focus();$('sellerSuccess').scrollIntoView({block:'center',behavior:'smooth'});window.gtag?.('event','seller_report_requested');
-    }catch(error){$('sellerError').textContent=error.message||'Please try again.';}finally{$('sellerSubmit').disabled=false;$('sellerSubmit').textContent='Get my AI value report';}
+    }catch(error){$('sellerError').textContent=error.message||'Please try again.';}finally{$('sellerSubmit').disabled=false;$('sellerSubmit').textContent='Get my selling price report';}
   });
   const initial=new URLSearchParams(location.search).get('address');if(initial)$('sellerAddress').value=initial.slice(0,500);
 })();

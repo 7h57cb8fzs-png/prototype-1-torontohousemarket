@@ -1,0 +1,38 @@
+{
+  "source": "Four user-provided unavailable-listing screenshots, September 15 2026",
+  "status": "Selected; live checks pending admin sign-in",
+  "properties": [
+    {
+      "group": "Richmond Hill condos",
+      "address": "185 Oneida Cres Unit 816, Richmond Hill"
+    },
+    {
+      "group": "Richmond Hill condos",
+      "address": "19 Northern Heights Dr Unit 413, Richmond Hill"
+    },
+    {
+      "group": "Toronto condos",
+      "address": "10 Torresdale Ave Unit 1406, Toronto"
+    },
+    {
+      "group": "Toronto condos",
+      "address": "18 Hollywood Ave Unit 206, Toronto"
+    },
+    {
+      "group": "Toronto houses",
+      "address": "18 Ferris Rd, Toronto"
+    },
+    {
+      "group": "Toronto houses",
+      "address": "204 Derrydown Rd, Toronto"
+    },
+    {
+      "group": "Richmond Hill houses",
+      "address": "168 Ruggles Ave, Richmond Hill"
+    },
+    {
+      "group": "Richmond Hill houses",
+      "address": "178 Alpine Cres, Richmond Hill"
+    }
+  ]
+}
