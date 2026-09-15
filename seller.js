@@ -13,30 +13,34 @@
     setValue('sellerSize',bands.includes(String(value).replace(/[–—]/g,'-')) ? String(value).replace(/[–—]/g,'-') : value ? 'unknown' : '');
   }
   $('sellerType').addEventListener('change',()=>fillSizes($('sellerSize').value));
-  $('sellerAddress').addEventListener('input',()=>{lookupSequence++;$('sellerFind').disabled=false;$('sellerBuilder').hidden=true;matched=null;address='';$('sellerLookupStatus').classList.remove('is-error');$('sellerAddress').setCustomValidity('');THMInputs.error($('sellerAddress'),'');$('sellerLookupStatus').textContent='Condo: 9201 Yonge St, Unit 1405, Richmond Hill. House: 18 Ferris Rd, Toronto.';});
+  const addressControl=THMAddress.attach({input:$('sellerAddress'),unit:$('sellerUnit'),panel:$('sellerSuggestions'),status:$('sellerLookupStatus'),onChange:()=>{
+    lookupSequence++;$('sellerFind').disabled=false;$('sellerBuilder').hidden=true;matched=null;address='';$('sellerLookupStatus').classList.remove('is-error');$('sellerLookupStatus').textContent='Enter your street address. City is optional.';
+  }});
   fillSizes();
   function validateForm(){return THMInputs.validate($('sellerForm'));}
   $('sellerChangeAddress').addEventListener('click',()=>{$('sellerBuilder').hidden=true;$('sellerLookup').scrollIntoView({block:'center',behavior:'smooth'});$('sellerAddress').focus();});
   $('sellerLookup').addEventListener('submit',async event=>{
-    event.preventDefault();if(!THMInputs.validate($('sellerLookup')))return;
-    const entered=$('sellerAddress').value.trim(), sequence=++lookupSequence;
+    event.preventDefault();const entered=await addressControl.prepare();if(!entered||!THMInputs.validate($('sellerLookup')))return;
+    const sequence=++lookupSequence;
     $('sellerLookupStatus').classList.remove('is-error');THMInputs.error($('sellerAddress'),'');
     $('sellerFind').disabled=true;$('sellerLookupStatus').textContent='Looking for home details…';
     let canonical=entered, formatChecked=false, detailsUnavailable=false, candidate=null;
     try {
-      const validation=await fetch(`/api/property?q=${encodeURIComponent(entered)}&strict_address=1&validate_only=1`,{signal:AbortSignal.timeout(8000)});
+      const validation=await fetch(`/api/property?q=${encodeURIComponent(entered)}&validate_only=1`,{signal:AbortSignal.timeout(8000)});
       const checked=await validation.json();
       if(!validation.ok||!checked.ok)throw Object.assign(new Error(checked.error||'We couldn’t check the address. Please try again or call 647-890-4704.'),{inputError:!!checked.inputError});
       if(sequence!==lookupSequence)return;canonical=checked.normalizedAddress;formatChecked=true;
-      const response=await fetch(`/api/property?q=${encodeURIComponent(entered)}&mode=public_snapshot&strict_address=1`,{signal:AbortSignal.timeout(25000)});
+      const response=await fetch(`/api/property?q=${encodeURIComponent(entered)}&mode=public_snapshot`,{signal:AbortSignal.timeout(25000)});
       const data=await response.json();
-      if(!response.ok)throw Object.assign(new Error(data.error||'We couldn’t check the address. Please try again or call 647-890-4704.'),{inputError:!!data.inputError});
+      if(!response.ok)throw Object.assign(new Error(data.error||'We couldn’t check the address. Please try again or call 647-890-4704.'),{inputError:!!data.inputError,unitRequired:!!data.unitRequired,cityChoices:data.cityChoices});
       const p=data?.property;canonical=data.normalizedAddress||entered;
       candidate=response.ok && p?.listingKey && !p.displayRestricted ? p : null;
     }catch(error){
       if(sequence!==lookupSequence)return;
+      if(error.cityChoices){matched=null;$('sellerBuilder').hidden=true;$('sellerLookupStatus').textContent='Choose the matching city below.';addressControl.showCities(error.cityChoices);$('sellerFind').disabled=false;return;}
       if(!formatChecked||error.inputError){
         matched=null;$('sellerBuilder').hidden=true;
+        if(error.unitRequired){addressControl.requireUnit();$('sellerLookupStatus').textContent='';$('sellerFind').disabled=false;return;}
         const message=error.inputError?error.message:'We couldn’t check the address just now. Please try again or call 647-890-4704.';
         $('sellerLookupStatus').textContent=error.inputError?'':message;$('sellerAddress').setCustomValidity(error.inputError?message:'');if(error.inputError)THMInputs.error($('sellerAddress'),message);$('sellerLookupStatus').classList.add('is-error');$('sellerFind').disabled=false;return;
       }
@@ -46,12 +50,12 @@
     matched=candidate;
 
     // Keep the matched canonical address and exact unit; otherwise retain the entered address.
-    address=matched?.address||canonical;$('sellerAddress').value=address;requestKey=crypto.randomUUID();
+    address=matched?.address||canonical;addressControl.set(address);requestKey=crypto.randomUUID();
     $('sellerForm').reset();fillSizes();
     $('sellerHomeDetails').open=false;
     $('sellerSelectedAddress').textContent=address;
     $('sellerMatch').hidden=false;$('sellerPhoto').hidden=true;
-    $('sellerMatchText').textContent=matched?'Address matched to a listing record. You can check or correct its details below.':detailsUnavailable?'Your address format is checked. Listing details are taking longer to load; you can continue and we’ll review the available records for your report.':'We’ll check past listing records for this address when preparing your report. Please confirm the address and unit shown above.';
+    $('sellerMatchText').textContent=matched?'Address matched to a listing record. You can check or correct its details below.':detailsUnavailable?'Your address is ready to confirm. Listing details are taking longer to load; you can continue and we’ll review the available records for your report.':'We’ll check past listing records for this address when preparing your report. Please confirm the address and unit shown above.';
     if(matched){
       setValue('sellerType',matched.propertySubType);fillSizes(matched.livingAreaRange);
       const city=String(matched.city||'').startsWith('Toronto')?'Toronto':matched.city;
@@ -63,7 +67,7 @@
       if(photo && (/^https:\/\//.test(photo)||/^\/api\//.test(photo))){$('sellerPhoto').src=photo;$('sellerPhoto').hidden=false;}
     }
     if(!$('sellerCity').value){const cities=[...$('sellerCity').options].map(o=>o.value).filter(Boolean);const city=cities.find(city=>address.toLowerCase().includes(city.toLowerCase()));if(city)setValue('sellerCity',city);}
-    $('sellerLookupStatus').textContent=matched?'Home details ready to review.':'Address format checked. Please confirm your home below.';
+    $('sellerLookupStatus').textContent=matched?'Home details ready to review.':'Please confirm your home below.';
     $('sellerBuilder').hidden=false;$('sellerSuccess').hidden=true;$('sellerFind').disabled=false;$('sellerAddressBadge').textContent=matched?'ADDRESS MATCHED':'ADDRESS TO CONFIRM';$('sellerFactsSummary').textContent=[matched?.propertySubType,matched?.livingAreaRange?matched.livingAreaRange+' sq ft':null,matched?.cityRegion].filter(Boolean).join(' · ');$('sellerBuilder').scrollIntoView({block:'start',behavior:'smooth'});
     window.gtag?.('event','seller_address_started',{lookup_matched:!!matched});
   });
@@ -71,6 +75,7 @@
   $('sellerForm').noValidate=true;
   $('sellerForm').addEventListener('submit',async event=>{
     event.preventDefault();
+    if(/condo/i.test($('sellerType').value)&&!THMAddress.split(address).unit){$('sellerBuilder').hidden=true;addressControl.requireUnit();$('sellerLookup').scrollIntoView({block:'center',behavior:'smooth'});return;}
     const mobile=THMInputs.phone($('sellerMobile').value);$('sellerMobile').setCustomValidity(mobile?'':THMInputs.phoneHelp);
     const price=id=>$(id).value.trim()?Number($(id).value.replace(/[$,\s]/g,'')):null;
     const targetMin=price('sellerTargetMin'),targetMax=price('sellerTargetMax');
@@ -86,5 +91,5 @@
       $('sellerBuilder').hidden=true;$('sellerSuccess').hidden=false;$('sellerSuccessNote').textContent=`We’ve saved your review for ${address}. Your seller report will be sent to ${$('sellerEmail').value.trim()}.`;$('sellerSuccess').focus();$('sellerSuccess').scrollIntoView({block:'center',behavior:'smooth'});window.gtag?.('event','seller_report_requested');
     }catch(error){$('sellerError').textContent=error.message||'Please try again.';}finally{$('sellerSubmit').disabled=false;$('sellerSubmit').textContent='Get my selling price report';}
   });
-  const initial=new URLSearchParams(location.search).get('address');if(initial)$('sellerAddress').value=initial.slice(0,500);
+  const initial=new URLSearchParams(location.search).get('address');if(initial)addressControl.set(initial.slice(0,500));
 })();

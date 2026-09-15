@@ -22,13 +22,14 @@ jobs:
           node --check worker-v11.js
           node --check seller.js
           node --check form-inputs.js
+          node --check address-input.js
           node --check app.js
-          node --test tests/seller-flow.test.mjs tests/email-copy.test.mjs tests/address-search.test.mjs tests/form-validation.test.mjs
+          node --test tests/seller-flow.test.mjs tests/email-copy.test.mjs tests/address-search.test.mjs tests/form-validation.test.mjs tests/address-autocomplete.test.mjs
       - name: Prepare guarded preview
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          EXPECTED_ACTIVE_SHA: 871df70ace83b34fefbf43f7f0ddffb22f6f5a31b6740f12bd9de8dc3fa2b050
+          EXPECTED_ACTIVE_SHA: 8bced649a3f18405e0709079481fc02da0ee6a2e2ad1b923852a6050224782a5
           PREVIEW_ONLY: 'true'
         run: node .github/scripts/ten-property-audit.mjs
       - name: Verify preview assets and existing seller evidence

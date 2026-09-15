@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=129" />
+  <link rel="stylesheet" href="/styles.css?v=130" />
 </head>
 <body>
 <header class="site-header">
@@ -32,13 +32,17 @@
       <h1>Get the AI property report.<br><span>See it within 24 hours.*</span></h1>
       <p class="hero-copy">Get the AI buyer report for a home you like. See the sold comparisons, understand the price and add a fast showing whenever you’re ready.</p>
 
+      <div class="address-search-anchor buyer-address-anchor">
       <form id="analysisForm" class="search-box" novalidate>
         <div class="search-input-wrap">
           <span class="search-icon" aria-hidden="true">⌕</span>
-          <input id="propertyInput" name="property" autocomplete="off" aria-label="MLS number, street address, or listing URL" placeholder="MLS #, street address, or listing URL" required />
+          <input id="propertyInput" name="property" autocomplete="off" spellcheck="false" maxlength="300" aria-label="MLS number, street address, or listing URL" placeholder="MLS #, street address, or listing URL" required />
         </div>
         <button id="lookupButton" class="primary-btn hero-cta" type="submit">Preview this home →</button>
       </form>
+      <div id="buyerSuggestions" class="address-suggestions" hidden><p role="status" class="address-suggestion-note"></p><ul id="buyerAddressOptions" role="listbox" aria-label="Suggested addresses"></ul><div class="address-attribution"><a href="/address-search.html" target="_blank" rel="noopener">Privacy &amp; terms</a><span translate="no">Google Maps</span></div></div>
+      </div>
+      <div class="address-unit-row buyer-unit-row"><label for="buyerUnit">Unit / suite <span>if applicable</span><input id="buyerUnit" form="analysisForm" autocomplete="address-line2" placeholder="Unit number" maxlength="15" spellcheck="false"></label><small>For condos and apartments.</small></div>
       <div id="inputStatus" class="input-status" aria-live="polite">Free property preview · No sign-up</div>
       <p class="hero-ai-note"><strong>Your AI report. A showing if you want one.</strong> One short form. Your report arrives by email.</p>
 
@@ -315,6 +319,6 @@
 </div>
 
 <div id="mobileShowing" class="mobile-showing hidden"><div><small>AI REPORT · SHOWING OPTIONAL</small><strong id="mobileAsking"></strong></div><button id="mobileShowingButton" class="primary-btn" type="button">Get my AI report</button></div>
-<script src="/form-inputs.js?v=129" defer></script><script src="/app.js?v=129" defer></script>
+<script src="/form-inputs.js?v=129" defer></script><script src="/address-input.js?v=130" defer></script><script src="/app.js?v=130" defer></script>
 <script src="/select-controls.js?v=114" defer></script></body>
 </html>

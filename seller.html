@@ -9,8 +9,8 @@
   <meta property="og:url" content="https://torontohousemarket.com/seller.html">
   <link rel="canonical" href="https://torontohousemarket.com/seller.html">
   <title>Your Home’s Value | Toronto House Market</title>
-  <link rel="stylesheet" href="/styles.css?v=129">
-  <link rel="stylesheet" href="/seller.css?v=129">
+  <link rel="stylesheet" href="/styles.css?v=130">
+  <link rel="stylesheet" href="/seller.css?v=130">
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-44826VKX1E"></script>
   <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-44826VKX1E');</script>
 </head>
@@ -31,12 +31,16 @@
         <p>Thinking of selling, or just curious? See what recent sales and today’s competition could mean for your home—even if it isn’t listed.</p>
         <form id="sellerLookup" class="seller-lookup" novalidate>
           <label for="sellerAddress">Start with your home’s address</label>
+          <div class="address-search-anchor">
           <div class="seller-address-control">
             <span class="seller-address-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" width="21" height="21"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.8" stroke="currentColor" stroke-width="1.6"/></svg></span>
-            <input id="sellerAddress" autocomplete="street-address" required maxlength="300" placeholder="Street address, unit and city" aria-describedby="sellerLookupStatus">
+            <input id="sellerAddress" autocomplete="off" spellcheck="false" required maxlength="300" placeholder="Start with your street address" aria-describedby="sellerLookupStatus">
             <button class="primary-btn" id="sellerFind" type="submit">Find my home <span aria-hidden="true">→</span></button>
           </div>
-          <p id="sellerLookupStatus" role="status">Condo: 9201 Yonge St, Unit 1405, Richmond Hill. House: 18 Ferris Rd, Toronto.</p>
+          <div id="sellerSuggestions" class="address-suggestions" hidden><p role="status" class="address-suggestion-note"></p><ul id="sellerAddressOptions" role="listbox" aria-label="Suggested addresses"></ul><div class="address-attribution"><a href="/address-search.html" target="_blank" rel="noopener">Privacy &amp; terms</a><span translate="no">Google Maps</span></div></div>
+          </div>
+          <div class="address-unit-row"><label for="sellerUnit">Unit / suite <span>if applicable</span><input id="sellerUnit" autocomplete="address-line2" placeholder="Unit number" maxlength="15" spellcheck="false"></label><small>For condos and apartments.</small></div>
+          <p id="sellerLookupStatus" role="status">Enter your street address. City is optional.</p>
         </form>
         <div class="seller-proof"><span>Private email report</span><span>No obligation to list</span></div>
       </section>
@@ -70,7 +74,7 @@
           <p class="seller-help">We’ll check available past listings when preparing your report. Correct anything that has changed, or add what you know.</p>
           <div class="seller-fields">
             <label>Home type<select id="sellerType"><option value="">Not sure yet</option><option>Detached</option><option>Semi-Detached</option><option>Att/Row/Townhouse</option><option>Condo Apartment</option><option>Condo Townhouse</option><option>Duplex</option></select></label>
-            <label>City<select id="sellerCity" required><option value="">Confirm city</option><option>Toronto</option><option>Richmond Hill</option><option>Vaughan</option><option>Markham</option><option>Aurora</option><option>Newmarket</option><option>King</option><option>Mississauga</option><option>Brampton</option><option>Oakville</option><option>Burlington</option><option>Milton</option><option>Pickering</option><option>Ajax</option><option>Whitby</option><option>Oshawa</option></select></label>
+            <label>City<select id="sellerCity"><option value="">Not sure yet</option><option>Toronto</option><option>Richmond Hill</option><option>Vaughan</option><option>Markham</option><option>Aurora</option><option>Newmarket</option><option>King</option><option>Mississauga</option><option>Brampton</option><option>Oakville</option><option>Burlington</option><option>Milton</option><option>Pickering</option><option>Ajax</option><option>Whitby</option><option>Oshawa</option></select></label>
             <label>Community<input id="sellerCommunity" maxlength="100" autocomplete="off"><small>Neighbourhood name; leave blank if unsure.</small></label>
             <label>Interior size<select id="sellerSize"><option value="">Not sure yet</option></select><small>Use your floor plan or listing size; exclude basement area for a house.</small></label>
             <label>Bedrooms above ground<input id="sellerBeds" type="number" min="0" max="20" step="1" inputmode="numeric"></label>
@@ -130,7 +134,8 @@
     <div class="wrap seller-footer-inner"><div><strong>Toronto House Market</strong><p>Alireza Golestan &amp; Mehrdad Golestan · Sales Representatives<br>CENTURY 21 Leading Edge Realty Inc., Brokerage</p></div><small>Preliminary market guidance, not an appraisal or a guaranteed sale price.</small></div>
   </footer>
   <script src="/form-inputs.js?v=129" defer></script>
-  <script src="/seller.js?v=129" defer></script>
+  <script src="/address-input.js?v=130" defer></script>
+  <script src="/seller.js?v=130" defer></script>
   <script src="/select-controls.js?v=114" defer></script>
 </body>
 </html>

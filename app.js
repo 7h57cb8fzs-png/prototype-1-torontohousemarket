@@ -83,6 +83,7 @@ let photos = [];
 let galleryIndex = 0;
 let currentLeadMode = "showing";
 let loading = false;
+let buyerLookupSequence = 0;
 let schoolSequence = 0;
 let schoolController = null;
 let homeAiSequence = 0;
@@ -99,13 +100,15 @@ for (const button of document.querySelectorAll("[data-scroll]")) {
   });
 }
 
-propertyInput.addEventListener("input",()=>{setInputStatus("", "Condo: 9201 Yonge St, Unit 1405, Richmond Hill. You can also use an MLS number or listing link.");});
+const buyerAddressControl=THMAddress.attach({input:propertyInput,unit:$("buyerUnit"),panel:$("buyerSuggestions"),status:inputStatus,onChange:()=>{buyerLookupSequence++;setLoading(false);hideResult();liveListing=null;setInputStatus("", "Enter a street address, MLS number or listing link. City is optional.");}});
 
 analysisForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (loading) return;
 
-  const value = propertyInput.value.trim();
+  const value = await buyerAddressControl.prepare();
+  if(value===null)return;
+  const sequence=++buyerLookupSequence;
   if (!value) {
     setInputStatus("error", "Enter an MLS number, street address, or listing URL.");
     propertyInput.focus();
@@ -121,16 +124,18 @@ analysisForm.addEventListener("submit", async (event) => {
   const mls = detectMlsKey(value);
   const apiUrl = mls && !/^https?:\/\//i.test(value)
     ? `/api/property?listingKey=${encodeURIComponent(mls)}`
-    : `/api/property?q=${encodeURIComponent(value)}&strict_address=1`;
+    : `/api/property?q=${encodeURIComponent(value)}`;
 
   try {
     const response = await fetch(apiUrl, { headers: { Accept: "application/json" }, cache: "no-store" });
     const result = await response.json().catch(() => null);
+    if(sequence!==buyerLookupSequence)return;
     if (!response.ok || !result?.ok || !result?.property) {
-      throw new Error(result?.error || "We could not check that property right now.");
+      throw Object.assign(new Error(result?.error || "We could not check that property right now."),{inputError:!!result?.inputError,unitRequired:!!result?.unitRequired,cityChoices:result?.cityChoices});
     }
 
     liveListing = result.property;
+    if(result.normalizedAddress)buyerAddressControl.set(result.normalizedAddress);
     renderListing(liveListing);
     showResult();
     loadPriceCheck(liveListing);
@@ -142,11 +147,14 @@ analysisForm.addEventListener("submit", async (event) => {
     setInputStatus(liveListing.foundInMls === false ? "error" : "ok", verification);
     snapshotSection.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
+    if(sequence!==buyerLookupSequence)return;
     liveListing = null;
     hideResult();
-    setInputStatus("error", error instanceof Error ? error.message : "We could not check that property right now.");
+    if(error.cityChoices){setInputStatus("", "Choose the matching city below.");buyerAddressControl.showCities(error.cityChoices);}
+    else if(error.unitRequired){setInputStatus("", "");buyerAddressControl.requireUnit();}
+    else setInputStatus(error.inputError?"error":"", error instanceof Error ? error.message : "We could not check that property right now.");
   } finally {
-    setLoading(false);
+    if(sequence===buyerLookupSequence)setLoading(false);
   }
 });
 

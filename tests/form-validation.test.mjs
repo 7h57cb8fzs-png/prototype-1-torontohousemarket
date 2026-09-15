@@ -14,13 +14,13 @@ test('common condo formats preserve the street, city and exact unit',()=>{
  }
 });
 
-test('malformed, incomplete and ambiguous inputs are rejected before any MLS query',async t=>{
+test('malformed and incomplete street inputs are rejected before any MLS query',async t=>{
  t.mock.method(globalThis,'fetch',()=>{throw new Error('Invalid addresses must not query MLS');});
- for(const address of ['9201 Yonge St1405, Richmond Hill','Yonge St, Richmond Hill','9201 Yonge St, Unit, Richmond Hill','175 Bamburgh Circ 306']){
+ for(const address of ['9201 Yonge St1405, Richmond Hill','Yonge St, Richmond Hill','9201 Yonge St, Unit, Richmond Hill']){
   const r=await worker.fetch(new Request('https://torontohousemarket.com/api/property?strict_address=1&q='+encodeURIComponent(address)),{},{});
-  assert.equal(r.status,400,address);const body=await r.json();assert.match(body.error,/Condo example:/);assert.equal(body.inputError,true);
+  assert.equal(r.status,400,address);const body=await r.json();assert.doesNotMatch(body.error,/Yonge|Ferris|example:/);assert.equal(body.inputError,true);
  }
- const missingUnit=validateAddressEntry('9201 Yonge St, Richmond Hill',{requireCity:true,requireUnit:true});assert.equal(missingUnit.ok,false);assert.match(missingUnit.error,/Add the condo unit/);
+ const missingUnit=validateAddressEntry('9201 Yonge St, Richmond Hill',{requireCity:true,requireUnit:true});assert.equal(missingUnit.ok,false);assert.match(missingUnit.error,/Add your unit number/);
 });
 
 test('seller format preflight confirms the exact unit without waiting for MLS',async t=>{

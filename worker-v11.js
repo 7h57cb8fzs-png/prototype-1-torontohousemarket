@@ -5,6 +5,8 @@ var __name = (target, value) => __defProp(target, "name", { value, configurable:
 var worker_default = {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/address-suggestions" && request.method === "POST") return addressSuggestions(request, env);
+    if (url.pathname === "/api/address-selection" && request.method === "POST") return addressSuggestions(request, env, true);
     if (url.pathname === "/api/property" && request.method === "GET") {
       return handleProperty(request, env);
     }
@@ -2616,6 +2618,7 @@ var worker_v10_default = {
         const parsed = parseAddress5(addressQuery);
         if (parsed.number && parsed.name) {
           const match = await resolveAddress3(parsed, env);
+          if(match?.ambiguousCities)return json6({ok:false,cityChoices:match.ambiguousCities,error:'More than one city has this address. Choose the matching city.'},409);
           if (match?.ListingKey) {
             const direct = new URL(url.origin + "/api/property");
             forwardPublicSnapshot(url, direct);
@@ -2766,6 +2769,8 @@ function selectExactAddressMatch(a, rows) {
     if (y.score !== x.score) return y.score - x.score;
     return recordTime3(y.r) - recordTime3(x.r);
   });
+  const cities=[...new Set(exact.map(x=>String(x.r.City||'').replace(/^toronto\s+[cew]\d{2}$/i,'Toronto')).filter(Boolean))];
+  if(!a.city&&cities.length>1)return {ambiguousCities:cities};
   return exact[0]?.r || null;
 }
 __name(selectExactAddressMatch, "selectExactAddressMatch");
@@ -3115,7 +3120,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "address-feedback-v129-20260915";
+var VERSION4 = "address-autocomplete-v130-20260915";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3183,16 +3188,73 @@ function previewLayout(url) {
   return new Response(`<!doctype html><html><head><meta name="viewport" content="width=device-width"><title>THM responsive preview</title></head><body style="margin:24px;background:#e8edf0;font:16px system-ui;color:#123f39"><h1>390px mobile layout · ${html(view)}</h1><p>Visual review only. Email examples contain synthetic data.</p><iframe title="Mobile layout" ${frame} width="390" height="1100" style="border:1px solid #a7b1c2;background:white"></iframe>${email?`<iframe title="Desktop email" srcdoc="${html(email.html)}" width="700" height="1100" style="border:1px solid #a7b1c2;vertical-align:top"></iframe>`:''}</body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}});
 }
 
+// Optional address completion. Uses Places only; never queries IDX/VOW while typing.
+// Activate with the server-side GOOGLE_PLACES_API_KEY secret after billing/quota setup.
+const addressSearchBudget = new Map();
+function addressSearchCity(components) {
+  const values=['locality','administrative_area_level_3','sublocality_level_1'].map(type=>components.find(c=>c.types?.includes(type))?.longText||'');
+  const aliases={'north york':'Toronto','east york':'Toronto','york':'Toronto','etobicoke':'Toronto','scarborough':'Toronto','woodbridge':'Vaughan','maple':'Vaughan','concord':'Vaughan'};
+  for(const value of values){const city=SELLER_CITIES.find(c=>c.toLowerCase()===value.toLowerCase());if(city)return city;}
+  for(const value of values)if(aliases[value.toLowerCase()])return aliases[value.toLowerCase()];
+  return '';
+}
+function addressFromPlace(place) {
+  const components=Array.isArray(place?.addressComponents)?place.addressComponents:[];
+  const get=(type,short=false)=>components.find(c=>c.types?.includes(type))?.[short?'shortText':'longText']||'';
+  if(get('country',true)!=='CA'||get('administrative_area_level_1',true)!=='ON')return null;
+  const number=get('street_number'),route=get('route'),city=addressSearchCity(components);
+  if(!/^\d+[a-z]?$/i.test(number)||!route||!city)return null;
+  return {street:`${number} ${route}`,city,unit:get('subpremise'),postalCode:get('postal_code'),address:`${number} ${route}, ${city}`};
+}
+async function addressSuggestions(request,env,selection=false) {
+  const headers={'Cache-Control':'no-store'};
+  const origin=new URL(request.url).origin;
+  if(request.headers.get('Origin')!==origin)return json7({ok:false,error:'Please search from the property page.'},403,headers);
+  if(!env.GOOGLE_PLACES_API_KEY)return json7({ok:true,available:false,suggestions:[]},200,headers);
+  const body=await request.json().catch(()=>null);
+  if(!body||typeof body!=='object'||Array.isArray(body))return json7({ok:false,error:'Please try your address again.'},400,headers);
+  const session=String(body.sessionToken||'');
+  if(!/^[a-zA-Z0-9_-]{16,36}$/.test(session))return json7({ok:false,error:'Please try your address again.'},400,headers);
+  const q=String(body.q||'').trim(),placeId=String(body.placeId||'');
+  if(selection?!/^[a-zA-Z0-9_-]{10,256}$/.test(placeId):q.length>180||!/^\d+[a-z]?\s+[a-z][a-z0-9 .'-]*(?:,.*)?$/i.test(q)||q.replace(/[^a-z]/ig,'').length<3)return json7({ok:true,available:true,suggestions:[]},200,headers);
+  const now=Date.now(),budgetKey=(request.headers.get('CF-Connecting-IP')||'unknown')+(selection?':select':':suggest');
+  if(addressSearchBudget.size>5000)for(const [key,bucket] of addressSearchBudget)if(bucket.until<=now)addressSearchBudget.delete(key);
+  const bucket=addressSearchBudget.get(budgetKey);
+  if(bucket&&bucket.until>now&&bucket.count>=(selection?12:45))return json7({ok:false,available:false,error:'Suggestions are paused. You can still enter your address.'},429,{...headers,'Retry-After':'60'});
+  addressSearchBudget.set(budgetKey,bucket&&bucket.until>now?{...bucket,count:bucket.count+1}:{count:1,until:now+60000});
+  const googleHeaders={'Content-Type':'application/json','X-Goog-Api-Key':env.GOOGLE_PLACES_API_KEY};
+  try{
+    let response;
+    if(selection){
+      googleHeaders['X-Goog-FieldMask']='addressComponents';
+      const url=new URL('https://places.googleapis.com/v1/places/'+encodeURIComponent(placeId));
+      url.searchParams.set('sessionToken',session);url.searchParams.set('languageCode','en');url.searchParams.set('regionCode','ca');
+      response=await fetch(url,{headers:googleHeaders,signal:AbortSignal.timeout(5000)});
+    }else{
+      googleHeaders['X-Goog-FieldMask']='suggestions.placePrediction.placeId,suggestions.placePrediction.text.text';
+      response=await fetch('https://places.googleapis.com/v1/places:autocomplete',{method:'POST',headers:googleHeaders,signal:AbortSignal.timeout(5000),body:JSON.stringify({input:q,sessionToken:session,includedRegionCodes:['ca'],includedPrimaryTypes:['street_address','premise','subpremise'],languageCode:'en',regionCode:'ca',locationRestriction:{rectangle:{low:{latitude:43.25,longitude:-80.25},high:{latitude:44.5,longitude:-78.45}}}})});
+    }
+    if(!response.ok)throw new Error('Address service unavailable');
+    const data=await response.json();
+    if(selection){
+      const address=addressFromPlace(data);
+      return address?json7({ok:true,available:true,...address},200,headers):json7({ok:false,available:true,error:'Please enter the full street address for a home in the Greater Toronto Area.'},422,headers);
+    }
+    const suggestions=(data.suggestions||[]).map(s=>s.placePrediction).filter(p=>p?.placeId&&/^\d+[a-z]?\s/i.test(p.text?.text||'')).slice(0,5).map(p=>({placeId:p.placeId,label:p.text.text}));
+    return json7({ok:true,available:true,suggestions},200,headers);
+  }catch{return json7({ok:true,available:false,suggestions:[]},200,headers);}
+}
+
 async function publicProperty(request, env, ctx) {
   const publicUrl = new URL(request.url);
   let addressEntry=null;
   const query=publicUrl.searchParams.get("q")||"";
   if(query&&!publicUrl.searchParams.get("listingKey")&&!/^[A-Z]\d{7,9}$/i.test(query)&&!/^https?:\/\//i.test(query)){
-    addressEntry=validateAddressEntry(query,{requireCity:publicUrl.searchParams.get("strict_address")==="1"});
+    addressEntry=validateAddressEntry(query);
     if(!addressEntry.ok)return json7({ok:false,error:addressEntry.error,inputError:true},400);
     publicUrl.searchParams.set("q",addressEntry.address);
   }
-  if(publicUrl.searchParams.get("validate_only")==="1")return addressEntry?json7({ok:true,normalizedAddress:addressEntry.address,city:addressEntry.city,unit:addressEntry.parsed.unit},200,{'Cache-Control':'no-store'}):json7({ok:false,inputError:true,error:'Enter a street address, including the city and condo unit.'},400);
+  if(publicUrl.searchParams.get("validate_only")==="1")return addressEntry?json7({ok:true,normalizedAddress:addressEntry.address,city:addressEntry.city,unit:addressEntry.parsed.unit},200,{'Cache-Control':'no-store'}):json7({ok:false,inputError:true,error:'Enter the street number and street name.'},400);
   publicUrl.searchParams.set("mode", "public_snapshot");
   publicUrl.searchParams.set("snapshot_version", VERSION4);
   const cacheKey = new Request(publicUrl.toString(), { method: "GET" });
@@ -3202,8 +3264,11 @@ async function publicProperty(request, env, ctx) {
   let response = await worker_v10_default.fetch(new Request(publicUrl.toString(), { method: "GET", headers: request.headers }), env, ctx);
   let body = await response.clone().json().catch(() => null);
   if (!response.ok || !body?.property) return response;
-  if(addressEntry&&!addressEntry.parsed.unit&&body.property.listingKey&&isCondominiumProperty({PropertySubType:body.property.propertySubType,PropertyType:body.property.propertyType}))return json7({ok:false,inputError:true,error:"Add your condo unit so we match the right home. For example: 9201 Yonge St, Unit 1405, Richmond Hill."},400);
-  if(addressEntry)body.normalizedAddress=addressEntry.address;
+  if(addressEntry&&!addressEntry.parsed.unit&&body.property.listingKey&&isCondominiumProperty({PropertySubType:body.property.propertySubType,PropertyType:body.property.propertyType}))return json7({ok:false,inputError:true,unitRequired:true,error:"Add your unit number in the Unit / suite field so we can find the right condo."},400);
+  if(addressEntry){
+    const matchedCity=body.property.listingKey?splitAddressCity(body.property.address||'').city||splitAddressCity('Home, '+(body.property.city||'')).city:'';
+    body.normalizedAddress=validateAddressEntry(addressEntry.address,{city:matchedCity}).address;
+  }
   if (!body.property.forSale && !body.property.forLease) {
     body.property.remarks = null;
     body.property.photos = [];
@@ -4261,7 +4326,7 @@ async function createBuyerRequest(request, env, ctx, manual = false) {
   if(intent.lead_mode==='seller' && input.seller_profile){
     try{
       const profile=validateSellerProfile(input.seller_profile);
-      const checked=validateAddressEntry(data.property_input,{requireCity:true,city:profile.city,requireUnit:/condo/i.test(profile.homeType)});
+      const checked=validateAddressEntry(data.property_input,{city:profile.city,requireUnit:/condo/i.test(profile.homeType)});
       if(!checked.ok)throw new Error(checked.error);
       profile.city=checked.city;data.property_input=checked.address;
       data.resolved_address=checked.address;
@@ -5589,14 +5654,14 @@ function sellerParsedAddress(address) {
   return {...parseAddress5(street),city};
 }
 function validateAddressEntry(value,{requireCity=false,city='',requireUnit=false}={}) {
-  const example='Condo example: 9201 Yonge St, Unit 1405, Richmond Hill. House example: 18 Ferris Rd, Toronto.';
   const raw=String(value||'').trim();
   const parsed=sellerParsedAddress(raw);
-  if(!raw||raw.length>500||!parsed.number||!parsed.name||!/[a-z]/i.test(parsed.name)||(!parsed.suffix&&!/^highway \d+/i.test(parsed.name)))return {ok:false,error:'Enter the street number, street name and city. '+example};
-  if(parsed.unit&&!/^[a-z0-9]+(?:-[a-z0-9]+)?$/i.test(parsed.unit))return {ok:false,error:'Write the condo unit separately from the street name. '+example};
-  if(/(?:\b(?:unit|suite|apt|apartment)|#)\s*,?\s*$/i.test(splitAddressCity(raw).street)||requireUnit&&!parsed.unit)return {ok:false,error:'Add the condo unit so we match the right home. '+example};
+  if(!raw||raw.length>500||!parsed.number||!parsed.name||!/[a-z]/i.test(parsed.name))return {ok:false,error:'Enter the street number and street name.'};
+  if(/\b(?:st|street|rd|road|ave|avenue|dr|drive|cres|crescent|circ|circle|blvd|boulevard|crt|court|ln|lane|pkwy|parkway)\d/i.test(raw))return {ok:false,error:'Keep the street address and unit separate. Enter your unit in the Unit / suite field.'};
+  if(parsed.unit&&!/^[a-z0-9]+(?:-[a-z0-9]+)?$/i.test(parsed.unit))return {ok:false,error:'Enter just your unit number in the Unit / suite field.'};
+  if(/(?:\b(?:unit|suite|apt|apartment)|#)\s*,?\s*$/i.test(splitAddressCity(raw).street)||requireUnit&&!parsed.unit)return {ok:false,error:'Add your unit number in the Unit / suite field so we can find the right condo.'};
   const resolvedCity=parsed.city||city;
-  if(requireCity&&!resolvedCity)return {ok:false,error:'Add the city to your address. '+example};
+  if(requireCity&&!resolvedCity)return {ok:false,error:'Choose the city for this property.'};
   const street=[parsed.number,parsed.name,parsed.suffix,parsed.direction].filter(Boolean).map(displayToken2).join(' ');
   return {ok:true,parsed,city:resolvedCity,address:street+(parsed.unit?' Unit '+parsed.unit.toUpperCase():'')+(resolvedCity?', '+resolvedCity:'')};
 }
@@ -6034,6 +6099,6 @@ export {
   generateHomeBrief,
   priceCheckSelection,
   priceCheckRows,
-  safeAmpreNextLink
+  safeAmpreNextLink, addressFromPlace, selectExactAddressMatch
 };
 //# sourceMappingURL=worker-v11.js.map
