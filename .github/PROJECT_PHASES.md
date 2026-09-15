@@ -80,3 +80,5 @@ Superseded valuation policy: Seller Evidence v1 now runs independently of buildC
 - 112 Andrea Lane recovered two exact listing records, recent matching sold records and two active competitors. Evidence initially remained below three within 300 days; 365-day sparse fallback is explicitly disclosed and retains fresh-sale weighting.
 
 - Verified preview `309013ea-742e-4e77-ba09-cb12565ea9f7`: 112 Andrea Lane yields midpoint $945,000, range $800,000–$1,090,000, Low confidence. Selected sold homes: 275 Aberdeen (2026-07-10, $945,000), 10 Ashcroft (2026-06-10, $822,500), 51 Andrea (2025-09-22, $1,160,000). Two active competitors: 237 Terra ($1,049,000) and 130 Andrea ($939,999). This is a read-only estimate check, not a sent email. The final email discloses incomplete market retrieval and the 365-day fallback.
+
+- Release prepared from the verified seller preview. The guarded promotion verifies the restored production source, candidate source, bindings, cron and all 12 application assets, with automatic rollback if live assets fail. The buyer page and buyer valuation functions are unchanged. The missing exact history for 55 Calvington and 64 Ampezzo remains open.
