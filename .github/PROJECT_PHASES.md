@@ -65,7 +65,7 @@ Superseded valuation policy: Seller Evidence v1 now runs independently of buildC
 - Model design informed by IAAO sales-comparison principles (https://www.iaao.org/wp-content/uploads/StandardOnMassAppraisal.pdf); heuristic coefficients are not claimed to be IAAO-approved or Toronto-calibrated.
 
 
-## Seller off-market revision — 2026-09-15 (preview)
+## Seller off-market revision — 2026-09-15
 - Baseline is the restored Phase 6 deployment `287a06e2-ef44-4fef-8ef7-7e24d752ba23`; SHA256 `7b2fd318de7863416865c7f95a75829d0006a5189f80c22522e51e1ec4afd119`. Do not deploy main/worker-v13.
 - Remove upgrades from seller form and seller email. Keep the existing page design, public address lookup, buyer assets and buyer report calculations. No database/schema migration.
 - Recover exact street number/name/type/direction, city and unit from protected VOW history. Query unavailable records, then all statuses to catch relisting. Follow provider cursors, disclose incomplete retrieval, and sort the recovered records by listing entry/contract date rather than sync edits. Keep provenance when an older record fills missing specifications.
@@ -82,3 +82,5 @@ Superseded valuation policy: Seller Evidence v1 now runs independently of buildC
 - Verified preview `309013ea-742e-4e77-ba09-cb12565ea9f7`: 112 Andrea Lane yields midpoint $945,000, range $800,000–$1,090,000, Low confidence. Selected sold homes: 275 Aberdeen (2026-07-10, $945,000), 10 Ashcroft (2026-06-10, $822,500), 51 Andrea (2025-09-22, $1,160,000). Two active competitors: 237 Terra ($1,049,000) and 130 Andrea ($939,999). This is a read-only estimate check, not a sent email. The final email discloses incomplete market retrieval and the 365-day fallback.
 
 - Release prepared from the verified seller preview. The guarded promotion verifies the restored production source, candidate source, bindings, cron and all 12 application assets, with automatic rollback if live assets fail. The buyer page and buyer valuation functions are unchanged. The missing exact history for 55 Calvington and 64 Ampezzo remains open.
+
+- Published and verified: Worker version `01a877b8-24fd-4616-8b7c-caacc868f42f`, source SHA256 `90e854d35333f036f8a4fc5a33df185fbbd8302f68112b7cba59dbfa8d3b5eab`, release commit `4bcbcba8c02d804437869b8963b716c992767aea`, successful GitHub Actions run `34924857922`. Guarded promotion verified all 12 live assets, source, bindings and cron. Live seller page shows the revised copy and no upgrade section. Previous rollback version is `287a06e2-ef44-4fef-8ef7-7e24d752ba23`. No customer records, report jobs or emails were created by verification.
