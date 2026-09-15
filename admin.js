@@ -66,3 +66,29 @@ async function saveSettings(e){e.preventDefault();$("settingsMessage").textConte
 function openAgent(a=null){$("agentForm").hidden=false;$("agentFormTitle").textContent=a?"Edit agent":"Add agent";$("agentId").value=a?.id||"";$("agentName").value=a?.display_name||"";$("agentEmail").value=a?.email||"";$("agentMobile").value=a?.mobile||"";$("agentOrder").value=a?.assignment_order||"";$("agentActive").checked=a?.active!==false;$("agentError").textContent="";document.querySelector(".order-field").hidden=!a;$("agentName").focus();}function closeAgent(){$("agentForm").hidden=true;}
 async function saveAgent(e){e.preventDefault();const id=$("agentId").value,payload={display_name:$("agentName").value,email:$("agentEmail").value,mobile:$("agentMobile").value,active:$("agentActive").checked};if(id)payload.assignment_order=Number($("agentOrder").value);try{await api(id?`/api/admin/agents/${id}`:"/api/admin/agents",{method:id?"PATCH":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});closeAgent();await load();}catch(e){$("agentError").textContent=e.message;}}
 function stat(label,value){return `<article><span>${label}</span><strong>${value}</strong></article>`}function date(v){return v?new Date(v).toLocaleString("en-CA",{timeZone:"America/Toronto"}):"—"}function money(v){const n=Number(v);return Number.isFinite(n)&&n>0?new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD",maximumFractionDigits:0}).format(n):"—"}function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}function attr(v){return esc(v).replace(/`/g,"&#96;")}
+
+// Fresh, read-only checks using the existing admin authorization.
+$('sellerAuditForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const addresses=[...new Set($('sellerAuditAddresses').value.split(/\n/).map(v=>v.trim()).filter(Boolean))];
+  if(!addresses.length||addresses.length>8){$('sellerAuditStatus').textContent='Enter one to eight addresses.';return;}
+  $('sellerAuditRun').disabled=true;$('sellerAuditResults').replaceChildren();
+  let completed=0;
+  try{
+    for(const address of addresses){
+      $('sellerAuditStatus').textContent=`Checking ${completed+1} of ${addresses.length}: ${address}`;
+      const article=document.createElement('article'),heading=document.createElement('h3'),summary=document.createElement('p');
+      article.className='lead';heading.textContent=address;article.append(heading,summary);$('sellerAuditResults').append(article);
+      try{
+        const r=await api('/api/admin/seller-preview?address='+encodeURIComponent(address)),v=r.valuation;
+        summary.textContent=v.available?`${money(v.midpoint)} estimated midpoint · ${money(v.low)}–${money(v.high)} · ${v.confidence} confidence · ${r.comparables.length} sold comparisons`:v.basis;
+        const detail=document.createElement('details'),label=document.createElement('summary'),pre=document.createElement('pre');
+        label.textContent='Evidence and pricing details';pre.className='seller-audit-json';pre.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px';
+        const {emailPreview,...evidence}=r;pre.textContent=JSON.stringify(evidence,null,2);detail.append(label,pre);article.append(detail);
+        if(emailPreview){const preview=document.createElement('details'),caption=document.createElement('summary'),frame=document.createElement('iframe');caption.textContent='Preview this email report';frame.title='Seller email report for '+address;frame.setAttribute('sandbox','');frame.style.cssText='width:100%;height:900px;border:0;margin-top:12px';frame.srcdoc=emailPreview.html;preview.append(caption,frame);article.append(preview);}
+      }catch(error){summary.textContent='Check failed: '+error.message;}
+      completed++;
+    }
+    $('sellerAuditStatus').textContent=`${completed} checks completed. No leads, report jobs or emails were created.`;
+  }finally{$('sellerAuditRun').disabled=false;}
+});

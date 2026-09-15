@@ -7,6 +7,49 @@ const subject={ListingKey:'C00000001',UnparsedAddress:'101 Example Street, Toron
 const sold=(n,overrides={})=>({...subject,ListingKey:`C0000000${n}`,StreetNumber:String(101+n),UnparsedAddress:`${101+n} Example Street, Toronto`,StandardStatus:'Closed',TransactionType:'For Sale',ClosePrice:1050000+n*10000,PurchaseContractDate:new Date(Date.now()-35*86400000).toISOString().slice(0,10),...overrides});
 const property=(profile,extra={})=>({address:'101 Example Street, Toronto · Demonstration only',propertySubType:profile.homeType,cityRegion:profile.community,city:profile.city,livingAreaRange:profile.sizeBand,sellerProfile:profile,sellerEvidence:{listingMatched:true,listingFactsAgree:true},comparableContext:{available:true,confidence:'Medium',rangeLow:1020000,midpoint:1060000,rangeHigh:1100000,policy:{windowDays:100},comparables:[2,3,4].map(n=>({address:`${101+n} Example Street · Demo`,propertySubType:profile.homeType,cityRegion:profile.community,livingAreaRange:profile.sizeBand,beds:3,soldPrice:1030000+n*10000,soldDate:new Date(Date.now()-35*86400000).toISOString().slice(0,10)}))},...extra});
 
+test('seller identities exclude the subject and deduplicate differently formatted MLS addresses',()=>{
+  const pastSubject=sold(9,{UnparsedAddress:'101 Example St Toronto W05 ON M6E 1A1',StreetNumber:'101'});
+  assert.equal(sellerSameHome(subject,pastSubject),true);
+  const first=sold(2),duplicate={...first,ListingKey:'FORMATTED-RELIST',UnparsedAddress:'103 Example St Toronto W05 ON M6E 1A1'};
+  const evidence=calculateSellerEvidence(subject,[pastSubject,first,duplicate,sold(3)]);
+  assert.equal(evidence.available,false,'The subject and a relisting must not manufacture a third sold home.');
+  assert.equal(evidence.policy.distinctHomes,2);
+  assert.equal(evidence.comparables.length,2);
+  assert.equal(sellerSameHome(subject,{...pastSubject,StreetDirSuffix:'West'}),false);
+});
+
+test('seller condo identities preserve exact units and street directions across address formats',()=>{
+  const a={...subject,UnparsedAddress:'185 Oneida Cres Unit 816, Richmond Hill',StreetNumber:'185',StreetName:'Oneida',StreetSuffix:'Crescent',City:'Richmond Hill',CityRegion:'Langstaff',PropertySubType:'Condo Apartment',PropertyType:'Residential Condo & Other',LivingAreaRange:'600-699',UnitNumber:'816',PostalCode:'L4B4L3'};
+  const same={...a,ListingKey:'CONDO-HISTORY',UnparsedAddress:'185 Oneida Crescent 816 Richmond Hill ON L4B 4L3',UnitNumber:undefined};
+  assert.equal(sellerSameHome(a,same),true);
+  assert.equal(sellerSameHome(a,{...same,UnitNumber:'817'}),false,'Structured units must keep separate condos separate.');
+  assert.equal(sellerSameHome(a,{...same,UnparsedAddress:'185 Oneida Cres 817 Richmond Hill ON L4B 4L3'}),false,'A parsed unit is required when UnitNumber is absent.');
+  const west={...a,UnparsedAddress:'30 Harding Blvd W 417, Richmond Hill',StreetNumber:'30',StreetName:'Harding',StreetSuffix:'Boulevard',StreetDirSuffix:'W',UnitNumber:'417'};
+  assert.equal(sellerSameHome(west,{...west,StreetDirSuffix:'West',UnparsedAddress:'30 Harding Boulevard West Unit 417 Richmond Hill ON L4B 4L3'}),true);
+  assert.equal(sellerSameHome(west,{...west,StreetDirSuffix:'E',UnparsedAddress:'30 Harding Boulevard East 417 Richmond Hill ON L4B 4L3'}),false);
+  const soldCondo=(unit,key,address)=>({...a,ListingKey:key,UnitNumber:unit,UnparsedAddress:address,StandardStatus:'Closed',TransactionType:'For Sale',ClosePrice:650000,PurchaseContractDate:new Date(Date.now()-30*86400000).toISOString().slice(0,10)});
+  const r=calculateSellerEvidence(a,[soldCondo('817','CONDO-817','185 Oneida Cres 817, Richmond Hill'),soldCondo('818','CONDO-818','185 Oneida Crescent 818 Richmond Hill ON L4B 4L3'),soldCondo('819','CONDO-819','185 Oneida Cres Unit 819, Richmond Hill')]);
+  assert.equal(r.available,true);
+  assert.equal(r.policy.distinctHomes,3,'Separate units in one building remain independent comparable homes.');
+});
+
+test('a completed empty case variant cannot hide incomplete seller MLS history',async t=>{
+  const history={...subject,OriginalEntryTimestamp:'2025-01-01T00:00:00Z'};
+  let pages=0,fullRecordReads=0;
+  t.mock.method(globalThis,'fetch',async url=>{
+    const u=new URL(url);
+    if(decodeURIComponent(u.pathname).includes("('")){fullRecordReads++;return Response.json(history);}
+    if((u.searchParams.get('$filter')||'').includes("'EXAMPLE'"))return Response.json({value:[]});
+    pages++;
+    return Response.json({value:[{...history,ListingKey:`HISTORY-${pages}`}],'@odata.nextLink':`https://query.ampre.ca/odata/Property?$skiptoken=history-${pages}`});
+  });
+  const diagnostics={};
+  await assert.rejects(()=>resolveSellerSubject(subject.UnparsedAddress,{city:'Toronto'},{AMPRE_TOKEN:'fixture-only'},diagnostics),/history search is incomplete; retry required/);
+  assert.equal(pages,20);
+  assert.equal(fullRecordReads,0,'Do not accept a latest record from a partially scanned variant.');
+  assert.deepEqual(diagnostics.queries.map(q=>q.complete),[false,true]);
+});
+
 test('seller scenario 1: detached evidence, independent target, atomic request capture and seller email',async t=>{
   const profile=validateSellerProfile({...profileInput,targetMin:1150000,targetMax:1250000,upgrades:[{id:'kitchen',recency:'within_10',documents:false},{id:'bathrooms',recency:'within_10',documents:false}]});
   assert.throws(()=>validateSellerProfile({...profileInput,targetMin:1200000,targetMax:1000000}));
