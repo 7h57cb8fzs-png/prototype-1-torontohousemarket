@@ -13,7 +13,7 @@
     setValue('sellerSize',bands.includes(String(value).replace(/[–—]/g,'-')) ? String(value).replace(/[–—]/g,'-') : value ? 'unknown' : '');
   }
   $('sellerType').addEventListener('change',()=>fillSizes($('sellerSize').value));
-  const addressControl=THMAddress.attach({input:$('sellerAddress'),unit:$('sellerUnit'),panel:$('sellerSuggestions'),status:$('sellerLookupStatus'),onChange:()=>{
+  const addressControl=THMAddress.attach({input:$('sellerAddress'),panel:$('sellerSuggestions'),status:$('sellerLookupStatus'),onChange:()=>{
     lookupSequence++;$('sellerFind').disabled=false;$('sellerBuilder').hidden=true;matched=null;address='';$('sellerLookupStatus').classList.remove('is-error');$('sellerLookupStatus').textContent='Enter your street address. City is optional.';
   }});
   fillSizes();

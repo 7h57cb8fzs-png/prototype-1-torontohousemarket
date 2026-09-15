@@ -120,7 +120,4 @@ body.seller-page .seller-address-control input:not([type=checkbox]):not([type=ra
 .seller-page .field-error,.seller-page .seller-lookup .is-error{color:#ad2929!important;font-weight:500}
 .seller-page input[aria-invalid=true]:not([type=checkbox]),.seller-page select[aria-invalid=true],.seller-page .thm-select-trigger[aria-invalid=true]{border-color:#b83131!important;outline-color:#b83131!important}
 .seller-address-control:has(input[aria-invalid=true]){border-color:#b83131;box-shadow:0 0 0 1px #b83131}
-.seller-lookup .address-unit-row input{min-height:44px;width:205px;padding:9px 12px;font-size:16px}
-.seller-lookup .address-unit-row label{font-size:12px;margin-bottom:0}
 .seller-lookup .address-suggestions .address-suggestion-note{font-size:12px;max-width:none;margin:0;padding:10px 18px}
-@media(max-width:520px){.seller-lookup .address-unit-row input{width:175px}}

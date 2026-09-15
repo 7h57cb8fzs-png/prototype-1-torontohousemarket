@@ -29,7 +29,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          EXPECTED_ACTIVE_SHA: 8bced649a3f18405e0709079481fc02da0ee6a2e2ad1b923852a6050224782a5
+          EXPECTED_ACTIVE_SHA: 384c6bbdad50dda64bb1319cee8e2318c4aacdde324bffe0ec56bcbecc59c3c8
           PREVIEW_ONLY: 'true'
         run: node .github/scripts/ten-property-audit.mjs
       - name: Verify preview assets and existing seller evidence

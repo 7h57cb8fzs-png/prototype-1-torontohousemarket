@@ -19,7 +19,7 @@ test('street-only house and condo formats no longer require a city, including pu
  assert.equal(validateAddressEntry('9201 Yonge St1405').ok,false);
 });
 
-test('separate unit and pasted condo formats produce the same exact address',()=>{
+test('pasted condo formats produce the same exact address',()=>{
  for(const value of ['1405-9201 Yonge St, Richmond Hill','Unit 1405, 9201 Yonge St, Richmond Hill','9201 Yonge St Unit 1405 Richmond Hill','9201 Yonge St 1405 Richmond Hill']){
   const parts=input.split(value);assert.equal(parts.street,'9201 Yonge St, Richmond Hill',value);assert.equal(parts.unit,'1405');assert.equal(input.combine(value,''),'9201 Yonge St Unit 1405, Richmond Hill');
  }
@@ -75,25 +75,25 @@ function addressHarness(fetcher){
   setAttribute(k,v){this.attributes[k]=v;} getAttribute(k){return this.attributes[k];} removeAttribute(k){delete this.attributes[k];}
   setCustomValidity(v){this.message=v;} closest(){return this.row||this;} focus(){document.activeElement=this;} scrollIntoView(){} replaceChildren(){this.children=[];} append(el){this.children.push(el);} contains(el){return this===el||this.children.includes(el);}
  }
- const input=new Element('input'),unit=new Element('unit'),panel=new Element('panel'),status=new Element('status'),list=new Element('options'),note=new Element('note'),credit=new Element('credit');unit.row=new Element('unit-row');
+ const input=new Element('input'),panel=new Element('panel'),status=new Element('status'),list=new Element('options'),note=new Element('note'),credit=new Element('credit');
  panel.querySelector=selector=>selector==='[role=listbox]'?list:selector==='[role=status]'?note:credit;
  const document=new EventTarget();document.activeElement=input;document.createElement=()=>new Element();
  let next=0;const timers=new Map();
  const context=vm.createContext({window:{},document,crypto:{randomUUID:()=>token},AbortController,AbortSignal,fetch:fetcher,THMInputs:{error:(el,message)=>el.setAttribute('aria-invalid',String(!!message)),check:el=>!el.message},setTimeout:(fn,ms)=>{const id=++next;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id)});
  vm.runInContext(readFileSync(new URL('../address-input.js',import.meta.url),'utf8'),context);
- const control=context.window.THMAddress.attach({input,unit,panel,status});
+ const control=context.window.THMAddress.attach({input,panel,status});
  const fire=(el,type,key)=>{const event=new Event(type,{cancelable:true});if(key)Object.defineProperty(event,'key',{value:key});el.dispatchEvent(event);return event;};
  const settle=()=>new Promise(resolve=>setImmediate(resolve));
- return {input,unit,panel,list,control,fire,settle,async suggest(value){input.value=value;input.focus();fire(input,'input');for(const [id,t] of timers)if(t.ms===400){timers.delete(id);t.fn();}await settle();}};
+ return {input,panel,list,control,fire,settle,async suggest(value){input.value=value;input.focus();fire(input,'input');for(const [id,t] of timers)if(t.ms===400){timers.delete(id);t.fn();}await settle();}};
 }
 const fakeSuggestion={ok:true,available:true,suggestions:[{placeId:'fixture_address_id',label:'123 Example Street, Toronto, ON, Canada'}]};
 test('keyboard selection fills city, retains the typed unit and does not auto-submit the report',async()=>{
  const h=addressHarness(async path=>Response.json(path.endsWith('suggestions')?fakeSuggestion:{ok:true,available:true,address:'123 Example Street, Toronto',city:'Toronto',unit:''}));
- h.unit.value='201';await h.suggest('123 Exa');assert.equal(h.panel.hidden,false);
+ await h.suggest('Unit 201, 123 Exa');assert.equal(h.panel.hidden,false);
  assert.equal(h.fire(h.input,'keydown','Enter').defaultPrevented,false,'Typing alone must not select the first address');
  h.fire(h.input,'keydown','ArrowDown');assert.equal(h.input.getAttribute('aria-activedescendant'),'options-0');
  assert.equal(h.fire(h.input,'keydown','Enter').defaultPrevented,true);assert.equal(await h.control.prepare(),'123 Example Street Unit 201, Toronto');assert.equal(h.panel.hidden,true);
- h.input.value='456 Different Road';h.fire(h.input,'input');assert.equal(h.unit.value,'','A new home cannot inherit the previous condo unit');
+ h.input.value='456 Different Road';h.fire(h.input,'input');assert.equal(await h.control.prepare(),'456 Different Road','A new home cannot inherit the previous condo unit');
 });
 
 test('editing an address discards a delayed place selection; Escape closes choices',async()=>{
@@ -117,8 +117,8 @@ test('known city ambiguity stops MLS resolution and offers a choice without an i
  assert.equal(response.status,409);const body=await response.json();assert.deepEqual(body.cityChoices,['Toronto','Richmond Hill']);assert.notEqual(body.inputError,true);assert.equal(calls,1,'Do not continue searching and silently pick a city');
 });
 
-test('a pasted condo unit is cleared when its street is replaced before any MLS lookup',async()=>{
+test('a pasted condo remains in one box and replacing it leaves no hidden unit',async()=>{
  const h=addressHarness(async()=>Response.json({ok:true,available:false}));
- await h.suggest('201-123 Example Street');assert.equal(h.unit.value,'201');assert.equal(h.input.value,'123 Example Street');
- h.input.value='456 Different Road';h.fire(h.input,'input');assert.equal(h.unit.value,'');
+ await h.suggest('201-123 Example Street');assert.equal(h.input.value,'201-123 Example Street');assert.equal(await h.control.prepare(),'123 Example Street Unit 201');
+ h.input.value='456 Different Road';h.fire(h.input,'input');assert.equal(await h.control.prepare(),'456 Different Road');
 });

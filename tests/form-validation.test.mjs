@@ -20,7 +20,7 @@ test('malformed and incomplete street inputs are rejected before any MLS query',
   const r=await worker.fetch(new Request('https://torontohousemarket.com/api/property?strict_address=1&q='+encodeURIComponent(address)),{},{});
   assert.equal(r.status,400,address);const body=await r.json();assert.doesNotMatch(body.error,/Yonge|Ferris|example:/);assert.equal(body.inputError,true);
  }
- const missingUnit=validateAddressEntry('9201 Yonge St, Richmond Hill',{requireCity:true,requireUnit:true});assert.equal(missingUnit.ok,false);assert.match(missingUnit.error,/Add your unit number/);
+ const missingUnit=validateAddressEntry('9201 Yonge St, Richmond Hill',{requireCity:true,requireUnit:true});assert.equal(missingUnit.ok,false);assert.match(missingUnit.error,/condo number/);
 });
 
 test('seller format preflight confirms the exact unit without waiting for MLS',async t=>{

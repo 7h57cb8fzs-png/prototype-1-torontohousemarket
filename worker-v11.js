@@ -3120,7 +3120,7 @@ function json6(body, status = 200) {
 __name(json6, "json");
 
 // worker-v11.js
-var VERSION4 = "address-autocomplete-v130-20260915";
+var VERSION4 = "address-autocomplete-v131-20260915";
 var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
   ["241 pannahill road toronto on m3h 4n9", { appearanceCount: 2, legacyListingKeys: ["C8475612"], source: "PropTx verified property history" }],
   ["87 sunfield road toronto on m3m 2v2", { appearanceCount: 3, legacyListingKeys: ["W13249018", "W13672492"], source: "Verified TRREB address history" }]
@@ -3264,7 +3264,7 @@ async function publicProperty(request, env, ctx) {
   let response = await worker_v10_default.fetch(new Request(publicUrl.toString(), { method: "GET", headers: request.headers }), env, ctx);
   let body = await response.clone().json().catch(() => null);
   if (!response.ok || !body?.property) return response;
-  if(addressEntry&&!addressEntry.parsed.unit&&body.property.listingKey&&isCondominiumProperty({PropertySubType:body.property.propertySubType,PropertyType:body.property.propertyType}))return json7({ok:false,inputError:true,unitRequired:true,error:"Add your unit number in the Unit / suite field so we can find the right condo."},400);
+  if(addressEntry&&!addressEntry.parsed.unit&&body.property.listingKey&&isCondominiumProperty({PropertySubType:body.property.propertySubType,PropertyType:body.property.propertyType}))return json7({ok:false,inputError:true,unitRequired:true,error:"Add “Unit” followed by your condo number in the address box."},400);
   if(addressEntry){
     const matchedCity=body.property.listingKey?splitAddressCity(body.property.address||'').city||splitAddressCity('Home, '+(body.property.city||'')).city:'';
     body.normalizedAddress=validateAddressEntry(addressEntry.address,{city:matchedCity}).address;
@@ -5657,9 +5657,9 @@ function validateAddressEntry(value,{requireCity=false,city='',requireUnit=false
   const raw=String(value||'').trim();
   const parsed=sellerParsedAddress(raw);
   if(!raw||raw.length>500||!parsed.number||!parsed.name||!/[a-z]/i.test(parsed.name))return {ok:false,error:'Enter the street number and street name.'};
-  if(/\b(?:st|street|rd|road|ave|avenue|dr|drive|cres|crescent|circ|circle|blvd|boulevard|crt|court|ln|lane|pkwy|parkway)\d/i.test(raw))return {ok:false,error:'Keep the street address and unit separate. Enter your unit in the Unit / suite field.'};
-  if(parsed.unit&&!/^[a-z0-9]+(?:-[a-z0-9]+)?$/i.test(parsed.unit))return {ok:false,error:'Enter just your unit number in the Unit / suite field.'};
-  if(/(?:\b(?:unit|suite|apt|apartment)|#)\s*,?\s*$/i.test(splitAddressCity(raw).street)||requireUnit&&!parsed.unit)return {ok:false,error:'Add your unit number in the Unit / suite field so we can find the right condo.'};
+  if(/\b(?:st|street|rd|road|ave|avenue|dr|drive|cres|crescent|circ|circle|blvd|boulevard|crt|court|ln|lane|pkwy|parkway)\d/i.test(raw))return {ok:false,error:'Add a space after the street name, then “Unit” and your condo number.'};
+  if(parsed.unit&&!/^[a-z0-9]+(?:-[a-z0-9]+)?$/i.test(parsed.unit))return {ok:false,error:'Write “Unit” followed by your condo number in the address box.'};
+  if(/(?:\b(?:unit|suite|apt|apartment)|#)\s*,?\s*$/i.test(splitAddressCity(raw).street)||requireUnit&&!parsed.unit)return {ok:false,error:'Add “Unit” followed by your condo number in the address box.'};
   const resolvedCity=parsed.city||city;
   if(requireCity&&!resolvedCity)return {ok:false,error:'Choose the city for this property.'};
   const street=[parsed.number,parsed.name,parsed.suffix,parsed.direction].filter(Boolean).map(displayToken2).join(' ');

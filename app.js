@@ -100,7 +100,7 @@ for (const button of document.querySelectorAll("[data-scroll]")) {
   });
 }
 
-const buyerAddressControl=THMAddress.attach({input:propertyInput,unit:$("buyerUnit"),panel:$("buyerSuggestions"),status:inputStatus,onChange:()=>{buyerLookupSequence++;setLoading(false);hideResult();liveListing=null;setInputStatus("", "Enter a street address, MLS number or listing link. City is optional.");}});
+const buyerAddressControl=THMAddress.attach({input:propertyInput,panel:$("buyerSuggestions"),status:inputStatus,onChange:()=>{buyerLookupSequence++;setLoading(false);hideResult();liveListing=null;setInputStatus("", "Enter a street address, MLS number or listing link. City is optional.");}});
 
 analysisForm.addEventListener("submit", async (event) => {
   event.preventDefault();
