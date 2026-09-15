@@ -8,8 +8,15 @@ const trim=s=>s.replace(/\/\/[#@] sourceMappingURL=.*$/gm,'').trim();
 console.log(JSON.stringify({priorLength:prior.length,currentLength:current.length,equalIgnoringSourceMap:trim(prior)===trim(current),currentContainsPrior:current.includes(prior.trim()),priorContainsCurrent:prior.includes(current.trim())}));
 
 const {parse}=await import('/tmp/address-source-review/node_modules/acorn/dist/acorn.mjs');
-const clean=(key,value)=>['start','end','raw'].includes(key)?undefined:typeof value==='bigint'?String(value):value;
-const ast=s=>JSON.stringify(parse(s,{ecmaVersion:'latest',sourceType:'module'}),clean);
+function norm(v){
+ if(!v||typeof v!=='object')return v;
+ if(Array.isArray(v))return v.map(norm).filter(x=>x!==null);
+ if(v.type==='VariableDeclaration'&&v.declarations.every(d=>/^__(?:name|defProp)\d*$/.test(d.id?.name||'')))return null;
+ if(v.type==='ExpressionStatement'&&v.expression.type==='CallExpression'&&/^__name\d*$/.test(v.expression.callee?.name||''))return null;
+ if(v.type==='CallExpression'&&/^__name\d*$/.test(v.callee?.name||''))return norm(v.arguments[0]);
+ return Object.fromEntries(Object.entries(v).filter(([k])=>!['start','end','raw'].includes(k)).map(([k,x])=>[k,norm(x)]));
+}
+const ast=s=>JSON.stringify(norm(parse(s,{ecmaVersion:'latest',sourceType:'module'})),(k,v)=>typeof v==='bigint'?String(v):v);
 const a=ast(prior),b=ast(current);
-console.log(JSON.stringify({identicalSyntax:a===b}));
+console.log(JSON.stringify({identicalWithoutBundlerNameHelpers:a===b}));
 if(a!==b){let i=0;while(i<Math.min(a.length,b.length)&&a[i]===b[i])i++;console.log(JSON.stringify({firstDifferentPosition:i,priorSyntax:a.slice(Math.max(0,i-150),i+300),currentSyntax:b.slice(Math.max(0,i-150),i+300)}));}
