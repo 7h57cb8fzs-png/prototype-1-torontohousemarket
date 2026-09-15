@@ -696,7 +696,7 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
 @media(max-width:650px){.nav-actions{gap:7px}.nav-actions .seller-nav-link{font-size:11px;padding:8px 9px;gap:5px}.nav-actions .nav-cta{font-size:11px;padding:8px 11px;gap:6px}.nav-actions .seller-nav-link span{display:none}.nav{gap:10px}.site-header .brand-name{font-size:12px;max-width:85px}.site-header .brand-mark{flex-shrink:0}}
 @media(max-width:380px){.nav-actions .seller-nav-link{padding:8px 6px}.nav-actions .nav-cta{padding:8px 8px}.nav-actions .nav-cta span{display:none}.brand{gap:6px}.site-header .brand-name{font-size:11px}.brand-mark{width:30px;height:30px;font-size:10px}}
 
-/* Address suggestions use one quiet panel, with a separate condo unit field. */
+/* Address suggestions use one quiet panel and one address box. */
 .address-search-anchor{position:relative;min-width:0;z-index:10}
 .address-suggestions{position:absolute;top:calc(100% + 7px);left:0;right:0;text-align:left;border:1px solid #d9dfd9;background:#fff;border-radius:13px;box-shadow:0 12px 35px #123f391a;overflow:hidden;z-index:30;color:#123f39}
 .address-suggestions ul{list-style:none;padding:0;margin:0;max-height:310px;overflow-y:auto}
