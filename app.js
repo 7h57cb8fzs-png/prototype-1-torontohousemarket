@@ -199,6 +199,7 @@ function renderListing(listing) {
   snapshotProperty.textContent = addressParts[0];
   $("snapshotLocality").textContent = addressParts.slice(1).join(", ").replace(/([A-Z]\d[A-Z])\s+(\d[A-Z]\d)/ig, "$1\u00a0$2");
   snapshotMeta.textContent = buildSnapshotMeta(listing);
+  $("shareListing").hidden = !listingShareData(listing);
 
   if (listing.inputValidation?.label) {
     linkValidationBadge.textContent = `${hasMls ? "✓ " : ""}${listing.inputValidation.label}`;
@@ -981,7 +982,7 @@ discoveryForm.addEventListener("submit", async (event) => {
       const badge = discoveryMode === "luxury" ? "Asking $2M+" : home.daysLive != null ? `${home.daysLive} days on this listing` : "Active listing";
       const facts = [home.propertySubType, home.beds != null ? `${home.bedroomLayout || home.beds} bed` : null, home.baths != null ? `${home.baths} bath` : null].filter(Boolean).join(" · ");
       const photo = typeof home.photoUrl === 'string' && home.photoUrl.startsWith('/api/discovery-photo?listingKey=') ? `<img src="${escapeAttr(home.photoUrl)}" alt="${escapeAttr(home.address)}" loading="lazy" decoding="async" />` : '';
-      return `<article class="discovery-home"><a class="discovery-photo" href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}" aria-label="Explore ${escapeAttr(home.address)}"><span class="photo-fallback">Photo unavailable · explore the home</span>${photo}<span class="home-badge">${escapeHtml(badge)}</span></a><div class="discovery-home-content"><strong class="home-price">${money(home.listPrice)}</strong><h4>${escapeHtml(home.address)}</h4><p>${escapeHtml(facts)}</p>${home.selectionReason ? `<p class="selection-reason"><span aria-hidden="true">✦</span> ${escapeHtml(home.selectionReason)}</p>` : ''}<small>${escapeHtml(home.listingOffice || "Listing office not reported")} · MLS ${escapeHtml(home.listingKey)}</small><a class="discovery-open" href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">Explore this home →</a></div></article>`;
+      return `<article class="discovery-home"><a class="discovery-photo" href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}" aria-label="Explore ${escapeAttr(home.address)}"><span class="photo-fallback">Photo unavailable · explore the home</span>${photo}<span class="home-badge">${escapeHtml(badge)}</span></a><div class="discovery-home-content"><strong class="home-price">${money(home.listPrice)}</strong><h4>${escapeHtml(home.address)}</h4><p>${escapeHtml(facts)}</p>${home.selectionReason ? `<p class="selection-reason"><span aria-hidden="true">✦</span> ${escapeHtml(home.selectionReason)}</p>` : ''}<small>${escapeHtml(home.listingOffice || "Listing office not reported")} · MLS ${escapeHtml(home.listingKey)}</small><a class="discovery-open" href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">Explore this home →</a><button type="button" class="listing-share-button card-share" data-share-listing="${escapeAttr(home.listingKey)}" data-share-address="${escapeAttr(home.address)}" aria-label="Share ${escapeAttr(home.address)}">↗ Share</button></div></article>`;
     }).join("");
     $("discoveryCoverage").textContent = `${data.note || "Results are a selection, not the full market."} ${data.coverage?.partial ? "The search reached its scan limit. " : ""}${data.coverage?.moreMatches ? "Refine your filters to explore another shortlist. " : ""}${data.checkedAt ? `Checked ${formatDate(data.checkedAt)}; results may be cached for up to 5 minutes.` : ""}`;
   } catch (error) {
@@ -1020,3 +1021,63 @@ if(typeof IntersectionObserver!=='undefined'){
   const shortlistObserver=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){shortlistObserver.disconnect();if(!$("discoveryResults").innerHTML && !$("discoverySubmit").disabled){openDiscovery(discoveryMode,false);discoveryForm.requestSubmit();}}},{rootMargin:'250px'});
   shortlistObserver.observe($("explore"));
 }
+
+// PUBLIC LISTING SHARING START
+function listingShareData(listing) {
+  const key = String(listing?.listingKey || '').toUpperCase();
+  if (!/^[A-Z]\d{7,9}$/.test(key) || listing.displayRestricted || !(listing.forSale || listing.forLease)) return null;
+  const url = new URL('/', 'https://torontohousemarket.com');
+  url.searchParams.set('listingKey', key);
+  url.hash = 'lookup';
+  const address = String(listing.address || `MLS ${key}`);
+  return { title: `${address} | Toronto House Market`, text: address, url: url.href };
+}
+let currentListingShare = null;
+function openListingShare(listing) {
+  const data = listingShareData(listing);
+  if (!data) return;
+  currentListingShare = data;
+  $('listingShareAddress').textContent = data.text;
+  $('listingShareLink').value = data.url;
+  $('copyListingLink').textContent = 'Copy link';
+  $('listingShareStatus').textContent = 'Anyone with the link can open this listing.';
+  $('shareWhatsApp').href = 'https://wa.me/?text=' + encodeURIComponent(data.text + '\n' + data.url);
+  $('shareEmail').href = 'mailto:?subject=' + encodeURIComponent(data.title) + '&body=' + encodeURIComponent('Take a look at this home:\n' + data.text + '\n' + data.url);
+  $('shareNative').hidden = typeof navigator.share !== 'function';
+  $('listingShareDialog').showModal();
+}
+async function copyListingShare() {
+  const data = currentListingShare;
+  if (!data) return;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(data.url);
+    if (currentListingShare !== data) return;
+    $('copyListingLink').textContent = 'Copied ✓';
+    $('listingShareStatus').textContent = 'Link copied. Paste it into a message or post.';
+  } catch {
+    if (currentListingShare !== data) return;
+    $('listingShareLink').focus();
+    $('listingShareLink').select();
+    $('listingShareStatus').textContent = 'Select and copy the link above to share it.';
+  }
+}
+async function shareListingNative() {
+  const data = currentListingShare;
+  if (!data || typeof navigator.share !== 'function') return;
+  try { await navigator.share(data); }
+  catch (error) {
+    if (currentListingShare === data && error.name !== 'AbortError') $('listingShareStatus').textContent = 'Use Copy link, WhatsApp or Email to share this home.';
+  }
+}
+// PUBLIC LISTING SHARING END
+$('shareListing').addEventListener('click', () => openListingShare(liveListing));
+$('discoveryResults').addEventListener('click', event => {
+  const button = event.target.closest('[data-share-listing]');
+  if (button) openListingShare({ listingKey: button.dataset.shareListing, address: button.dataset.shareAddress, forSale: true });
+});
+$('copyListingLink').addEventListener('click', copyListingShare);
+$('shareNative').addEventListener('click', shareListingNative);
+$('closeListingShare').addEventListener('click', () => $('listingShareDialog').close());
+$('listingShareDialog').addEventListener('close', () => { currentListingShare = null; });
+$('listingShareLink').addEventListener('click', event => event.target.select());

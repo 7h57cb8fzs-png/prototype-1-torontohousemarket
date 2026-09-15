@@ -12,7 +12,7 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=131" />
+  <link rel="stylesheet" href="/styles.css?v=132" />
 </head>
 <body>
 <header class="site-header">
@@ -63,7 +63,7 @@
           <p id="snapshotLocality" class="snapshot-locality"></p>
           <p id="snapshotMeta">Checking live MLS…</p>
         </div>
-        <div id="linkValidationBadge" class="validation-badge hidden">✓ Verified</div>
+        <div class="listing-header-actions"><button id="shareListing" class="listing-share-button" type="button" hidden><span aria-hidden="true">↗</span> Share listing</button><div id="linkValidationBadge" class="validation-badge hidden">✓ Verified</div></div>
       </div>
 
       <div class="listing-cockpit">
@@ -309,6 +309,17 @@
   </div>
 </div>
 
+<dialog id="listingShareDialog" class="listing-share-dialog" aria-labelledby="listingShareTitle">
+  <button id="closeListingShare" class="share-close" type="button" aria-label="Close sharing">×</button>
+  <p class="eyebrow">A HOME WORTH SHARING</p>
+  <h2 id="listingShareTitle">Share this home</h2>
+  <p id="listingShareAddress" class="share-address"></p>
+  <label for="listingShareLink">Your share link</label>
+  <div class="share-link-row"><input id="listingShareLink" type="url" readonly spellcheck="false" /><button id="copyListingLink" class="primary-btn" type="button">Copy link</button></div>
+  <div class="share-destinations"><a id="shareWhatsApp" target="_blank" rel="noopener noreferrer">WhatsApp ↗</a><a id="shareEmail">Email ↗</a><button id="shareNative" type="button" hidden>More options ↗</button></div>
+  <p id="listingShareStatus" class="share-status" role="status" aria-live="polite">Anyone with the link can open this listing.</p>
+</dialog>
+
 <div id="galleryModal" class="gallery-backdrop hidden" role="dialog" aria-modal="true" aria-label="Property photo gallery">
   <button id="galleryClose" class="gallery-close" type="button" aria-label="Close gallery">×</button>
   <button id="galleryPrev" class="gallery-nav gallery-prev" type="button" aria-label="Previous photo">‹</button>
@@ -318,6 +329,6 @@
 </div>
 
 <div id="mobileShowing" class="mobile-showing hidden"><div><small>AI REPORT · SHOWING OPTIONAL</small><strong id="mobileAsking"></strong></div><button id="mobileShowingButton" class="primary-btn" type="button">Get my AI report</button></div>
-<script src="/form-inputs.js?v=129" defer></script><script src="/address-input.js?v=131" defer></script><script src="/app.js?v=131" defer></script>
+<script src="/form-inputs.js?v=129" defer></script><script src="/address-input.js?v=131" defer></script><script src="/app.js?v=132" defer></script>
 <script src="/select-controls.js?v=114" defer></script></body>
 </html>

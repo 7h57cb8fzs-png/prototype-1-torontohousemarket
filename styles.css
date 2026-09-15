@@ -710,3 +710,13 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
 .address-attribution{display:flex;justify-content:space-between;gap:12px}.address-attribution a{color:#5e5e5e;font-size:11px;text-decoration:underline}
 
 @media(max-width:520px){.address-suggestions [role=option]{font-size:13px;padding:12px}.address-suggestions ul{max-height:250px}}
+
+/* Public listing sharing */
+.listing-header-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.listing-share-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #cbd8d2;background:#fff;color:#153f39;border-radius:999px;padding:10px 16px;font:inherit;font-size:14px;font-weight:700;cursor:pointer;min-height:44px}
+.listing-share-button:hover{background:#edf4ef;border-color:#54887b}.card-share{margin-top:12px;margin-left:12px}
+.listing-share-dialog{box-sizing:border-box;width:min(520px,calc(100% - 32px));max-height:calc(100dvh - 40px);overflow:auto;border:1px solid #d8e1db;border-radius:24px;padding:32px;background:#faf9f5;color:#163d37;box-shadow:0 24px 80px #102e3540}
+.listing-share-dialog::backdrop{background:#102e3566}.listing-share-dialog .eyebrow{font-size:11px;letter-spacing:.15em;margin:0 32px 12px 0}.listing-share-dialog h2{font-size:30px;line-height:1.15;margin:0 0 12px}.share-close{position:absolute;right:16px;top:12px;border:0;background:transparent;font-size:28px;color:#163d37;cursor:pointer;width:44px;height:44px}
+.share-address{font-size:16px;line-height:1.5;margin:0 0 24px;overflow-wrap:anywhere}.listing-share-dialog label{display:block;font-size:13px;font-weight:700;margin-bottom:8px}.share-link-row{display:flex;gap:8px;align-items:stretch}.share-link-row input{min-width:0;flex:1;background:#fff;border:1px solid #cbd8d2;border-radius:12px;padding:12px;font:inherit;font-size:13px;color:#254c43}.share-link-row .primary-btn{flex-shrink:0;padding:12px 18px;border-radius:12px;font-size:14px}
+.share-destinations{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}.share-destinations a,.share-destinations button{display:inline-flex;align-items:center;min-height:44px;border:1px solid #cbd8d2;background:#fff;border-radius:12px;padding:9px 14px;color:#163d37;text-decoration:none;font:inherit;font-size:14px;font-weight:600;cursor:pointer}.share-status{font-size:13px;line-height:1.5;color:#60756a;min-height:38px;margin:18px 0 0}
+@media(max-width:480px){.listing-share-dialog{padding:26px 20px}.share-link-row{flex-wrap:wrap}.share-link-row input{flex-basis:100%;width:100%}.share-link-row .primary-btn{width:100%}.listing-header-actions{margin-top:4px}}

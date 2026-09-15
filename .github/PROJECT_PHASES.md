@@ -145,3 +145,8 @@ Superseded valuation policy: Seller Evidence v1 now runs independently of buildC
 - Published version 632f2362-ba9e-4f66-8dbe-e1f45c99e329; rollback 8e7ee114-a217-4893-a5a2-ee12d331c2dd. Source SHA256 15af5cc85d4544abd03ea9dbbf1891ef6415cb3e74ac992ce4cba311a42540da. Release commit 94aa07ad04c3a586c6a7d9a025f1600b96ac59c1; successful run 35011555219.
 - All 46 focused tests and all 15 preview/live asset checks passed. No report requests, leads or emails created. Mobile buyer preview visually checked. Google results verified on production; preview-host suggestion requests did not yield visible results, so no live provider claim relies on the preview.
 - Google quotas and billing alerts have not been independently verified. Protected seller diagnostics remain blocked; this release makes no new valuation-verification claim.
+
+## Public listing sharing — 2026-09-15
+- User requested listing sharing and a share link. Add Share listing to the public snapshot and Share to discovery cards. A compact native dialog provides a readonly canonical URL, Copy link, WhatsApp and Email draft links, plus native device sharing when available.
+- URLs contain only listingKey and #lookup on the production domain. No contact details, report tokens, report content or current-page tracking parameters are copied. Unmatched, restricted and unavailable snapshots do not expose a sharing action. Existing linked-listing startup opens the matching property without creating a lead.
+- Clipboard denial leaves a selected manually copyable URL; native cancellation is neutral. Four synthetic sharing tests cover these paths. No messages are sent during verification.
