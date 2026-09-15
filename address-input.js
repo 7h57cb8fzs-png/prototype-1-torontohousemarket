@@ -29,7 +29,7 @@
     const close=()=>{panel.hidden=true;active=-1;input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');};
     const cancel=()=>{clearTimeout(timer);controller?.abort();sequence++;close();};
     const say=message=>{note.textContent=message;};
-    const normalize=()=>{const parsed=split(input.value);if(parsed.unit){unit.value=parsed.unit;input.value=parsed.street;}return parsed;};
+    const normalize=()=>{const parsed=split(input.value);if(parsed.unit){unit.value=parsed.unit;input.value=parsed.street;linkedStreet=parsed.street;}return parsed;};
     const post=async(path,body,signal)=>{const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'Suggestions are unavailable. You can enter the address yourself.');return data;};
     function highlight(index){active=index;[...list.children].forEach((el,i)=>el.setAttribute('aria-selected',String(i===index)));input.setAttribute('aria-activedescendant',list.children[index].id);list.children[index].scrollIntoView({block:'nearest'});}
     async function select(index){
@@ -75,7 +75,7 @@
     document.addEventListener('pointerdown',event=>{if(event.target!==input&&!panel.contains(event.target))close();});
     input.addEventListener('blur',()=>{close();});
     return {
-      async prepare(){await pending;if(failedChoice){input.focus();return null;}cancel();normalize();unit.setCustomValidity(unit.value&&!/^[a-z0-9]+(?:-[a-z0-9]+)?$/i.test(unit.value.trim())?'Enter just the unit number.':'');if(!THMInputs.check(unit))return null;return combine(input.value,unit.value);},
+      async prepare(){await pending;if(failedChoice){input.focus();return null;}cancel();normalize();unit.setCustomValidity(unit.value&&!/^[a-z0-9]+(?:-[a-z0-9]+)?$/i.test(unit.value.trim())?'Enter just the unit number.':'');if(!THMInputs.check(unit))return null;linkedStreet=split(input.value).street;return combine(input.value,unit.value);},
       set(value){failedChoice=false;cancel();const parsed=split(value);input.value=parsed.street;unit.value=parsed.unit;unit.required=false;unit.setCustomValidity('');THMInputs.error(unit,'');linkedStreet=parsed.street;unit.disabled=nonAddress(value);unit.closest('.address-unit-row').hidden=unit.disabled;},
       requireUnit(){unit.required=true;unit.disabled=false;unit.closest('.address-unit-row').hidden=false;unit.setCustomValidity('Add your unit number so we can find the right condo.');THMInputs.check(unit);unit.focus();},
       showCities(cities){cancel();rows=cities.map(city=>({city,label:city}));list.replaceChildren();rows.forEach((row,index)=>{const option=document.createElement('li');option.id=list.id+'-'+index;option.setAttribute('role','option');option.setAttribute('aria-selected','false');option.textContent=row.label;option.addEventListener('pointerdown',e=>e.preventDefault());option.addEventListener('click',()=>select(index));list.append(option);});credit.hidden=true;say('This street address matches more than one city. Which is yours?');panel.hidden=false;input.setAttribute('aria-expanded','true');input.focus();},

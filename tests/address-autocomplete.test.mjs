@@ -116,3 +116,9 @@ test('known city ambiguity stops MLS resolution and offers a choice without an i
  const response=await worker.fetch(new Request(origin+'/api/property?q=123%20Example%20Street'),{AMPRE_TOKEN:'fixture-only'},{});
  assert.equal(response.status,409);const body=await response.json();assert.deepEqual(body.cityChoices,['Toronto','Richmond Hill']);assert.notEqual(body.inputError,true);assert.equal(calls,1,'Do not continue searching and silently pick a city');
 });
+
+test('a pasted condo unit is cleared when its street is replaced before any MLS lookup',async()=>{
+ const h=addressHarness(async()=>Response.json({ok:true,available:false}));
+ await h.suggest('201-123 Example Street');assert.equal(h.unit.value,'201');assert.equal(h.input.value,'123 Example Street');
+ h.input.value='456 Different Road';h.fire(h.input,'input');assert.equal(h.unit.value,'');
+});
