@@ -5588,11 +5588,11 @@ async function resolveSellerSubject(address,profile,env,diagnostics={}) {
   // tokens work; archived imports can also use uppercase street names.
   const token=parsed.name.split(' ').sort((a,b)=>b.length-a.length)[0];
   const queries=[...new Set([displayToken2(token),token.toUpperCase()])].map(t=>`contains(StreetName,'${escapeOData2(t)}')`);
-  const candidates=new Map(),audit=[];let complete=true;
+  const candidates=new Map(),streetRecords=new Map(),audit=[];let complete=true;
   for(const filter of queries){
     const result=await sellerQueryRows([filter],env,2000);audit.push(...result.audit);
     diagnostics.queries.push({filter,complete:result.complete,rows:result.rows.length,audit:result.audit,exactMatches:result.rows.filter(r=>sellerExactHistoryMatch(parsed,r,city)).length,sample:result.rows.slice(0,2).map(r=>({address:r.UnparsedAddress,number:r.StreetNumber,street:r.StreetName,suffix:r.StreetSuffix,unit:r.UnitNumber,city:r.City,status:r.StandardStatus,recordedAt:r.OriginalEntryTimestamp}))});
-    for(const row of result.rows)if(sellerExactHistoryMatch(parsed,row,city)&&row.ListingKey)candidates.set(row.ListingKey,row);
+    for(const row of result.rows){if(row.ListingKey)streetRecords.set(row.ListingKey,row);if(sellerExactHistoryMatch(parsed,row,city)&&row.ListingKey)candidates.set(row.ListingKey,row);}
     // Case variants can return different records. Finishing an empty variant
     // does not establish that a capped variant included the newest listing.
     complete &&= result.complete;
@@ -5614,6 +5614,8 @@ async function resolveSellerSubject(address,profile,env,diagnostics={}) {
   for(const field of fields){const source=records.find(r=>r[field]!==undefined&&r[field]!==null&&r[field]!=='');if(source){result[field]=source[field];sources[field]=source.ListingKey;}}
   result._sellerHistory=records.map(r=>({listingKey:r.ListingKey,status:r.StandardStatus||r.MlsStatus||r.ContractStatus||'Recorded listing',recordedAt:new Date(sellerListingTime(r)).toISOString()}));
   result._sellerFactSources=sources;result._sellerLookupAudit=audit;result._sellerHistoryComplete=complete;
+  // Request-local reuse only; bulk licensed records never enter the report payload.
+  result._sellerStreetRecords=[...streetRecords.values()];
   return result;
 }
 // Seller Evidence v2: independent of the buyer cluster/rating algorithm.
@@ -5739,16 +5741,21 @@ function calculateSellerEvidence(subject,records) {
   const sized=candidates.filter(c=>!c.missingSize);
   const pool=sized.length>=3?sized:candidates;
   const windowDays=pool.filter(c=>c.age<=100).length>=3?100:pool.filter(c=>c.age<=300).length>=3?300:365;
-  const selected=pool.filter(c=>c.age<=windowDays).sort((a,b)=>b.weight-a.weight||a.key.localeCompare(b.key)).slice(0,8);
-  const comps=selected.map(c=>({...publicComparable({record:c.record,price:c.price,closeDate:c.date.toISOString().slice(0,10),similarity:Math.round(c.similarity*100),sameBuilding:c.building,sameRegion:sameText(subject.CityRegion,c.record.CityRegion)}),adjustedPrice:Math.round(c.value/1000)*1000,timeAdjustmentPct:Math.round((c.factor-1)*1000)/10,ageDays:Math.round(c.age)}));
-  const policy={model:'seller-evidence-v2',windowDays,trend,eligibleSales:candidates.length,distinctHomes:selected.length,condoExactSize:condo,ownerTargetUsed:false,upgradePremiumAdded:false,missingSizeFallback:selected.some(c=>c.missingSize)};
+  const recentPool=pool.filter(c=>c.age<=windowDays);
+  const buildingPool=recentPool.filter(c=>c.building);
+  // A sufficient recent same-building cohort is more specific than the community.
+  // Do not reach further back in time just to manufacture a building cohort.
+  const buildingOnly=condo&&buildingPool.length>=3;
+  const selected=(buildingOnly?buildingPool:recentPool).sort((a,b)=>Number(b.building)-Number(a.building)||b.weight-a.weight||a.key.localeCompare(b.key)).slice(0,8);
+  const comps=selected.map(c=>({...publicComparable({record:c.record,price:c.price,closeDate:c.date.toISOString().slice(0,10),similarity:Math.round(c.similarity*100),sameBuilding:c.building,sameRegion:sameText(subject.CityRegion,c.record.CityRegion)}),beds:c.record.BedroomsAboveGrade??c.record.BedroomsTotal,adjustedPrice:Math.round(c.value/1000)*1000,timeAdjustmentPct:Math.round((c.factor-1)*1000)/10,ageDays:Math.round(c.age)}));
+  const policy={model:'seller-evidence-v2',windowDays,trend,eligibleSales:candidates.length,distinctHomes:selected.length,sameBuildingOnly:buildingOnly,condoExactSize:condo,ownerTargetUsed:false,upgradePremiumAdded:false,missingSizeFallback:selected.some(c=>c.missingSize)};
   if(selected.length<3)return {...unavailableComp('Fewer than three sufficiently similar sold homes were recovered. The team needs to review the remaining evidence.'),comparables:comps,policy};
   const mid=sellerWeightedQuantile(selected,.5),q20=sellerWeightedQuantile(selected,.2),q80=sellerWeightedQuantile(selected,.8);
   const age=selected.reduce((n,r)=>n+r.age,0)/selected.length;
   const spread=(q80-q20)/mid,margin=(selected.length<5?.12:.08)+(age>180?.04:0)+(trend.available?.02:0)+(policy.missingSizeFallback?.08:0)+(windowDays>300?.03:0);
   const low=Math.floor(Math.min(q20,mid*(1-margin))/5000)*5000,high=Math.ceil(Math.max(q80,mid*(1+margin))/5000)*5000;
   return {available:true,rangeLow:low,midpoint:Math.round(mid/5000)*5000,rangeHigh:high,confidence:windowDays<=300&&!policy.missingSizeFallback&&selected.length>=5&&age<=180&&spread<.2?'Medium':'Low',comparables:comps,policy,
-    methodology:'Seller Evidence v2 ranks distinct sold homes by interior size, bedrooms, building/community and lot frontage. Freehold size may differ by up to 25%; condo size bands must match. When freehold size is missing, recorded bedrooms and lot frontage are used with a wider, low-confidence range. Weighted median and price spread form a preliminary range with an uncertainty allowance. We first use sales within 100 days, expand to 300 days if needed, and use up to 365 days only for sparse evidence with low confidence and a wider range. No older sale or assumed appreciation is used. This is not a statistically calibrated confidence interval. Owner expectations and historical asking prices do not set the value.'};
+    methodology:'Seller Evidence v2 ranks distinct sold homes by interior size, bedrooms, building/community and lot frontage. Freehold size may differ by up to 25%; condo size bands must match. Three or more qualified sales in the same building and current search window take priority over other buildings. When freehold size is missing, recorded bedrooms and lot frontage are used with a wider, low-confidence range. Weighted median and price spread form a preliminary range with an uncertainty allowance. We first use sales within 100 days, expand to 300 days if needed, and use up to 365 days only for sparse evidence with low confidence and a wider range. No older sale or assumed appreciation is used. This is not a statistically calibrated confidence interval. Owner expectations and historical asking prices do not set the value.'};
 }
 function sellerActiveComparisons(subject,records) {
   const area=sellerArea(subject),homes=new Map();
@@ -5760,7 +5767,9 @@ function sellerActiveComparisons(subject,records) {
     if(!homes.has(key)||sellerListingTime(r)>sellerListingTime(homes.get(key)))homes.set(key,r);
   }
   const distance=r=>area&&sellerArea(r)?Math.abs(Math.log(sellerArea(r)/area)):1;
-  return [...homes.values()].sort((a,b)=>distance(a)-distance(b)||sellerListingTime(b)-sellerListingTime(a)).slice(0,5).map(r=>({listingKey:r.ListingKey,address:displayDenied(r.InternetAddressDisplayYN)?'Address display restricted':r.UnparsedAddress||buildAddress(r),askingPrice:Number(r.ListPrice),livingAreaRange:r.LivingAreaRange||String(r.BuildingAreaTotal||''),beds:r.BedroomsAboveGrade??r.BedroomsTotal,community:r.CityRegion,listedDate:sellerListingTime(r)?new Date(sellerListingTime(r)).toISOString().slice(0,10):null}));
+  const building=r=>isCondominiumProperty(subject)&&verifiedSameCondoBuilding(subject,r);
+  const bedrooms=r=>Math.abs(Number(r.BedroomsAboveGrade??r.BedroomsTotal??0)-Number(subject.BedroomsAboveGrade??subject.BedroomsTotal??0));
+  return [...homes.values()].sort((a,b)=>Number(building(b))-Number(building(a))||bedrooms(a)-bedrooms(b)||distance(a)-distance(b)||sellerListingTime(b)-sellerListingTime(a)).slice(0,5).map(r=>({listingKey:r.ListingKey,address:displayDenied(r.InternetAddressDisplayYN)?'Address display restricted':r.UnparsedAddress||buildAddress(r),askingPrice:Number(r.ListPrice),livingAreaRange:r.LivingAreaRange||String(r.BuildingAreaTotal||''),beds:r.BedroomsAboveGrade??r.BedroomsTotal,community:r.CityRegion,listedDate:sellerListingTime(r)?new Date(sellerListingTime(r)).toISOString().slice(0,10):null}));
 }
 async function buildSellerEvidence(subject,env) {
   const initial=calculateSellerEvidence(subject,[]);if(initial.missingFacts)return initial;
@@ -5768,7 +5777,7 @@ async function buildSellerEvidence(subject,env) {
   // distinctive token; exact city/community/type/unit qualification remains local.
   const token=String(subject.CityRegion||subject.StreetName||'').split(/[\s-]+/).filter(Boolean).sort((a,b)=>b.length-a.length)[0];
   const local=hasExactCommunity(subject.CityRegion)?`contains(CityRegion,'${odataString(token)}')`:`contains(StreetName,'${odataString(token)}')`;
-  const records=[],audit=[];let capped=false;
+  const records=[...(subject._sellerStreetRecords||[])],audit=[...(subject._sellerLookupAudit||[])];let capped=false;
   const first=await sellerQueryRows([local],env,300);records.push(...first.rows);audit.push(...first.audit);capped=first.capped;
   if(first.capped){
     // Check the opposite end as well when a large community exceeds the budget.
@@ -5776,7 +5785,7 @@ async function buildSellerEvidence(subject,env) {
     const tail=await querySoldComparableRows([local],env,1200,1000,null);
     records.push(...tail.rows);audit.push(...tail.audit);capped=true;
   }
-  if(subject.StreetName&&(!calculateSellerEvidence(subject,records).available||isCondominiumProperty(subject))){
+  if(!subject._sellerStreetRecords?.length&&subject.StreetName&&(!calculateSellerEvidence(subject,records).available||isCondominiumProperty(subject))){
     const streetToken=String(subject.StreetName).split(' ').sort((a,b)=>b.length-a.length)[0];
     const street=await sellerQueryRows([`contains(StreetName,'${odataString(displayToken2(streetToken))}')`],env,300);
     records.push(...street.rows);audit.push(...street.audit);capped ||= street.capped;

@@ -33,6 +33,24 @@ test('seller condo identities preserve exact units and street directions across 
   assert.equal(r.policy.distinctHomes,3,'Separate units in one building remain independent comparable homes.');
 });
 
+test('recent same-building condo sales take priority without using asking prices',()=>{
+  const home={...subject,UnparsedAddress:'185 Example Cres Unit 816, Toronto',StreetNumber:'185',StreetName:'Example',StreetSuffix:'Crescent',UnitNumber:'816',PropertySubType:'Condo Apartment',PropertyType:'Residential Condo & Other',LivingAreaRange:'800-899',BedroomsAboveGrade:2,PostalCode:'M6E1A1'};
+  const unit=(n,building,price,age=30)=>({...home,ListingKey:`UNIT-${building}-${n}`,StreetNumber:String(building),UnitNumber:String(n),UnparsedAddress:`${building} Example Cres Unit ${n}, Toronto`,StandardStatus:'Closed',TransactionType:'For Sale',ClosePrice:price,PurchaseContractDate:new Date(Date.now()-age*86400000).toISOString(),BedroomsTotal:3});
+  const own=[unit(817,185,550000),unit(818,185,560000),unit(819,185,570000)];
+  const other=[unit(1,195,750000,5),unit(2,195,760000,6),unit(3,195,770000,7)];
+  const result=calculateSellerEvidence(home,[...own,...other]);
+  assert.equal(result.policy.sameBuildingOnly,true);
+  assert.equal(result.midpoint,560000);
+  assert.equal(result.comparables.length,3);
+  assert(result.comparables.every(c=>c.beds===2),'Seller sales show above-grade bedrooms consistently with the subject.');
+  const sparse=calculateSellerEvidence(home,[own[0],...other]);
+  assert.equal(sparse.policy.sameBuildingOnly,false);
+  assert.equal(sparse.comparables.length,4);
+  const active=[unit(820,185,600000,20),unit(4,195,400000,1)].map(r=>({...r,StandardStatus:'Active',ContractStatus:'Available',ListPrice:r.ClosePrice,OriginalEntryTimestamp:r.PurchaseContractDate}));
+  assert.equal(sellerActiveComparisons(home,active)[0].askingPrice,600000);
+  assert.deepEqual(calculateSellerEvidence(home,[...own,...other,...active]),result);
+});
+
 test('a completed empty case variant cannot hide incomplete seller MLS history',async t=>{
   const history={...subject,OriginalEntryTimestamp:'2025-01-01T00:00:00Z'};
   let pages=0,fullRecordReads=0;
@@ -112,6 +130,7 @@ test('seller scenario 2: condo same-building exception preserves size and exact 
   const withoutCommas=await resolveSellerSubject('10 Example Avenue Unit 401 Richmond Hill ON L4B 1A1',{city:''},{AMPRE_TOKEN:'fixture-only'});
   assert.equal(withoutCommas?.UnitNumber,'401');
   assert.equal(recovered.ListingKey,'N_HISTORY_NEW');assert.equal(recovered.UnitNumber,'401');assert.equal(recovered.LivingAreaRange,'600-699');assert.equal(recovered._sellerHistory.length,2);assert.equal(recovered._sellerFactSources.LivingAreaRange,'N_HISTORY_OLD');
+  assert.equal(recovered._sellerStreetRecords.length,3,'Case variants reuse distinct street records, including other homes.');
   assert(sellerComparableGeography(a,b));assert(!sellerSameHome(a,b));
   assert.equal(qualifiedSoldComparableRows(a,[b],300).length,1);
   assert.equal(qualifiedSoldComparableRows(a,[{...b,LivingAreaRange:'700-799'}],300).length,0);
@@ -131,6 +150,16 @@ test('seller scenario 2: condo same-building exception preserves size and exact 
   const fetched=await buildSellerEvidence(a,{AMPRE_TOKEN:'fixture-only'});
   assert.equal(fetched.available,true);assert.equal(fetched.comparables.length,3);assert.equal(fetched.activeComparables.length,1);assert(lookups.some(u=>u.searchParams.has('$skiptoken')));
   assert.equal(fetched.policy.activeAsksUsedForValuation,false);
+  t.mock.restoreAll();
+  const cachedRows=[b,{...b,ListingKey:'N03',UnitNumber:'601',UnparsedAddress:'10 Example Avenue 601, Richmond Hill'},{...b,ListingKey:'N04',UnitNumber:'701',UnparsedAddress:'10 Example Avenue 701, Richmond Hill'}];
+  t.mock.method(globalThis,'fetch',async url=>{
+    assert.match(new URL(url).searchParams.get('$filter'),/CityRegion/,'A completed street history must not be downloaded again.');
+    return Response.json({value:[]});
+  });
+  const cached=await buildSellerEvidence({...a,_sellerStreetRecords:cachedRows,_sellerLookupAudit:[{status:200,complete:true}]},{AMPRE_TOKEN:'fixture-only'});
+  assert.equal(cached.available,true);
+  assert.equal(cached.policy.sameBuildingOnly,true);
+  assert.equal(cached.policy.retrievalCapped,false);
   const profile=validateSellerProfile({...profileInput,homeType:'Condo Apartment',city:'Richmond Hill',sizeBand:'600-699',beds:1,community:'Example North',targetPrice:null,upgrades:[]});
   const report=await buildSellerReport({}, {},property(profile,{comparableContext:{available:false,basis:'Only one matching sale was found.',comparables:[{address:b.UnparsedAddress,soldPrice:630000,soldDate:b.PurchaseContractDate,livingAreaRange:'600-699'}]}}));
   assert.equal(report.valuation.available,false);assert.equal(report.seller.target_position.label,'Open to guidance');
