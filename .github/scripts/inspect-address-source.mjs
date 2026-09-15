@@ -20,3 +20,12 @@ const ast=s=>JSON.stringify(norm(parse(s,{ecmaVersion:'latest',sourceType:'modul
 const a=ast(prior),b=ast(current);
 console.log(JSON.stringify({identicalWithoutBundlerNameHelpers:a===b}));
 if(a!==b){let i=0;while(i<Math.min(a.length,b.length)&&a[i]===b[i])i++;console.log(JSON.stringify({firstDifferentPosition:i,priorSyntax:a.slice(Math.max(0,i-150),i+300),currentSyntax:b.slice(Math.max(0,i-150),i+300)}));}
+
+const mismatches={};let other=0;
+function compare(a,b,path=''){
+ if(JSON.stringify(a)===JSON.stringify(b))return;
+ if(a?.type==='Identifier'&&b?.type==='Identifier'){const k=a.name+' -> '+b.name;mismatches[k]=(mismatches[k]||0)+1;return;}
+ if(a===null||b===null||typeof a!=='object'||typeof b!=='object'){other++;return;}
+ for(const k of new Set([...Object.keys(a),...Object.keys(b)]))compare(a[k],b[k],path+'.'+k);
+}
+compare(JSON.parse(a),JSON.parse(b));console.log(JSON.stringify({identifierRenames:mismatches,otherChanges:other}));
