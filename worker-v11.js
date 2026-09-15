@@ -5637,7 +5637,7 @@ function sellerSale(record) {
   const date=validDate(firstValue(record,['PurchaseContractDate','SoldDate','CloseDate','ContractDate','ClosingDate']));
   if(!price||price<50000||!date||!/sold|closed|deal firm/i.test(status)||/conditional|sold cond/i.test(status))return null;
   const age=(Date.now()-date.getTime())/86400000;
-  return age>=0&&age<=300?{record,price,date,age}:null;
+  return age>=0&&age<=365?{record,price,date,age}:null;
 }
 function sellerHomeKey(record) {
   const p=parseAddress5(record.UnparsedAddress||buildAddress(record));
@@ -5720,17 +5720,17 @@ function calculateSellerEvidence(subject,records) {
   // Select on physical similarity and freshness, never on the owner's target.
   const sized=candidates.filter(c=>!c.missingSize);
   const pool=sized.length>=3?sized:candidates;
-  const windowDays=pool.filter(c=>c.age<=100).length>=3?100:300;
+  const windowDays=pool.filter(c=>c.age<=100).length>=3?100:pool.filter(c=>c.age<=300).length>=3?300:365;
   const selected=pool.filter(c=>c.age<=windowDays).sort((a,b)=>b.weight-a.weight||a.key.localeCompare(b.key)).slice(0,8);
   const comps=selected.map(c=>({...publicComparable({record:c.record,price:c.price,closeDate:c.date.toISOString().slice(0,10),similarity:Math.round(c.similarity*100),sameBuilding:c.building,sameRegion:sameText(subject.CityRegion,c.record.CityRegion)}),adjustedPrice:Math.round(c.value/1000)*1000,timeAdjustmentPct:Math.round((c.factor-1)*1000)/10,ageDays:Math.round(c.age)}));
   const policy={model:'seller-evidence-v2',windowDays,trend,eligibleSales:candidates.length,distinctHomes:selected.length,condoExactSize:condo,ownerTargetUsed:false,upgradePremiumAdded:false,missingSizeFallback:selected.some(c=>c.missingSize)};
   if(selected.length<3)return {...unavailableComp('Fewer than three sufficiently similar sold homes were recovered. The team needs to review the remaining evidence.'),comparables:comps,policy};
   const mid=sellerWeightedQuantile(selected,.5),q20=sellerWeightedQuantile(selected,.2),q80=sellerWeightedQuantile(selected,.8);
   const age=selected.reduce((n,r)=>n+r.age,0)/selected.length;
-  const spread=(q80-q20)/mid,margin=(selected.length<5?.12:.08)+(age>180?.04:0)+(trend.available?.02:0)+(policy.missingSizeFallback?.08:0);
+  const spread=(q80-q20)/mid,margin=(selected.length<5?.12:.08)+(age>180?.04:0)+(trend.available?.02:0)+(policy.missingSizeFallback?.08:0)+(windowDays>300?.03:0);
   const low=Math.floor(Math.min(q20,mid*(1-margin))/5000)*5000,high=Math.ceil(Math.max(q80,mid*(1+margin))/5000)*5000;
-  return {available:true,rangeLow:low,midpoint:Math.round(mid/5000)*5000,rangeHigh:high,confidence:!policy.missingSizeFallback&&selected.length>=5&&age<=180&&spread<.2?'Medium':'Low',comparables:comps,policy,
-    methodology:'Seller Evidence v2 ranks distinct sold homes by interior size, bedrooms, building/community and lot frontage. Freehold size may differ by up to 25%; condo size bands must match. When freehold size is missing, recorded bedrooms and lot frontage are used with a wider, low-confidence range. Weighted median and price spread form a preliminary range with an uncertainty allowance. We first use sales within 100 days and expand to 300 days only when needed. No older sale or assumed appreciation is used. This is not a statistically calibrated confidence interval. Owner expectations and historical asking prices do not set the value.'};
+  return {available:true,rangeLow:low,midpoint:Math.round(mid/5000)*5000,rangeHigh:high,confidence:windowDays<=300&&!policy.missingSizeFallback&&selected.length>=5&&age<=180&&spread<.2?'Medium':'Low',comparables:comps,policy,
+    methodology:'Seller Evidence v2 ranks distinct sold homes by interior size, bedrooms, building/community and lot frontage. Freehold size may differ by up to 25%; condo size bands must match. When freehold size is missing, recorded bedrooms and lot frontage are used with a wider, low-confidence range. Weighted median and price spread form a preliminary range with an uncertainty allowance. We first use sales within 100 days, expand to 300 days if needed, and use up to 365 days only for sparse evidence with low confidence and a wider range. No older sale or assumed appreciation is used. This is not a statistically calibrated confidence interval. Owner expectations and historical asking prices do not set the value.'};
 }
 function sellerActiveComparisons(subject,records) {
   const area=sellerArea(subject),homes=new Map();
