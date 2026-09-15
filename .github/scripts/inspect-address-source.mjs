@@ -7,8 +7,4 @@ const current=await read('8e7ee114-a217-4893-a5a2-ee12d331c2dd');
 const trim=s=>s.replace(/\/\/[#@] sourceMappingURL=.*$/gm,'').trim();
 console.log(JSON.stringify({priorLength:prior.length,currentLength:current.length,equalIgnoringSourceMap:trim(prior)===trim(current),currentContainsPrior:current.includes(prior.trim()),priorContainsCurrent:prior.includes(current.trim())}));
 
-const {parse}=await import('/tmp/address-source-review/node_modules/acorn/dist/acorn.mjs');
-const pa=parse(prior,{ecmaVersion:'latest',sourceType:'module'}),ca=parse(current,{ecmaVersion:'latest',sourceType:'module'});
-const summary=ast=>ast.body.filter(n=>n.type==='FunctionDeclaration').map(n=>n.id.name);
-console.log(JSON.stringify({removedFunctions:summary(pa).filter(n=>!summary(ca).includes(n)),addedFunctions:summary(ca).filter(n=>!summary(pa).includes(n))}));
-for(const n of ca.body.filter(n=>n.type==='FunctionDeclaration'&&!summary(pa).includes(n)))console.log(current.slice(n.start,n.end));
+const {writeFileSync}=await import('node:fs');writeFileSync('production-worker-review.js',current);
