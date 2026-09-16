@@ -1,12 +1,14 @@
-name: Version 7 validation
+name: Version 7.1 validation
 
 on:
   push:
-    branches: [main, phase-7]
+    branches: [main, phase-7-1]
     paths:
       - 'worker-v11.js'
       - 'worker-v12.js'
       - 'worker-v13.js'
+      - 'worker-v14.js'
+      - 'worker-v15.js'
       - 'wrangler.jsonc'
       - '.github/workflows/version7-validation.yml'
   workflow_dispatch:
@@ -19,14 +21,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check Version 7 worker syntax
+      - name: Check Version 7.1 worker syntax and model policy
         run: |
           set -euo pipefail
           node --check worker-v11.js
           node --check worker-v12.js
           node --check worker-v13.js
-          grep -F 'version-7-openai-expert' worker-v12.js >/dev/null
-          grep -F 'sellerRenovationV7' worker-v12.js >/dev/null
-          grep -F 'gpt-5.6-terra' worker-v12.js >/dev/null
-          grep -F 'worker-v13.js' wrangler.jsonc >/dev/null
-          echo 'Version 7 syntax and feature markers passed.'
+          node --check worker-v14.js
+          node --check worker-v15.js
+          grep -F 'version-7.1-luna-seller-routing-20260916' worker-v15.js >/dev/null
+          grep -F 'gpt-5.6-luna' worker-v15.js >/dev/null
+          grep -F 'worker-v15.js' wrangler.jsonc >/dev/null
+          echo 'Version 7.1 syntax, Luna lock, and seller-routing markers passed.'
