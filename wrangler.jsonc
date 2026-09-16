@@ -4,7 +4,7 @@
   "compatibility_date": "2026-08-25",
   "preview_urls": true,
   "vars": { "PUBLIC_DISCOVERY_ENABLED": "true" },
-  "main": "worker-v12.js",
+  "main": "worker-v13.js",
   "ai": { "binding": "AI" },
   "secrets": {
     "required": ["AMPRE_TOKEN", "AMPRE_VOW_TOKEN", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_API_KEY", "RESEND_API_KEY", "OPENAI_API_KEY"]
