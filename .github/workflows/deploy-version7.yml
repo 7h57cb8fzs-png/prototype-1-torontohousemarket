@@ -10,6 +10,7 @@ on:
       - 'worker-v13.js'
       - 'worker-v14.js'
       - 'worker-v15.js'
+      - 'worker-v16.js'
       - 'wrangler.jsonc'
       - '.github/workflows/deploy-version7.yml'
   workflow_dispatch:
@@ -30,8 +31,10 @@ jobs:
           node --check worker-v13.js
           node --check worker-v14.js
           node --check worker-v15.js
-          grep -F 'version-7.1-luna-seller-routing-20260916' worker-v15.js >/dev/null
-          grep -F 'gpt-5.6-luna' worker-v15.js >/dev/null
+          node --check worker-v16.js
+          grep -F 'version-7.1-luna-fast-seller-20260916' worker-v16.js >/dev/null
+          grep -F 'gpt-5.6-luna' worker-v16.js >/dev/null
+          grep -F 'worker-v16.js' wrangler.jsonc >/dev/null
       - name: Prepare deploy config
         run: |
           node <<'NODE'
@@ -52,13 +55,13 @@ jobs:
           set -euo pipefail
           for i in 1 2 3 4 5 6; do
             if curl -fsS --max-time 20 https://torontohousemarket.com/api/version -o version.json; then
-              if grep -F 'version-7.1-luna-seller-routing-20260916' version.json >/dev/null; then
+              if grep -F 'version-7.1-luna-fast-seller-20260916' version.json >/dev/null; then
                 cat version.json
                 exit 0
               fi
             fi
             sleep 5
           done
-          echo '::error::Live Version 7.1 marker was not confirmed.'
+          echo '::error::Live Version 7.1 fast-seller marker was not confirmed.'
           cat version.json 2>/dev/null || true
           exit 1
