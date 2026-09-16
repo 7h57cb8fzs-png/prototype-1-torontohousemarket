@@ -7,6 +7,7 @@ on:
       - 'worker-v11.js'
       - 'worker-v12.js'
       - 'worker-v13.js'
+      - 'worker-v14.js'
       - 'wrangler.jsonc'
       - '.github/workflows/deploy-version7.yml'
   workflow_dispatch:
@@ -25,6 +26,7 @@ jobs:
           node --check worker-v11.js
           node --check worker-v12.js
           node --check worker-v13.js
+          node --check worker-v14.js
       - name: Prepare deploy config
         run: |
           node <<'NODE'
@@ -45,7 +47,7 @@ jobs:
           set -euo pipefail
           for i in 1 2 3 4 5 6; do
             if curl -fsS --max-time 20 https://torontohousemarket.com/api/version -o version.json; then
-              if grep -F 'version-7-openai-expert-v121-20260916' version.json >/dev/null; then
+              if grep -F 'version-7-openai-expert-v122-20260916' version.json >/dev/null; then
                 cat version.json
                 exit 0
               fi
