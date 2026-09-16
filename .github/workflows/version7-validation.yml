@@ -1,0 +1,32 @@
+name: Version 7 validation
+
+on:
+  push:
+    branches: [main, phase-7]
+    paths:
+      - 'worker-v11.js'
+      - 'worker-v12.js'
+      - 'worker-v13.js'
+      - 'wrangler.jsonc'
+      - '.github/workflows/version7-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Version 7 worker syntax
+        run: |
+          set -euo pipefail
+          node --check worker-v11.js
+          node --check worker-v12.js
+          node --check worker-v13.js
+          grep -F 'version-7-openai-expert' worker-v12.js >/dev/null
+          grep -F 'sellerRenovationV7' worker-v12.js >/dev/null
+          grep -F 'gpt-5.6-terra' worker-v12.js >/dev/null
+          grep -F 'worker-v13.js' wrangler.jsonc >/dev/null
+          echo 'Version 7 syntax and feature markers passed.'
