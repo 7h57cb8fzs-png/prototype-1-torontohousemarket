@@ -1,7 +1,9 @@
 import app from "./worker-v14.js";
-import { buildPropertyReport, loadPropertyForReport } from "./worker-v11.js";
+import { deliverEmailJob } from "./worker-v11.js";
 
-const VERSION = "seller-stability-v123-20260916";
+const VERSION = "version-7.1-luna-seller-routing-20260916";
+const OPENAI_MODEL = "gpt-5.6-luna";
+const AUTOMATION_ROUTES = new Set(["/api/lead", "/api/vow/accept-terms", "/api/vow/activate-request"]);
 
 export default {
   async fetch(request, env, ctx) {
@@ -10,84 +12,140 @@ export default {
       return json({
         ok: true,
         version: VERSION,
-        base: "version-7-openai-expert-v122-20260916",
-        seller: "stable Phase-6 seller generator runs before V7 buyer expert recovery",
+        base: "Version 7 / Phase 6 UI",
+        openai_model: OPENAI_MODEL,
+        openai_policy: "Luna only for all OpenAI calls",
+        buyer: "strict THM engine first; Luna Expert Comp recovery when evidence is weak or missing",
+        seller: "seller reports are held until Version 7.1 processing is confirmed; weak/no-price reports are rebuilt through Expert Comp before email delivery",
+        renovation: "0-100 owner condition context retained in seller analysis",
       });
     }
-    return app.fetch(request, env, ctx);
+
+    const lunaEnv = { ...env, OPENAI_MODEL };
+    if (!AUTOMATION_ROUTES.has(url.pathname)) return app.fetch(request, lunaEnv, ctx);
+
+    // Suppress delivery inside lower layers. We release the report email only
+    // after Version 7.1 has verified or repaired the seller report.
+    const deferred = [];
+    const proxyCtx = { waitUntil(promise) { deferred.push(Promise.resolve(promise)); } };
+    const response = await app.fetch(request, { ...lunaEnv, RESEND_API_KEY: null }, proxyCtx);
+    if (response.ok) ctx?.waitUntil?.(finalizeV71(env, deferred).catch(logError));
+    return response;
   },
 
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil((async () => {
-      await processOneSellerReport(env).catch(error => {
-        console.error(JSON.stringify({ event: "seller_stability_failed", error: String(error?.message || error).slice(0, 300) }));
-      });
-      app.scheduled(controller, env, ctx);
-    })());
+    ctx.waitUntil(runV71Scheduled(controller, env).catch(logError));
   },
 };
 
-async function processOneSellerReport(env) {
-  if (!env.SUPABASE_SERVICE_ROLE_KEY) return { processed: 0 };
-
-  const jobsResponse = await supabase(env,
-    "/rest/v1/automation_jobs?job_type=eq.generate_report&status=in.(queued,processing)&select=id,lead_id,report_id,status,attempts,locked_at,available_at&order=available_at.asc&limit=20"
-  );
-  const jobs = await jobsResponse.json().catch(() => []);
-  if (!jobsResponse.ok || !Array.isArray(jobs)) return { processed: 0 };
-
-  for (const job of jobs) {
-    const lead = await loadLead(env, job.lead_id);
-    if (!lead || lead.lead_mode !== "seller" || !lead.property_snapshot?.sellerProfile) continue;
-
-    const stale = job.status === "processing" && (!job.locked_at || Date.now() - Date.parse(job.locked_at) > 90_000);
-    if (job.status !== "queued" && !stale) continue;
-
-    const now = new Date().toISOString();
-    const claim = await supabase(env, `/rest/v1/automation_jobs?id=eq.${job.id}&select=id,status`, {
-      method: "PATCH",
-      headers: { Prefer: "return=representation" },
-      body: JSON.stringify({
-        status: "processing",
-        locked_at: now,
-        updated_at: now,
-        last_error: null,
-        attempts: Math.max(1, Number(job.attempts || 0)),
-      }),
-    });
-    const claimed = await claim.json().catch(() => []);
-    if (!claim.ok || !Array.isArray(claimed) || !claimed.length) continue;
-
-    const requestId = `seller-stable-${job.id}`;
-    try {
-      const property = await loadPropertyForReport(env, lead, requestId);
-      const report = await buildPropertyReport(env, lead, property, requestId);
-      await rpc(env, "complete_report_job", {
-        p_job_id: job.id,
-        p_report_id: job.report_id,
-        p_report_payload: report,
-      });
-      console.log(JSON.stringify({ event: "seller_stability_ready", job_id: job.id, report_id: job.report_id }));
-      return { processed: 1, completed: 1 };
-    } catch (error) {
-      const message = String(error?.message || error).slice(0, 500);
-      await rpc(env, "fail_report_job", {
-        p_job_id: job.id,
-        p_report_id: job.report_id,
-        p_error: message,
-      }).catch(() => null);
-      console.error(JSON.stringify({ event: "seller_stability_generation_failed", job_id: job.id, error: message }));
-      return { processed: 1, failed: 1 };
-    }
-  }
-  return { processed: 0 };
+async function runV71Scheduled(controller, env) {
+  const deferred = [];
+  const proxyCtx = { waitUntil(promise) { deferred.push(Promise.resolve(promise)); } };
+  await app.scheduled(controller, { ...env, OPENAI_MODEL, RESEND_API_KEY: null }, proxyCtx);
+  await Promise.allSettled(deferred);
+  await finalizeV71(env, []);
 }
 
-async function loadLead(env, id) {
-  const select = "id,name,email,lead_mode,resolved_address,showing_timing,property_snapshot,metadata,created_at,vow_user_id";
-  const response = await supabase(env, `/rest/v1/leads?id=eq.${encodeURIComponent(id)}&select=${encodeURIComponent(select)}&limit=1`);
-  const rows = await response.json().catch(() => []);
-  return response.ok && Array.isArray(rows) ? rows[0] || null : null;
+async function finalizeV71(env, deferred) {
+  if (deferred?.length) await Promise.allSettled(deferred);
+
+  // If an older report worker somehow won the job claim, do not email it.
+  // Requeue only seller reports that have a pending customer report email and
+  // are ready without a Version 7 marker. Then run one Luna-only V7 cycle.
+  const repaired = await repairPendingSellerReports(env, 3);
+  if (repaired > 0) {
+    const retryDeferred = [];
+    const proxyCtx = { waitUntil(promise) { retryDeferred.push(Promise.resolve(promise)); } };
+    await app.scheduled({}, { ...env, OPENAI_MODEL, RESEND_API_KEY: null }, proxyCtx);
+    await Promise.allSettled(retryDeferred);
+  }
+
+  await stampPendingReportsV71(env, 20);
+  await processEmailJobs(env, 20);
+}
+
+async function repairPendingSellerReports(env, limit = 3) {
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) return 0;
+  const jobsRes = await supabase(env, `/rest/v1/automation_jobs?job_type=eq.email_buyer&status=eq.queued&select=id,lead_id,report_id&order=created_at.asc&limit=${limit}`);
+  const jobs = await jobsRes.json().catch(() => []);
+  if (!jobsRes.ok || !Array.isArray(jobs)) return 0;
+
+  let repaired = 0;
+  for (const job of jobs) {
+    if (!job?.lead_id || !job?.report_id) continue;
+    const [leadRes, reportRes] = await Promise.all([
+      supabase(env, `/rest/v1/leads?id=eq.${encodeURIComponent(job.lead_id)}&select=id,lead_mode&limit=1`),
+      supabase(env, `/rest/v1/property_reports?id=eq.${encodeURIComponent(job.report_id)}&select=id,status,report_payload&limit=1`),
+    ]);
+    const lead = (await leadRes.json().catch(() => []))?.[0];
+    const report = (await reportRes.json().catch(() => []))?.[0];
+    if (lead?.lead_mode !== "seller" || !report || report.status !== "ready") continue;
+
+    const payload = report.report_payload || {};
+    const version = String(payload.version_label || payload.version || "");
+    if (/Version 7|^7(?:\.1)?$/.test(version)) continue;
+
+    const now = new Date().toISOString();
+    const resetReport = await supabase(env, `/rest/v1/property_reports?id=eq.${encodeURIComponent(job.report_id)}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ status: "queued", report_payload: null, error_message: null, generated_at: null, updated_at: now }),
+    });
+    if (!resetReport.ok) continue;
+
+    const resetJob = await supabase(env, `/rest/v1/automation_jobs?report_id=eq.${encodeURIComponent(job.report_id)}&job_type=eq.generate_report`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ status: "queued", attempts: 0, available_at: now, locked_at: null, completed_at: null, last_error: null, updated_at: now }),
+    });
+    if (resetJob.ok) repaired++;
+  }
+  return repaired;
+}
+
+async function stampPendingReportsV71(env, limit = 20) {
+  if (!env.SUPABASE_SERVICE_ROLE_KEY) return;
+  const jobsRes = await supabase(env, `/rest/v1/automation_jobs?job_type=eq.email_buyer&status=eq.queued&select=report_id&order=created_at.asc&limit=${limit}`);
+  const jobs = await jobsRes.json().catch(() => []);
+  if (!jobsRes.ok || !Array.isArray(jobs)) return;
+
+  for (const job of jobs) {
+    if (!job?.report_id) continue;
+    const reportRes = await supabase(env, `/rest/v1/property_reports?id=eq.${encodeURIComponent(job.report_id)}&status=eq.ready&select=id,report_payload&limit=1`);
+    const row = (await reportRes.json().catch(() => []))?.[0];
+    if (!row?.report_payload) continue;
+
+    const payload = clone(row.report_payload);
+    payload.version = 7.1;
+    payload.version_label = "Toronto House Market Version 7.1";
+    payload.generated_by = "Phase 6 evidence engine + Version 7.1 Luna expert recovery";
+    payload.openai_model = OPENAI_MODEL;
+    if (payload.ai_generation?.provider === "openai") payload.ai_generation.model = OPENAI_MODEL;
+    if (payload.expert_comp_mode?.used) payload.expert_comp_mode.model = OPENAI_MODEL;
+    if (payload.seller) payload.seller.openai_model = OPENAI_MODEL;
+
+    await supabase(env, `/rest/v1/property_reports?id=eq.${encodeURIComponent(job.report_id)}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ report_payload: payload, updated_at: new Date().toISOString() }),
+    }).catch(() => null);
+  }
+}
+
+async function processEmailJobs(env, limit) {
+  if (!env.RESEND_API_KEY) return { claimed: 0, sent: 0, failed: 0 };
+  const jobs = await rpc(env, "claim_email_jobs", { p_limit: limit }).catch(() => []);
+  let sent = 0, failed = 0;
+  for (const job of Array.isArray(jobs) ? jobs : []) {
+    try {
+      await deliverEmailJob(env, job);
+      sent++;
+    } catch (error) {
+      failed++;
+      await rpc(env, "fail_email_job", { p_job_id: job.id, p_error: String(error?.message || error).slice(0, 300) }).catch(() => null);
+    }
+  }
+  return { claimed: Array.isArray(jobs) ? jobs.length : 0, sent, failed };
 }
 
 async function rpc(env, name, body) {
@@ -101,7 +159,7 @@ function supabase(env, path, init = {}) {
   const base = env.SUPABASE_URL || "https://pwbtxyavjjotxtvegrqe.supabase.co";
   return fetch(`${base}${path}`, {
     ...init,
-    signal: init.signal || AbortSignal.timeout(15000),
+    signal: init.signal || AbortSignal.timeout(10000),
     headers: {
       "Content-Type": "application/json",
       apikey: env.SUPABASE_SERVICE_ROLE_KEY,
@@ -111,9 +169,6 @@ function supabase(env, path, init = {}) {
   });
 }
 
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-THM-Version": VERSION },
-  });
-}
+function clone(value) { return JSON.parse(JSON.stringify(value || {})); }
+function logError(error) { console.error(JSON.stringify({ event: "v7_1_error", error: String(error?.message || error).slice(0, 300) })); }
+function json(body, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-THM-Version": VERSION } }); }
