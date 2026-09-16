@@ -1,0 +1,57 @@
+name: Deploy Toronto House Market Version 7
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker-v11.js'
+      - 'worker-v12.js'
+      - 'worker-v13.js'
+      - 'wrangler.jsonc'
+      - '.github/workflows/deploy-version7.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Version 7 source
+        run: |
+          set -euo pipefail
+          node --check worker-v11.js
+          node --check worker-v12.js
+          node --check worker-v13.js
+      - name: Prepare deploy config
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          delete cfg.secrets;
+          fs.writeFileSync('wrangler.deploy.json',JSON.stringify(cfg,null,2));
+          NODE
+      - name: Deploy Version 7 to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.129.0 deploy --config wrangler.deploy.json
+      - name: Verify live Version 7 marker
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 20 https://torontohousemarket.com/api/version -o version.json; then
+              if grep -F 'version-7-openai-expert-v121-20260916' version.json >/dev/null; then
+                cat version.json
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo '::error::Live Version 7 marker was not confirmed.'
+          cat version.json 2>/dev/null || true
+          exit 1
