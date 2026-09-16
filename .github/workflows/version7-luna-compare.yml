@@ -1,0 +1,69 @@
+name: Version 7 Luna comparison
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/version7-luna-compare.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  luna:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare Luna preview config
+        run: |
+          set -euo pipefail
+          node --check worker-v11.js
+          node --check worker-v12.js
+          node --check worker-v13.js
+          node --check worker-v14.js
+          node <<'NODE'
+          const fs=require('fs');
+          const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          delete cfg.secrets;
+          fs.writeFileSync('wrangler.luna.json',JSON.stringify(cfg,null,2));
+          NODE
+      - name: Upload isolated Luna preview
+        id: preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.129.0 versions upload --config wrangler.luna.json --preview-alias v7-luna-compare --keep-vars --var OPENAI_MODEL:gpt-5.6-luna | tee preview.log
+          url="$(grep -Eo 'https://[^[:space:]]+workers\.dev' preview.log | tail -1)"
+          if [ -z "$url" ]; then
+            echo '::error::Preview URL not found.'
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Run Luna on the same four historical failures
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+        run: |
+          set -euo pipefail
+          mkdir -p luna-results
+          for case_id in davos donnacona lindbergh bloomgate; do
+            echo "Testing ${case_id} with Luna..."
+            curl --retry 2 --retry-all-errors --retry-delay 2 -fsS --max-time 90 "${PREVIEW_URL}/api/internal/v7-failed-comp-regression?case=${case_id}" -o "luna-results/${case_id}.json"
+            jq -e '.ok == true and .subjectResolved == true and .expertUsed == true' "luna-results/${case_id}.json" >/dev/null
+          done
+          jq -s '.' luna-results/bloomgate.json luna-results/davos.json luna-results/donnacona.json luna-results/lindbergh.json > luna-results/results.json
+          echo '### Luna focused comparison' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '| Case | Candidates | Selected | Recoverable | Confidence | External next? |' >> "$GITHUB_STEP_SUMMARY"
+          echo '|---|---:|---:|---|---|---|' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.[] | "| \(.case) | \(.candidateCount) | \(.selectedCount) | \(.valuationRecoverable) | \(.confidence) | \(.externalSearchWouldRun) |"' luna-results/results.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Luna results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: version7-luna-comparison-results
+          path: luna-results/
+          if-no-files-found: warn
+          retention-days: 3
