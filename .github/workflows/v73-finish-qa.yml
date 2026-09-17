@@ -1,0 +1,41 @@
+name: V7.3 Finish QA Batch
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v73-finish-qa.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  finish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AMPRE_TOKEN: ${{ secrets.AMPRE_TOKEN }}
+      AMPRE_VOW_TOKEN: ${{ secrets.AMPRE_VOW_TOKEN }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Finish remaining THM reports sequentially
+        run: |
+          node --input-type=module <<'NODE'
+          import scheduler from './worker-v15.js';
+          const base='https://pwbtxyavjjotxtvegrqe.supabase.co';
+          const env={...process.env,OPENAI_MODEL:'gpt-5.6-luna',RESEND_API_KEY:null};
+          const headers={'Content-Type':'application/json',apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:`Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`};
+          async function statuses(){const r=await fetch(`${base}/rest/v1/automation_jobs?id=in.(389,393,397,399)&select=id,status,attempts,last_error,locked_at&order=id`,{headers});return await r.json();}
+          async function resetStale(){const cutoff=new Date(Date.now()-2*60*1000).toISOString();await fetch(`${base}/rest/v1/automation_jobs?id=in.(389,393,397,399)&job_type=eq.generate_report&status=eq.processing&locked_at=lt.${encodeURIComponent(cutoff)}`,{method:'PATCH',headers:{...headers,Prefer:'return=minimal'},body:JSON.stringify({status:'queued',attempts:0,locked_at:null,available_at:new Date().toISOString(),last_error:'QA GitHub runner retry after Worker wall-time limit.',updated_at:new Date().toISOString()})});}
+          async function runOnce(){const pending=[];const ctx={waitUntil(p){pending.push(Promise.resolve(p));}};await scheduler.scheduled({},env,ctx);let rounds=0;while(pending.length&&rounds<50){const batch=pending.splice(0);const settled=await Promise.allSettled(batch);for(const s of settled)if(s.status==='rejected')console.error('waitUntil rejection:',s.reason);rounds++;}}
+          for(let i=0;i<10;i++){
+            await resetStale();
+            const before=await statuses();console.log('before',i,JSON.stringify(before));
+            if(before.every(x=>x.status==='completed'))break;
+            await runOnce();
+            const after=await statuses();console.log('after',i,JSON.stringify(after));
+            if(after.every(x=>x.status==='completed'))break;
+          }
+          const final=await statuses();console.log('FINAL',JSON.stringify(final));
+          if(!final.every(x=>x.status==='completed'))process.exitCode=1;
+          NODE
