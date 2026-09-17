@@ -1,0 +1,58 @@
+name: Version 7.1 fixed 10 GTA QA parallel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v71-fixed-10-parallel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        include:
+          - key: N13743780
+            category: detached
+          - key: W13704406
+            category: detached
+          - key: W13698660
+            category: semi
+          - key: E13751906
+            category: semi
+          - key: W13653954
+            category: freehold_town
+          - key: C12483354
+            category: condo_apt
+          - key: W13729642
+            category: condo_apt
+          - key: N13782966
+            category: condo_apt
+          - key: N13772364
+            category: condo_town
+          - key: E13715278
+            category: condo_town
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run one V7.1 report
+        env:
+          PREVIEW_URL: https://v71-fixed10-qa-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev
+          LISTING_KEY: ${{ matrix.key }}
+        run: |
+          set -euo pipefail
+          mkdir -p result
+          curl --retry 2 --retry-all-errors --retry-delay 2 -fsS --max-time 180 "${PREVIEW_URL}/api/internal/v71-random-qa-report?listingKey=${LISTING_KEY}" -o "result/${LISTING_KEY}.json"
+          jq -e '.ok == true' "result/${LISTING_KEY}.json" >/dev/null
+          jq '{address,category,propertyType,listPrice,beds,baths,size,candidateCount,selectedCount,confidence,valuation,marketRead,buyerStrategy,comparables}' "result/${LISTING_KEY}.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v71-${{ matrix.key }}
+          path: result/
+          if-no-files-found: warn
+          retention-days: 3
