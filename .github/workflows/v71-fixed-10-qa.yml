@@ -1,0 +1,74 @@
+name: Version 7.1 fixed 10 GTA QA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v71-fixed-10-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare isolated Version 7.1 report preview
+        run: |
+          set -euo pipefail
+          node --check worker-v18-qa.js
+          node <<'NODE'
+          const fs=require('fs');
+          const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          cfg.main='worker-v18-qa.js';
+          delete cfg.secrets;
+          fs.writeFileSync('wrangler.fixed10.json',JSON.stringify(cfg,null,2));
+          NODE
+      - name: Upload isolated preview
+        id: preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.129.0 versions upload --config wrangler.fixed10.json --preview-alias v71-fixed10-qa --keep-vars | tee preview.log
+          url="$(grep -Eo 'https://[^[:space:]]+workers\.dev' preview.log | tail -1)"
+          test -n "$url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Run exact 10 listing QA reports
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
+        run: |
+          set -euo pipefail
+          mkdir -p v71-fixed10
+          cat > v71-fixed10/selection.json <<'JSON'
+          [
+            {"category":"detached","listingKey":"N13743780","address":"37 Cherry Bush Road, Vaughan"},
+            {"category":"detached","listingKey":"W13704406","address":"27 Jocada Road, Toronto"},
+            {"category":"semi","listingKey":"W13698660","address":"3328 Southwick Street, Mississauga"},
+            {"category":"semi","listingKey":"E13751906","address":"48 Hiltz Avenue, Toronto"},
+            {"category":"freehold_town","listingKey":"W13653954","address":"1309 Anthonia Trail, Oakville"},
+            {"category":"condo_apt","listingKey":"C12483354","address":"405 - 36 Forest Manor Road, Toronto"},
+            {"category":"condo_apt","listingKey":"W13729642","address":"709 - 50 Absolute Avenue, Mississauga"},
+            {"category":"condo_apt","listingKey":"N13782966","address":"1109 - 2920 Highway 7, Vaughan"},
+            {"category":"condo_town","listingKey":"N13772364","address":"1002 - 75 Weldrick Road E, Richmond Hill"},
+            {"category":"condo_town","listingKey":"E13715278","address":"2718 William Jackson Drive, Pickering"}
+          ]
+          JSON
+          jq -r '.[].listingKey' v71-fixed10/selection.json | while read key; do
+            echo "Running ${key}..."
+            curl --retry 2 --retry-all-errors --retry-delay 2 -fsS --max-time 150 "${PREVIEW_URL}/api/internal/v71-random-qa-report?listingKey=${key}" -o "v71-fixed10/${key}.json"
+            jq -e '.ok == true' "v71-fixed10/${key}.json" >/dev/null
+          done
+          jq -s '.' v71-fixed10/[A-Z]*.json > v71-fixed10/results.json
+          jq '[.[] | {address,category,propertyType,listPrice,beds,baths,size,candidateCount,selectedCount,confidence,valuation,marketRead,buyerStrategy,comparables}]' v71-fixed10/results.json
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v71-fixed-10-qa-results
+          path: v71-fixed10/
+          if-no-files-found: warn
+          retention-days: 3
