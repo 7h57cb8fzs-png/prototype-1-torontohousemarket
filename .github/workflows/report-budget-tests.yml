@@ -28,12 +28,11 @@ jobs:
           git diff --check
       - name: Offline failure and isolation regression tests
         run: node --test tests/report-runtime.test.mjs
-      - name: Save tested changes on repair branch only
+      - name: Save tested application code on repair branch only
         run: |
           set -euo pipefail
           test "$(git branch --show-current)" = 'fix/v73-request-budget'
-          git add worker-v11.js worker-v12.js worker-v22.js .github/workflows/deploy-version72.yml
-          git add -u .github/workflows/v73-watchdog.yml || true
+          git add worker-v11.js worker-v12.js worker-v22.js
           if git diff --cached --quiet; then exit 0; fi
           git diff --cached --stat
           git -c user.name='THM repair automation' -c user.email='actions@users.noreply.github.com' commit -m 'Fix request exhaustion: reuse VOW pool, reserve writes, finalize before ready'
