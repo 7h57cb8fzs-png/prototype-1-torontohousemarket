@@ -3,7 +3,7 @@
   "name": "prototype-1-torontohousemarket",
   "compatibility_date": "2026-08-25",
   "preview_urls": true,
-  "vars": { "PUBLIC_DISCOVERY_ENABLED": "true" },
+  "vars": { "PUBLIC_DISCOVERY_ENABLED": "true", "THM_RELEASE": "7.2" },
   "main": "worker-v20.js",
   "ai": { "binding": "AI" },
   "secrets": {
