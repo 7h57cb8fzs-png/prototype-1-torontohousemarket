@@ -1,0 +1,28 @@
+name: Report request-budget regression tests
+on:
+  push:
+    branches: ['fix/v73-request-budget']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect request call sites
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          for(const file of ['worker-v11.js','worker-v12.js']){
+            const lines=fs.readFileSync(file,'utf8').split('\n');
+            console.log('FILE',file,'LINES',lines.length);
+            for(let i=0;i<lines.length;i++) if(/^(?:async )?function .*?(?:Report|[Cc]omparable|amplify|supabase|queryProperties)/.test(lines[i])||/\bfetch\(/.test(lines[i])) console.log(i+1,lines[i]);
+            if(file==='worker-v11.js') for(const name of ['loadPropertyForReport','startReportHeartbeat','amplifyFetch','buildComparableContext','buildPropertyReport']){
+              const start=lines.findIndex(l=>new RegExp('^(?:async )?function '+name+'\\(').test(l));
+              if(start<0)continue;let end=start+1;while(end<lines.length&&!/^(?:async )?function /.test(lines[end]))end++;
+              console.log('FUNCTION',name,lines.slice(start,Math.min(end,start+200)).join('\n'));
+            }
+          }
+          NODE
