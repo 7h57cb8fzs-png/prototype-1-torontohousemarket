@@ -1,0 +1,30 @@
+name: Version 7.1 random GTA QA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/v71-random-qa.mjs'
+      - '.github/workflows/v71-random-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run 10-property Version 7.1 QA batch
+        env:
+          AMPRE_VOW_TOKEN: ${{ secrets.AMPRE_VOW_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          node --check scripts/v71-random-qa.mjs
+          node scripts/v71-random-qa.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v71-random-qa-results
+          path: v71-random-qa-results.json
+          retention-days: 3
