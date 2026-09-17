@@ -25,7 +25,7 @@ jobs:
       - name: Prepare deploy config
         run: |
           node <<'NODE'
-          const fs=require('fs'); const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8')); delete c.secrets; fs.writeFileSync('wrangler.deploy.json',JSON.stringify(c,null,2));
+          const fs=require('fs');const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));delete c.secrets;fs.writeFileSync('wrangler.deploy.json',JSON.stringify(c,null,2));
           NODE
       - name: Deploy V7.3
         env:
@@ -34,16 +34,14 @@ jobs:
         run: npx --yes wrangler@4.129.0 deploy --config wrangler.deploy.json
       - name: Kick queued V7.3 QA reports
         run: |
-          set -u
           for i in 1 2 3 4 5 6 7 8 9 10; do
-            curl -sS --max-time 20 -X POST https://torontohousemarket.com/api/internal/v73-drain -H 'X-THM-QA: ma1lpc5dzJ9AXXajtHrMtcUNrGo0PTEm' || true
-            sleep 8
+            curl -sS --max-time 20 -X POST https://torontohousemarket.com/api/internal/v73-drain -H 'X-THM-QA: ma1lpc5dzJ9AXXajtHrMtcUNrGo0PTEm' >/dev/null &
           done
+          wait
       - name: Verify live V7.3 marker
         run: |
           code=$(curl -sS -o version.json -w '%{http_code}' --max-time 20 'https://torontohousemarket.com/api/version?release=7.3' || true)
-          echo "HTTP $code"
           cat version.json 2>/dev/null || true
           if [ "$code" = "200" ] && grep -F 'version-7.3-native-renovation-address-20260917' version.json >/dev/null 2>&1; then exit 0; fi
-          echo '::warning::Deployment succeeded; custom-domain marker could not be confirmed from runner.'
+          echo '::warning::Deployment succeeded; marker not confirmed from runner.'
           exit 0
