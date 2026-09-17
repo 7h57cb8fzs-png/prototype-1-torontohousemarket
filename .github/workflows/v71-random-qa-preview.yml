@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'worker-v18-qa.js'
+      - 'worker-v19-qa.js'
       - '.github/workflows/v71-random-qa-preview.yml'
   workflow_dispatch:
 
@@ -20,10 +21,11 @@ jobs:
         run: |
           set -euo pipefail
           node --check worker-v18-qa.js
+          node --check worker-v19-qa.js
           node <<'NODE'
           const fs=require('fs');
           const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
-          cfg.main='worker-v18-qa.js';
+          cfg.main='worker-v19-qa.js';
           delete cfg.secrets;
           fs.writeFileSync('wrangler.qa-preview.json',JSON.stringify(cfg,null,2));
           NODE
@@ -44,7 +46,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p v71-random-qa
-          curl -fsS --max-time 120 "${PREVIEW_URL}/api/internal/v71-random-qa-select" -o v71-random-qa/selection.json
+          curl -sS --max-time 180 "${PREVIEW_URL}/api/internal/v71-random-qa-select" -o v71-random-qa/selection.json
+          cat v71-random-qa/selection.json
           jq -e '.ok == true and .count == 10' v71-random-qa/selection.json >/dev/null
           jq -r '.listings[].listingKey' v71-random-qa/selection.json | while read key; do
             echo "Running ${key}..."
@@ -52,7 +55,6 @@ jobs:
             jq -e '.ok == true' "v71-random-qa/${key}.json" >/dev/null
           done
           jq -s '.' v71-random-qa/*.json > v71-random-qa/all.json
-          cat v71-random-qa/selection.json
           for f in v71-random-qa/*.json; do [ "$(basename "$f")" = selection.json ] && continue; [ "$(basename "$f")" = all.json ] && continue; jq '{address,category,propertyType,listPrice,beds,baths,size,candidateCount,selectedCount,confidence,valuation,marketRead,buyerStrategy,comparables}' "$f"; done
       - name: Upload QA results
         if: always()
