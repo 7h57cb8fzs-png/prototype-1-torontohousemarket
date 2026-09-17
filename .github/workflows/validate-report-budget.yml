@@ -1,0 +1,41 @@
+name: Validate report request-budget fix
+on:
+  push:
+    branches: [fix-v73-subrequest-budget]
+    paths: ['.github/workflows/validate-report-budget.yml','scripts/apply-v73-subrequest-fix.py']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: thm-report-budget-validation
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/fix-v73-subrequest-budget'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-v73-subrequest-budget
+      - name: Apply only the verified targeted changes
+        run: python3 scripts/apply-v73-subrequest-fix.py
+      - name: Syntax and existing regression tests
+        run: |
+          set -euo pipefail
+          node --check worker-v11.js
+          node --check worker-v12.js
+          node --check worker-v22.js
+          node --check report-runtime.js
+          node --test tests/*.test.mjs
+          git diff --stat
+          sha256sum worker-v11.js worker-v12.js worker-v22.js report-runtime.js
+      - name: Save tested source on the repair branch only
+        run: |
+          set -euo pipefail
+          git config user.name 'THM Release Validation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add worker-v11.js worker-v12.js worker-v22.js
+          git commit -m 'Fix report subrequest exhaustion with bounded reusable evidence pipeline'
+          git push origin HEAD:fix-v73-subrequest-budget
+          git rev-parse HEAD
