@@ -5,6 +5,7 @@ export class ReportBudgetError extends Error {
 export function createReportRuntime(job, options = {}) {
   const started = Date.now();
   return {
+    fetch: reportFetch, retain: retainReportRows,
     jobId: job.id, attempt: job.attempts, started,
     deadline: started + (options.totalMs ?? 110000),
     maxDataRequests: options.maxDataRequests ?? 34,

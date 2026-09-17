@@ -1,7 +1,8 @@
 import legacyApp, { deliverEmailJob } from './worker-v11.js';
 import reportCore from './worker-v12.js';
+import { reportFetch } from './report-runtime.js';
 
-const VERSION='version-7.3-stable-orchestrator-20260917';
+const VERSION='version-7.3-request-budget-20260917';
 const LUNA='gpt-5.6-luna';
 const TERRA='gpt-5.6-terra';
 const OPENAI='https://api.openai.com/v1/responses';
@@ -41,6 +42,7 @@ export default {
     ctx.waitUntil((async()=>{
       const pending=[];
       const proxy={waitUntil(p){pending.push(Promise.resolve(p));}};
+      await rpc(env, 'recover_stale_report_jobs', {});
       await reportCore.scheduled(controller,coreEnv(env),proxy);
       await drain(pending);
       await enhanceRecent(env,30);
@@ -49,7 +51,16 @@ export default {
   }
 };
 
-function coreEnv(env){return {...env,OPENAI_MODEL:LUNA,OPENAI_EXTERNAL_COMP_SEARCH:'false',RESEND_API_KEY:null};}
+function coreEnv(env){return {...env,OPENAI_MODEL:LUNA,OPENAI_EXTERNAL_COMP_SEARCH:'false',RESEND_API_KEY:null,THM_REPORT_SCHEDULED_ONLY:true,THM_FINALIZE_REPORT: finalizePayload};}
+
+async function finalizePayload(report,env){
+  let p=decorate(report),cx=complexity(p);
+  p.model_policy={primary:LUNA,terra_review:false,terra_threshold:'compound severe complexity only',complexity_score:cx.score,complexity_flags:cx.flags};
+  if(cx.escalate && env.OPENAI_API_KEY){try{p=applyTerra(p,await terra(env,p),cx);}catch(e){p.model_policy.terra_error=String(e?.message||e).slice(0,200);}}
+  p.version=7.3;p.version_label='Toronto House Market Version 7.3';
+  p.ai_note=p.model_policy.terra_review?'Version 7.3 · exceptional-complexity Terra review':'Version 7.3 · primary path; Terra not used';
+  return p;
+}
 
 async function drain(pending){
   let rounds=0;
@@ -111,7 +122,7 @@ function complexity(p){
 
 async function terra(env,p){
   const schema={type:'object',additionalProperties:false,properties:{estimated_market_value:{type:'number'},range_low:{type:'number'},range_high:{type:'number'},confidence:{type:'string',enum:['Moderate','Low','Limited']},market_read:{type:'string'},strategy:{type:'string'}},required:['estimated_market_value','range_low','range_high','confidence','market_read','strategy']};
-  const r=await fetch(OPENAI,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${env.OPENAI_API_KEY}`},signal:AbortSignal.timeout(22000),body:JSON.stringify({model:TERRA,reasoning:{effort:'medium'},input:[{role:'system',content:'Final adjudication only for an exceptionally complex residential valuation. Use only supplied genuine MLS evidence. Never invent sales. Determine Estimated Market Value first, then uncertainty range. Return JSON only.'},{role:'user',content:JSON.stringify({subject:p.facts,evidence_quality:p.evidence_quality,comparables:(p.comparables||[]).slice(0,8)})}],text:{format:{type:'json_schema',name:'thm_v73_terra',strict:true,schema}}})});
+  const r=await reportFetch(env,OPENAI,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${env.OPENAI_API_KEY}`},signal:AbortSignal.timeout(22000),body:JSON.stringify({model:TERRA,reasoning:{effort:'medium'},input:[{role:'system',content:'Final adjudication only for an exceptionally complex residential valuation. Use only supplied genuine MLS evidence. Never invent sales. Determine Estimated Market Value first, then uncertainty range. Return JSON only.'},{role:'user',content:JSON.stringify({subject:p.facts,evidence_quality:p.evidence_quality,comparables:(p.comparables||[]).slice(0,8)})}],text:{format:{type:'json_schema',name:'thm_v73_terra',strict:true,schema}}})});
   const d=await r.json();if(!r.ok)throw new Error(`Terra ${r.status}`);const text=d.output_text||(d.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('');return JSON.parse(text);
 }
 function applyTerra(p,t,c){const mv=round(Number(t.estimated_market_value)),low=round(Number(t.range_low)),high=round(Number(t.range_high));p.valuation={...(p.valuation||{}),available:true,estimated_market_value:mv,market_value:mv,midpoint:mv,low,high,likely_market_range:{low,high},confidence:t.confidence};p.decision_summary={...(p.decision_summary||{}),estimated_market_value:mv,likely_market_range:{low,high},evidence_confidence:t.confidence,market_read:t.market_read,strategy:t.strategy};p.model_policy={primary:LUNA,terra_review:true,terra_model:TERRA,terra_reason:c.flags,complexity_score:c.score};return p;}

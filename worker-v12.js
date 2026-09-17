@@ -1,3 +1,4 @@
+import { createReportRuntime, reportFetch, reportStage, runtimeSummary } from './report-runtime.js';
 import legacyApp, {
   buildPropertyReport as buildPhase6Report,
   deliverEmailJob,
@@ -44,8 +45,8 @@ export default {
     if (["/api/lead", "/api/vow/accept-terms", "/api/vow/activate-request"].includes(url.pathname)) {
       const deferred = [];
       const proxyCtx = { ...ctx, waitUntil(promise) { deferred.push(promise); } };
-      const response = await legacyApp.fetch(request, env, proxyCtx);
-      if (response.ok) ctx?.waitUntil?.(runV7Automation(env).catch(logAutomationError));
+      const response = await legacyApp.fetch(request, { ...env, THM_REPORT_QUEUE_ONLY: true }, proxyCtx);
+      if (response.ok && !env.THM_REPORT_SCHEDULED_ONLY) ctx?.waitUntil?.(runV7Automation(env).catch(logAutomationError));
       return response;
     }
 
@@ -143,30 +144,49 @@ async function processV7ReportJobs(env, limit = 1) {
   let completed = 0, failed = 0;
   for (const job of Array.isArray(jobs) ? jobs : []) {
     const requestId = `v7-report-${job.id}`;
-    const stopHeartbeat = startReportHeartbeat(env, job);
-    try {
-      const lead = await loadLeadForReportV7(env, job.lead_id);
-      if (!lead) throw new Error("Lead data is unavailable.");
-      const property = await loadPropertyForReport(env, lead, requestId);
-      const report = await buildVersion7Report(env, lead, property, requestId);
-      await completeJob(env, "complete_report_job", {
-        p_job_id: job.id,
-        p_report_id: job.report_id,
-        p_report_payload: report,
+    const runtime = createReportRuntime(job);
+    const scoped = { ...env, THM_REPORT_RUNTIME: runtime };
+    const stopHeartbeat = startReportHeartbeat(scoped, job);
+    const checkpoint = async stage => {
+      const response = await supabase(scoped, `/rest/v1/automation_jobs?id=eq.${job.id}&report_id=eq.${job.report_id}&status=eq.processing&attempts=eq.${job.attempts}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ payload: { ...job.payload, execution: { ...runtimeSummary(runtime), stage } } })
       });
+      if (!response.ok) throw new Error('Could not persist report progress.');
+      await response.arrayBuffer();
+    };
+    try {
+      await checkpoint('subject_lookup');
+      const lead = await reportStage(scoped, 'load_lead', 8000, e => loadLeadForReportV7(e, job.lead_id));
+      if (!lead) throw new Error("Lead data is unavailable.");
+      const property = await reportStage(scoped, 'mls_evidence', 50000, e => loadPropertyForReport(e, lead, requestId));
+      await checkpoint('analysis');
+      let report = await reportStage(scoped, 'analysis', 55000, e => buildVersion7Report(e, lead, property, requestId));
+      if (typeof env.THM_FINALIZE_REPORT === 'function') report = await reportStage(scoped, 'decision_summary', 24000, e => env.THM_FINALIZE_REPORT(report, e));
+      report.execution_telemetry = runtimeSummary(runtime);
+      const saved = await rpc(scoped, 'complete_report_attempt', {
+        p_job_id: job.id, p_report_id: job.report_id, p_attempt: job.attempts, p_report_payload: report
+      }, 7000);
+      if (saved !== true) throw new Error('Report attempt no longer owns the job.');
       completed++;
-      console.log(JSON.stringify({ event: "v7_report_ready", request_id: requestId, report_id: job.report_id, expert_mode: report.expert_comp_mode?.used === true, confidence: report.valuation?.confidence || "Unavailable" }));
+      console.log(JSON.stringify({ event: 'v7_report_ready', request_id: requestId, report_id: job.report_id, ...runtimeSummary(runtime) }));
     } catch (error) {
       failed++;
-      const message = error instanceof Error ? error.message : String(error);
-      await rpc(env, "fail_report_job", { p_job_id: job.id, p_report_id: job.report_id, p_error: message }).catch(() => null);
-      console.error(JSON.stringify({ event: "v7_report_failed", request_id: requestId, error: message.slice(0, 300) }));
+      const message = String(error?.message || error);
+      runtime.controller.abort();
+      try {
+        await rpc(scoped, 'fail_report_attempt', { p_job_id: job.id, p_report_id: job.report_id, p_attempt: job.attempts, p_error: message, p_telemetry: runtimeSummary(runtime) }, 7000);
+      } catch (saveError) {
+        console.error(JSON.stringify({ event: 'report_failure_save_error', job_id: job.id, error: String(saveError?.message || saveError) }));
+      }
+      console.error(JSON.stringify({ event: 'v7_report_failed', request_id: requestId, error: message.slice(0,300), ...runtimeSummary(runtime) }));
     } finally {
-      stopHeartbeat();
+      stopHeartbeat(); runtime.controller.abort();
     }
   }
   return { claimed: Array.isArray(jobs) ? jobs.length : 0, completed, failed };
 }
+
 
 async function buildVersion7Report(env, lead, property, requestId) {
   let report = await buildPhase6Report(env, lead, property, requestId);
@@ -246,22 +266,24 @@ async function collectBroadSoldPool(env, property, seller = false) {
   if (/^[A-Z]\d[A-Z]$/.test(postal)) searches.push(`startswith(PostalCode,'${postal}')`);
   if (city) searches.push(`contains(UnparsedAddress,'${odata(city)}')`);
 
-  const rows = [];
+  const rows = [...(env.THM_REPORT_RUNTIME?.rawRows?.values() || [])];
+  if (soldCandidates(property, rows).length >= 12) return soldCandidates(property, rows).slice(0, 60);
   for (const filter of [...new Set(searches)].slice(0, 3)) {
-    const batch = await tailQuery(filter, token, seller ? 500 : 700);
+    if (env.THM_REPORT_RUNTIME?.completedFilters.has(filter)) continue;
+    const batch = await tailQuery(filter, token, seller ? 500 : 700, env);
     rows.push(...batch);
     if (soldCandidates(property, rows).length >= 35) break;
   }
   return soldCandidates(property, rows).slice(0, 60);
 }
 
-async function tailQuery(filter, token, limit) {
+async function tailQuery(filter, token, limit, env = {}) {
   const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
   const countUrl = new URL(`${AMPRE}/Property`);
   countUrl.search = new URLSearchParams({ "$filter": filter, "$count": "true", "$top": "1" }).toString();
   let count = null;
   try {
-    const r = await fetch(countUrl, { headers, signal: AbortSignal.timeout(9000) });
+    const r = await reportFetch(env, countUrl, { headers, signal: AbortSignal.timeout(9000) });
     if (r.ok) count = Number((await r.json())?.["@odata.count"]);
   } catch {}
   const start = Number.isSafeInteger(count) && count > limit ? count - limit : 0;
@@ -270,7 +292,7 @@ async function tailQuery(filter, token, limit) {
   while (rows.length < limit) {
     const url = new URL(`${AMPRE}/Property`);
     url.search = new URLSearchParams({ "$filter": filter, "$top": "100", ...(skip ? { "$skip": String(skip) } : {}) }).toString();
-    const r = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+    const r = await reportFetch(env, url, { headers, signal: AbortSignal.timeout(10000) });
     if (!r.ok) break;
     const data = await r.json().catch(() => null);
     const page = Array.isArray(data?.value) ? data.value : [];
@@ -545,7 +567,7 @@ async function openAiJson(env, name, schema, input, webSearch) {
       text: { format: { type: "json_schema", name, strict: true, schema } },
       ...(webSearch ? { tools: [{ type: "web_search" }], tool_choice: "auto" } : {}),
     };
-    const response = await fetch(OPENAI_RESPONSES, {
+    const response = await reportFetch(env, OPENAI_RESPONSES, {
       method: "POST",
       signal: controller.signal,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENAI_API_KEY}` },
@@ -553,6 +575,7 @@ async function openAiJson(env, name, schema, input, webSearch) {
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(`OpenAI ${response.status}: ${clean(data?.error?.message || "request failed")}`);
+    if (env.THM_REPORT_RUNTIME) (env.THM_REPORT_RUNTIME.aiUsage ||= []).push({ model: body.model, purpose: name, usage: data?.usage || null });
     const text = responseOutputText(data);
     if (!text) throw new Error("OpenAI returned no structured output.");
     return JSON.parse(text);
@@ -701,10 +724,10 @@ async function rpc(env, name, body, timeoutMs = 10000) {
 
 function supabase(env, path, init = {}) {
   const base = env.SUPABASE_URL || "https://pwbtxyavjjotxtvegrqe.supabase.co";
-  return fetch(`${base}${path}`, {
+  return reportFetch(env, `${base}${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, ...(init.headers || {}) },
-  });
+  }, true);
 }
 
 function normalizeAddress(value) { return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
@@ -716,3 +739,5 @@ function median(values) { const a = values.filter(Number.isFinite).sort((x,y)=>x
 function roundMarket(value) { if (!Number.isFinite(value)) return null; const step = value >= 1e6 ? 10000 : 5000; return Math.round(value / step) * step; }
 function json(body, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-THM-Version": VERSION } }); }
 function logAutomationError(error) { console.error(JSON.stringify({ event: "v7_automation_error", error: String(error?.message || error).slice(0, 300) })); }
+
+export { processV7ReportJobs, buildVersion7Report, collectBroadSoldPool };

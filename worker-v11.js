@@ -1,3 +1,12 @@
+// Keep the historical standalone bundle compatible with existing consumers.
+// The report owner supplies scoped operations; public requests use native fetch.
+function reportFetch(env, input, init = {}, lifecycle = false) {
+  const runtime = env?.THM_REPORT_RUNTIME;
+  return runtime?.fetch ? runtime.fetch(env, input, init, lifecycle) : fetch(input, init);
+}
+function retainReportRows(env, rows, filter = null) {
+  env?.THM_REPORT_RUNTIME?.retain?.(env, rows, filter);
+}
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
@@ -655,6 +664,7 @@ async function buildComparableContext(subject, env, activeForSale, requestId = n
     if (!search) return;
     const result = await querySoldComparableRows(search.filters, env, search.rowLimit, search.startSkip);
     raw.push(...result.rows);
+    retainReportRows(env, result.rows, search.filters.join(" and "));
     queryAudit.push(...result.audit.map((entry) => ({ phase: "local", name: search.name, ...entry })));
   }, "runSearch");
   for (const search of streetSearches) await runSearch(search);
@@ -894,6 +904,8 @@ async function queryPropertyCount(baseFilters, env) {
 __name(queryPropertyCount, "queryPropertyCount");
 __name2(queryPropertyCount, "queryPropertyCount");
 async function querySoldComparableRows(baseFilters, env, top, startSkip = 0, selectFields = COMPARABLE_SELECT_FIELDS) {
+  // The connected feed rejects the legacy projection. Do not repeat that 400 on every scan.
+  if (env.THM_REPORT_RUNTIME) selectFields = null;
   const rows = [];
   const audit = [];
   let accepted = false;
@@ -1150,7 +1162,7 @@ async function comparableCoordinateCacheKey(address) {
 }
 __name(comparableCoordinateCacheKey, "comparableCoordinateCacheKey");
 __name2(comparableCoordinateCacheKey, "comparableCoordinateCacheKey");
-async function resolveComparableCoordinates(record) {
+async function resolveComparableCoordinates(record, env = {}) {
   const existing = propertyCoordinates(record);
   if (existing.latitude != null && existing.longitude != null) return existing;
   const parts = comparableAddressParts(record);
@@ -1166,14 +1178,15 @@ async function resolveComparableCoordinates(record) {
     const value = cached?.ok ? await cached.json().catch(() => null) : null;
     if (validCoordinate(value?.latitude, value?.longitude)) return value;
   }
-  const resolved = await resolveFreeCoordinates(address);
+  const resolved = await resolveFreeCoordinates(address, env);
   if (resolved && cache && cacheKey) await cache.put(cacheKey, new Response(JSON.stringify(resolved), { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=2592000" } })).catch(() => null);
   return resolved;
 }
 __name(resolveComparableCoordinates, "resolveComparableCoordinates");
 __name2(resolveComparableCoordinates, "resolveComparableCoordinates");
 async function enrichSparseComparableCoordinates(subject, records, env) {
-  const subjectCoordinates = await resolveComparableCoordinates(subject);
+  const geocodeStarted = Date.now();
+  const subjectCoordinates = await resolveComparableCoordinates(subject, env);
   if (!subjectCoordinates) return;
   subject.Latitude = subjectCoordinates.latitude;
   subject.Longitude = subjectCoordinates.longitude;
@@ -1186,8 +1199,9 @@ async function enrichSparseComparableCoordinates(subject, records, env) {
   }).slice(0, 6);
   const throttleMs = Math.max(0, numberOrNull(env.COMPARABLE_GEOCODE_THROTTLE_MS) ?? 1100);
   for (let index = 0; index < candidates.length; index++) {
+    if (env.THM_REPORT_RUNTIME && (Date.now()-geocodeStarted > 6000 || env.THM_REPORT_RUNTIME.requests >= 24)) break;
     const row = candidates[index];
-    const coordinates = await resolveComparableCoordinates(row);
+    const coordinates = await resolveComparableCoordinates(row, env);
     if (coordinates) {
       row.Latitude = coordinates.latitude;
       row.Longitude = coordinates.longitude;
@@ -1472,6 +1486,7 @@ async function queryPropertiesDetailed(filters, env, top = 100, orderby = "Modif
       retried = true;
       params.set("$top", String(top));
       params.delete("$orderby");
+      await response.body?.cancel();
       response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
     }
     let selectFallback = false;
@@ -1479,6 +1494,7 @@ async function queryPropertiesDetailed(filters, env, top = 100, orderby = "Modif
       selectFallback = true;
       retried = true;
       params.delete("$select");
+      await response.body?.cancel();
       response = await amplifyFetch(`${AMPRE_BASE}/Property?${params.toString()}`, env);
     }
     if (!response.ok) return { rows: [], nextLink: null, meta: { firstStatus, status: response.status, retried, selectFallback, count: 0 } };
@@ -1588,7 +1604,7 @@ function sanitizeSnapshot(value) {
 __name(sanitizeSnapshot, "sanitizeSnapshot");
 __name2(sanitizeSnapshot, "sanitizeSnapshot");
 async function amplifyFetch(endpoint, env) {
-  return fetch(endpoint, {
+  return reportFetch(env, endpoint, {
     headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" },
     signal: AbortSignal.timeout(5e3)
   });
@@ -2127,7 +2143,7 @@ function str(v, n) {
 __name(str, "str");
 __name2(str, "str");
 function api(url, env) {
-  return fetch(url, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+  return reportFetch(env, url, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
 }
 __name(api, "api");
 __name2(api, "api");
@@ -2463,7 +2479,7 @@ function clean2(v, max) {
 __name(clean2, "clean2");
 __name2(clean2, "clean");
 function api2(url, env) {
-  return fetch(url, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+  return reportFetch(env, url, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }, signal: AbortSignal.timeout(8000) });
 }
 __name(api2, "api2");
 __name2(api2, "api");
@@ -2563,7 +2579,7 @@ async function runQuery(filter, env, top) {
     "OriginalEntryTimestamp"
   ].join(","));
   try {
-    const response = await fetch(`${AMPRE3}/Property?${params.toString()}`, {
+    const response = await reportFetch(env, `${AMPRE3}/Property?${params.toString()}`, {
       headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }
     });
     if (!response.ok) return [];
@@ -2871,10 +2887,10 @@ async function featuredQuery(filter, fields, top, env) {
   const params = new URLSearchParams({ "$top": String(top), "$select": fields, "$orderby": "OriginalEntryTimestamp desc,ListingKey desc" });
   if (filter) params.set("$filter", filter);
   try {
-    let response = await fetch(`${AMPRE4}/Property?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+    let response = await reportFetch(env, `${AMPRE4}/Property?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
     if (!response.ok) {
       params.delete("$orderby");
-      response = await fetch(`${AMPRE4}/Property?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+      response = await reportFetch(env, `${AMPRE4}/Property?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
     }
     if (!response.ok) return [];
     const body = await response.json();
@@ -2986,7 +3002,7 @@ async function runQuery2(filter, env, top, orderby = "") {
     "OriginalEntryTimestamp"
   ].join(","));
   try {
-    const response = await fetch(`${AMPRE4}/Property?${params.toString().replace(/\+/g, "%20")}`, {
+    const response = await reportFetch(env, `${AMPRE4}/Property?${params.toString().replace(/\+/g, "%20")}`, {
       headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }
     });
     if (!response.ok) return [];
@@ -4137,16 +4153,16 @@ function validCoordinate(latitude, longitude) {
 }
 __name(validCoordinate, "validCoordinate");
 __name2(validCoordinate, "validCoordinate");
-async function resolveFreeCoordinates(address) {
+async function resolveFreeCoordinates(address, env = {}) {
   address = clean5(address, 300);
   if (!address) return null;
   const match = address.match(/^\s*(\d+[A-Za-z]?)\s+([^,]+)/);
-  if (match) {
+  if (match && (!env.THM_REPORT_RUNTIME || /,\s*Toronto\b/i.test(address))) {
     const number = match[1].replace(/'/g, "''"), street = match[2].replace(/\b(?:street|st|road|rd|avenue|ave|drive|dr|boulevard|blvd|court|ct|crt|crescent|cres|lane|ln|trail|trl|place|pl)\.?\b.*$/i, "").trim().replace(/'/g, "''");
     if (street) {
       const params = new URLSearchParams({ f: "json", where: `ADDRESS_NUMBER='${number}' AND upper(LINEAR_NAME_FULL) LIKE upper('${street}%')`, outFields: "LATITUDE,LONGITUDE", returnGeometry: "false", resultRecordCount: "1" });
       try {
-        const response = await fetch(`https://gis.toronto.ca/arcgis/rest/services/cot_geospatial27/FeatureServer/101/query?${params}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8e3) });
+        const response = await reportFetch(env, `https://gis.toronto.ca/arcgis/rest/services/cot_geospatial27/FeatureServer/101/query?${params}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8e3) });
         const attrs = (await response.json().catch(() => null))?.features?.[0]?.attributes;
         if (validCoordinate(attrs?.LATITUDE, attrs?.LONGITUDE)) return { latitude: Number(attrs.LATITUDE), longitude: Number(attrs.LONGITUDE), source: "City of Toronto Address Points" };
       } catch {
@@ -4155,7 +4171,7 @@ async function resolveFreeCoordinates(address) {
   }
   try {
     const params = new URLSearchParams({ format: "jsonv2", limit: "1", countrycodes: "ca", q: address });
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { headers: { Accept: "application/json", "User-Agent": "TorontoHouseMarket/1.0 (alireza.golestan@century21.ca)" }, signal: AbortSignal.timeout(8e3) });
+    const response = await reportFetch(env, `https://nominatim.openstreetmap.org/search?${params}`, { headers: { Accept: "application/json", "User-Agent": "TorontoHouseMarket/1.0 (alireza.golestan@century21.ca)" }, signal: AbortSignal.timeout(8e3) });
     const first = (await response.json().catch(() => null))?.[0];
     if (validCoordinate(first?.lat, first?.lon)) return { latitude: Number(first.lat), longitude: Number(first.lon), source: "OpenStreetMap Nominatim" };
   } catch {
@@ -5015,7 +5031,7 @@ async function updateAgent(request, env, id) {
 __name(updateAgent, "updateAgent");
 __name2(updateAgent, "updateAgent");
 function supabase(env, path, init = {}) {
-  return fetch(`${env.SUPABASE_URL || "https://pwbtxyavjjotxtvegrqe.supabase.co"}${path}`, { ...init, signal: init.signal || AbortSignal.timeout(1e4), headers: { "Content-Type": "application/json", apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, ...init.headers || {} } });
+  return reportFetch(env, `${env.SUPABASE_URL || "https://pwbtxyavjjotxtvegrqe.supabase.co"}${path}`, { ...init, signal: init.signal || AbortSignal.timeout(1e4), headers: { "Content-Type": "application/json", apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, ...init.headers || {} } }, true);
 }
 __name(supabase, "supabase");
 __name2(supabase, "supabase");
@@ -5026,6 +5042,7 @@ async function runScheduledNotifications(env) {
 __name(runScheduledNotifications, "runScheduledNotifications");
 __name2(runScheduledNotifications, "runScheduledNotifications");
 async function processAutomationJobs(env) {
+  if (env.THM_REPORT_QUEUE_ONLY) return { reports: { claimed: 0 }, emails: { claimed: 0 } };
   const delivery = await reconcileRecentEmailDeliveries(env, 5);
   const emailsBefore = await processEmailJobs(env, 20);
   const reports = await processReportJobs(env, 1);
@@ -5343,7 +5360,7 @@ async function generatePublicResearch(env, property2) {
   const model = String(env.GEMINI_MODEL || "gemini-2.5-flash"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12e3);
   const prompt = `Research current, publicly available buyer context for this publicly listed property: ${JSON.stringify(property2)}. Focus only on official or trustworthy sources for nearby schools and attendance caveats, transit, parks/trails, road or development context, and practical location considerations. Do not search for, quote or summarize sold prices, asking prices, valuations, estimates, owner information or private facts. Return a concise factual brief under 450 words. Clearly distinguish verified public facts from listing claims.`;
   try {
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY }, body: JSON.stringify({ model, input: prompt, store: false, tools: [{ type: "google_search" }], generation_config: { max_output_tokens: 1e3 } }) });
+    const response = await reportFetch(env, "https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY }, body: JSON.stringify({ model, input: prompt, store: false, tools: [{ type: "google_search" }], generation_config: { max_output_tokens: 1e3 } }) });
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(`Gemini research ${response.status}: ${clean5(data?.error?.message || "request failed", 180)}`);
     const textBlocks = (data?.steps || []).filter((x) => x?.type === "model_output").flatMap((x) => x?.content || []).filter((x) => x?.type === "text");
@@ -5361,7 +5378,7 @@ async function generateWithGemini(env, system, prompt) {
   if (!env.GEMINI_API_KEY) throw new Error("Gemini is not configured.");
   const model = String(env.GEMINI_MODEL || "gemini-2.5-flash"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12e3);
   try {
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY }, body: JSON.stringify({ model, input: prompt, system_instruction: system, store: false, generation_config: { max_output_tokens: 2e3 }, response_format: { type: "text", mime_type: "application/json", schema: narrativeJsonSchema() } }) });
+    const response = await reportFetch(env, "https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY }, body: JSON.stringify({ model, input: prompt, system_instruction: system, store: false, generation_config: { max_output_tokens: 2e3 }, response_format: { type: "text", mime_type: "application/json", schema: narrativeJsonSchema() } }) });
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(`Gemini ${response.status}: ${clean5(data?.error?.message || "request failed", 180)}`);
     const text = (data?.steps || []).filter((x) => x?.type === "model_output").flatMap((x) => x?.content || []).filter((x) => x?.type === "text").map((x) => x?.text || "").join("");
@@ -5377,7 +5394,7 @@ async function generateWithOpenRouter(env, system, prompt) {
   if (!env.OPENROUTER_API_KEY) throw new Error("OpenRouter is not configured.");
   const model = String(env.OPENROUTER_MODEL || "openrouter/free"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 1e4);
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "HTTP-Referer": "https://torontohousemarket.com", "X-Title": "Toronto House Market" }, body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }], temperature: 0.2, max_tokens: 2e3, response_format: { type: "json_schema", json_schema: { name: "property_report_narrative", strict: true, schema: narrativeJsonSchema() } } }) });
+    const response = await reportFetch(env, "https://openrouter.ai/api/v1/chat/completions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "HTTP-Referer": "https://torontohousemarket.com", "X-Title": "Toronto House Market" }, body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }], temperature: 0.2, max_tokens: 2e3, response_format: { type: "json_schema", json_schema: { name: "property_report_narrative", strict: true, schema: narrativeJsonSchema() } } }) });
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(`OpenRouter ${response.status}: ${clean5(data?.error?.message || "request failed", 180)}`);
     const text = data?.choices?.[0]?.message?.content;
