@@ -1,0 +1,21 @@
+name: V7.3 Sync QA Runner
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/v73-sync-run.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Run THM report scheduler synchronously
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4; do
+            echo "THM QA sync pass $i"
+            curl -fsS --max-time 300 -X POST https://torontohousemarket.com/api/internal/v73-run-sync -H 'X-THM-QA: v73sync-7f4d9a2c'
+            echo
+          done
