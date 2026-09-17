@@ -1,45 +1,52 @@
-# V7.3 stable single-pipeline production deploy
 name: Deploy Toronto House Market Version 7.3
 on:
   push:
     branches: [main]
-    paths: ['worker-v22.js','wrangler.jsonc','address-input.js','seller.html','seller.js','seller.css','.github/workflows/deploy-version72.yml']
+    paths: ['worker-v11.js','worker-v12.js','worker-v22.js','report-runtime.js','wrangler.jsonc','address-input.js','seller.html','seller.js','seller.css','.github/workflows/deploy-version72.yml']
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: thm-guarded-production
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Validate V7.3
+      - name: Validate production release
         run: |
           set -euo pipefail
+          node --check worker-v11.js
+          node --check worker-v12.js
           node --check worker-v22.js
+          node --check report-runtime.js
           node --check address-input.js
           node --check seller.js
+          node --test tests/report-runtime.test.mjs
           grep -F '"main":"worker-v22.js"' wrangler.jsonc >/dev/null
           grep -F '"THM_RELEASE":"7.3"' wrangler.jsonc >/dev/null
           grep -F 'sellerRenovation' seller.html >/dev/null
           grep -F 'renovationPct' seller.js >/dev/null
-          grep -F 'single report pipeline' worker-v22.js >/dev/null
           if grep -F '/api/internal/v73-' worker-v22.js >/dev/null; then exit 1; fi
       - name: Prepare deploy config
         run: |
           node <<'NODE'
           const fs=require('fs');const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));delete c.secrets;fs.writeFileSync('wrangler.deploy.json',JSON.stringify(c,null,2));
           NODE
-      - name: Deploy V7.3
+      - name: Deploy V7.3 resource fix
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
         run: npx --yes wrangler@4.129.0 deploy --config wrangler.deploy.json
-      - name: Verify live V7.3 stability marker
+      - name: Verify exact live release and unchanged frontend controls
         run: |
           set -euo pipefail
           for i in 1 2 3 4 5 6; do
-            code=$(curl -sS -o version.json -w '%{http_code}' --max-time 20 'https://torontohousemarket.com/api/version?release=7.3' || true)
-            if [ "$code" = "200" ] && grep -F 'version-7.3-stable-orchestrator-20260917' version.json >/dev/null 2>&1; then
+            code=$(curl -sS -o version.json -w '%{http_code}' --max-time 20 "https://torontohousemarket.com/api/version?revision=$GITHUB_SHA" || true)
+            if [ "$code" = "200" ] && grep -F 'version-7.3-request-budget-20260917' version.json >/dev/null 2>&1; then
+              curl -fsS --max-time 20 'https://torontohousemarket.com/seller.html' | grep -q 'sellerRenovation'
               cat version.json
               exit 0
             fi
