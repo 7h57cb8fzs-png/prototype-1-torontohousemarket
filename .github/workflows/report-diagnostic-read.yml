@@ -9,28 +9,17 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/upload-artifact@v4
-        with:
-          name: thm-report-source-audit
-          retention-days: 1
-          path: |
-            worker-v11.js
-            worker-v12.js
-            worker-v22.js
-            package.json
-            wrangler.jsonc
-      - name: Capture runtime errors without changing reports
+      - name: Read bounded runtime trace
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
         run: |
           set +e
-          timeout 150s npx --yes wrangler@4.129.0 tail prototype-1-torontohousemarket --format json > /tmp/thm-tail.json 2>/tmp/thm-tail.err
-          result=$?
-          echo "tail_process_exit=$result"
+          timeout 240s npx --yes wrangler@4.129.0 tail prototype-1-torontohousemarket --format json > /tmp/thm-tail.json 2>/tmp/thm-tail.err
+          echo "tail_process_exit=$?"
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const text=fs.readFileSync('/tmp/thm-tail.json','utf8');
@@ -38,7 +27,7 @@ jobs:
           for(let i=0;i<text.length;i++){
             const c=text[i];if(quoted){if(escape)escape=false;else if(c==='\\')escape=true;else if(c==='"')quoted=false;continue;}
             if(c==='"'){quoted=true;continue;}if(c==='{'){if(depth++===0)start=i;}else if(c==='}'&&--depth===0&&start>=0){
-              try{const e=JSON.parse(text.slice(start,i+1));if(!e.outcome)continue;count++;console.log('INVOCATION',JSON.stringify({time:e.eventTimestamp,outcome:e.outcome,cpuMs:e.cpuTime,wallMs:e.wallTime,cron:e.event?.cron,exceptions:e.exceptions?.map(x=>({name:x.name,message:x.message}))}));for(const l of e.logs||[]){for(const m of l.message||[]){const t=typeof m==='string'?m:JSON.stringify(m);if(/v7|report|ampre|comparable|timeout|subrequest|exceed/i.test(t))console.log('LOG',t.slice(0,1500));}}}catch{}
+              try{const e=JSON.parse(text.slice(start,i+1));if(!e.outcome)continue;count++;console.log('INVOCATION',JSON.stringify({time:e.eventTimestamp,outcome:e.outcome,cpuMs:e.cpuTime,wallMs:e.wallTime,cron:e.event?.cron,exceptions:e.exceptions?.map(x=>({name:x.name,message:x.message}))}));for(const l of e.logs||[]){for(const m of l.message||[]){const t=typeof m==='string'?m:JSON.stringify(m);if(/v7|report|ampre|comparable|timeout|subrequest|exceed/i.test(t))console.log('LOG',t.slice(0,6000));}}}catch{}
             }
           }
           console.log('captured_invocations',count);
