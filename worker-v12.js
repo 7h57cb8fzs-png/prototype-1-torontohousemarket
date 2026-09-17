@@ -1,3 +1,4 @@
+import { reportFetch, createReportRuntime, runtimeSummary, reportHeadroom, setReportStage } from "./report-runtime.js";
 import legacyApp, {
   buildPropertyReport as buildPhase6Report,
   deliverEmailJob,
@@ -44,7 +45,7 @@ export default {
     if (["/api/lead", "/api/vow/accept-terms", "/api/vow/activate-request"].includes(url.pathname)) {
       const deferred = [];
       const proxyCtx = { ...ctx, waitUntil(promise) { deferred.push(promise); } };
-      const response = await legacyApp.fetch(request, env, proxyCtx);
+      const response = await legacyApp.fetch(request, { ...env, THM_SKIP_LEGACY_AUTOMATION: true }, proxyCtx);
       if (response.ok) ctx?.waitUntil?.(runV7Automation(env).catch(logAutomationError));
       return response;
     }
@@ -143,18 +144,24 @@ async function processV7ReportJobs(env, limit = 1) {
   let completed = 0, failed = 0;
   for (const job of Array.isArray(jobs) ? jobs : []) {
     const requestId = `v7-report-${job.id}`;
+    setReportStage(env, "subject_and_vow");
     const stopHeartbeat = startReportHeartbeat(env, job);
     try {
       const lead = await loadLeadForReportV7(env, job.lead_id);
       if (!lead) throw new Error("Lead data is unavailable.");
       const property = await loadPropertyForReport(env, lead, requestId);
-      const report = await buildVersion7Report(env, lead, property, requestId);
+      setReportStage(env, "report_reasoning");
+      let report = await buildVersion7Report(env, lead, property, requestId);
+      if (env.THM_FINALIZE_REPORT) report = await env.THM_FINALIZE_REPORT(report);
+      report.telemetry = { ...runtimeSummary(env), queue_wait_ms: Math.max(0, (env.THM_REPORT_RUNTIME?.startedAt || Date.now()) - Date.parse(job.created_at)), job_id: job.id, attempt: job.attempts, completion_write_reserved: true };
+      setReportStage(env, "persist_report");
       await completeJob(env, "complete_report_job", {
         p_job_id: job.id,
         p_report_id: job.report_id,
         p_report_payload: report,
       });
       completed++;
+      console.log(JSON.stringify({ event: "report_resource_usage", job_id: job.id, ...runtimeSummary(env) }));
       console.log(JSON.stringify({ event: "v7_report_ready", request_id: requestId, report_id: job.report_id, expert_mode: report.expert_comp_mode?.used === true, confidence: report.valuation?.confidence || "Unavailable" }));
     } catch (error) {
       failed++;
@@ -169,7 +176,7 @@ async function processV7ReportJobs(env, limit = 1) {
 }
 
 async function buildVersion7Report(env, lead, property, requestId) {
-  let report = await buildPhase6Report(env, lead, property, requestId);
+  let report = await buildPhase6Report({ ...env, THM_DEFER_NARRATIVE: property.comparableContext?.available !== true || (property.comparableContext?.comparables || []).length < 3 }, lead, property, requestId);
   const needsExpert = shouldUseExpertComp(report);
 
   if (needsExpert && env.OPENAI_API_KEY && env.AMPRE_VOW_TOKEN) {
@@ -236,6 +243,7 @@ async function recoverExpertComparables(env, lead, property, report, requestId) 
 }
 
 async function collectBroadSoldPool(env, property, seller = false) {
+  setReportStage(env, "broad_comp_recovery");
   const token = env.AMPRE_VOW_TOKEN;
   if (!token) return [];
   const searches = [];
@@ -246,22 +254,26 @@ async function collectBroadSoldPool(env, property, seller = false) {
   if (/^[A-Z]\d[A-Z]$/.test(postal)) searches.push(`startswith(PostalCode,'${postal}')`);
   if (city) searches.push(`contains(UnparsedAddress,'${odata(city)}')`);
 
-  const rows = [];
+  const rows = [...(env.THM_REPORT_RUNTIME?.vowRows.values() || [])];
+  const reused = soldCandidates(property, rows);
+  if (env.THM_REPORT_RUNTIME) env.THM_REPORT_RUNTIME.reusedCandidates = reused.length;
+  if (reused.length >= 12) return reused.slice(0, 60);
   for (const filter of [...new Set(searches)].slice(0, 3)) {
-    const batch = await tailQuery(filter, token, seller ? 500 : 700);
-    rows.push(...batch);
+    if (!reportHeadroom(env, 6) || (env.THM_REPORT_RUNTIME && env.THM_REPORT_RUNTIME.mlsRequests >= env.THM_REPORT_RUNTIME.mlsLimit)) break;
+    try { rows.push(...await tailQuery(filter, token, seller ? 500 : 700, env)); }
+    catch (error) { if (error?.name === "ReportBudgetError") break; throw error; }
     if (soldCandidates(property, rows).length >= 35) break;
   }
   return soldCandidates(property, rows).slice(0, 60);
 }
 
-async function tailQuery(filter, token, limit) {
+async function tailQuery(filter, token, limit, env) {
   const headers = { Authorization: `Bearer ${token}`, Accept: "application/json" };
   const countUrl = new URL(`${AMPRE}/Property`);
   countUrl.search = new URLSearchParams({ "$filter": filter, "$count": "true", "$top": "1" }).toString();
   let count = null;
   try {
-    const r = await fetch(countUrl, { headers, signal: AbortSignal.timeout(9000) });
+    const r = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(countUrl, { headers, signal: AbortSignal.timeout(9000) });
     if (r.ok) count = Number((await r.json())?.["@odata.count"]);
   } catch {}
   const start = Number.isSafeInteger(count) && count > limit ? count - limit : 0;
@@ -270,7 +282,7 @@ async function tailQuery(filter, token, limit) {
   while (rows.length < limit) {
     const url = new URL(`${AMPRE}/Property`);
     url.search = new URLSearchParams({ "$filter": filter, "$top": "100", ...(skip ? { "$skip": String(skip) } : {}) }).toString();
-    const r = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+    const r = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(url, { headers, signal: AbortSignal.timeout(10000) });
     if (!r.ok) break;
     const data = await r.json().catch(() => null);
     const page = Array.isArray(data?.value) ? data.value : [];
@@ -326,6 +338,7 @@ function soldCandidates(subject, rows) {
 }
 
 async function selectExpertComparables(env, property, candidates, seller) {
+  setReportStage(env, "luna_comp_review");
   const schema = expertSchema();
   const subject = subjectForAi(property);
   const instructions = `Act as an experienced GTA residential Realtor doing a careful CMA-style comparable review. The strict automated engine did not produce strong enough evidence. Select the economically most relevant REAL sold properties from the supplied candidates and reconcile them to the subject. Do not mechanically prioritize bedroom count, lot frontage, lot depth, age, size or any one field. Decide which characteristics actually drive value for this specific home, housing form and micro-market. A 3-bedroom can be a better comp than a 4-bedroom; a 30-foot lot can be economically similar to a 33- or 35-foot lot; depth differences may or may not matter. Explain why. You may make appraiser-style judgment adjustments, but never alter the recorded sold price. Use adjusted_indication only as your reasoned indication for the subject. Do not invent properties or facts. Prefer 3-6 comps. For condos, strongly prefer the same building or same community and similar interior size unless you can clearly justify a broader match. Return JSON only.`;
@@ -534,6 +547,7 @@ async function openAiBuyerNarrative(env, report, property) {
 }
 
 async function openAiJson(env, name, schema, input, webSearch) {
+  setReportStage(env, `openai:${name}`);
   if (!env.OPENAI_API_KEY) throw new Error("OpenAI is not configured.");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), webSearch ? 28000 : 18000);
@@ -545,7 +559,7 @@ async function openAiJson(env, name, schema, input, webSearch) {
       text: { format: { type: "json_schema", name, strict: true, schema } },
       ...(webSearch ? { tools: [{ type: "web_search" }], tool_choice: "auto" } : {}),
     };
-    const response = await fetch(OPENAI_RESPONSES, {
+    const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(OPENAI_RESPONSES, {
       method: "POST",
       signal: controller.signal,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENAI_API_KEY}` },
@@ -701,7 +715,7 @@ async function rpc(env, name, body, timeoutMs = 10000) {
 
 function supabase(env, path, init = {}) {
   const base = env.SUPABASE_URL || "https://pwbtxyavjjotxtvegrqe.supabase.co";
-  return fetch(`${base}${path}`, {
+  return reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${base}${path}`, {
     ...init,
     headers: { "Content-Type": "application/json", apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, ...(init.headers || {}) },
   });

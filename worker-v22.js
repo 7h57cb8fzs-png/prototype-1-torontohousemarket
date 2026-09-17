@@ -1,7 +1,8 @@
+import { reportFetch, createReportRuntime, runtimeSummary, reportHeadroom, setReportStage } from "./report-runtime.js";
 import legacyApp, { deliverEmailJob } from './worker-v11.js';
 import reportCore from './worker-v12.js';
 
-const VERSION='version-7.3-stable-orchestrator-20260917';
+const VERSION='version-7.3-request-budget-20260917';
 const LUNA='gpt-5.6-luna';
 const TERRA='gpt-5.6-terra';
 const OPENAI='https://api.openai.com/v1/responses';
@@ -26,26 +27,21 @@ export default {
 
     // One owner for report generation. Lower-layer email delivery is suppressed;
     // V7.3 decorates the completed report before releasing its email.
-    const pending=[];
-    const proxy={waitUntil(p){pending.push(Promise.resolve(p));}};
-    const response=await reportCore.fetch(request,coreEnv(env),proxy);
-    if(response.ok) ctx?.waitUntil?.((async()=>{
-      await drain(pending);
-      await enhanceRecent(env,30);
-      await emails(env,20);
-    })());
-    return response;
+    return legacyApp.fetch(request, { ...env, THM_SKIP_LEGACY_AUTOMATION: true }, ctx);
   },
 
   async scheduled(controller,env,ctx){
+    const scoped={...env,THM_REPORT_RUNTIME:createReportRuntime()};
     ctx.waitUntil((async()=>{
-      const pending=[];
-      const proxy={waitUntil(p){pending.push(Promise.resolve(p));}};
-      await reportCore.scheduled(controller,coreEnv(env),proxy);
+      await rpc(scoped,'recover_stale_report_jobs',{}).catch(e=>console.error(JSON.stringify({event:'recovery_failed',error:String(e.message).slice(0,200)})));
+      const pending=[],proxy={waitUntil(p){pending.push(Promise.resolve(p));}};
+      const reportEnv=coreEnv(scoped);
+      reportEnv.THM_FINALIZE_REPORT=p=>finalizePayload(scoped,p);
+      await reportCore.scheduled(controller,reportEnv,proxy);
       await drain(pending);
-      await enhanceRecent(env,30);
-      await emails(env,20);
-    })());
+      if(reportHeadroom(scoped,8)) await enhanceRecent(scoped,30);
+      await emails(scoped,20);
+    })().catch(e=>console.error(JSON.stringify({event:'report_pipeline_error',error:String(e.message).slice(0,300),...runtimeSummary(scoped)}))));
   }
 };
 
@@ -69,11 +65,8 @@ async function enhanceRecent(env,limit){
   const rows=await r.json().catch(()=>[]);
   for(const row of Array.isArray(rows)?rows:[]){
     if(!row?.report_payload||String(row.report_payload.version_label||'').includes('Version 7.3')) continue;
-    let p=decorate(row.report_payload),cx=complexity(p);
-    p.model_policy={primary:LUNA,terra_review:false,terra_threshold:'compound severe complexity only',complexity_score:cx.score,complexity_flags:cx.flags};
-    if(cx.escalate&&env.OPENAI_API_KEY){const t=await terra(env,p).catch(()=>null);if(t)p=applyTerra(p,t,cx);}
-    p.version=7.3;p.version_label='Toronto House Market Version 7.3';
-    p.ai_note=p.model_policy.terra_review?'Version 7.3 · Luna first · exceptional-complexity Terra adjudication':'Version 7.3 · Luna first · Terra not required';
+    if (!reportHeadroom(env,5)) break;
+    const p=await finalizePayload(env,row.report_payload);
     await db(env,`/rest/v1/property_reports?id=eq.${encodeURIComponent(row.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({report_payload:p,updated_at:new Date().toISOString()})}).catch(()=>null);
   }
 }
@@ -111,14 +104,14 @@ function complexity(p){
 
 async function terra(env,p){
   const schema={type:'object',additionalProperties:false,properties:{estimated_market_value:{type:'number'},range_low:{type:'number'},range_high:{type:'number'},confidence:{type:'string',enum:['Moderate','Low','Limited']},market_read:{type:'string'},strategy:{type:'string'}},required:['estimated_market_value','range_low','range_high','confidence','market_read','strategy']};
-  const r=await fetch(OPENAI,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${env.OPENAI_API_KEY}`},signal:AbortSignal.timeout(22000),body:JSON.stringify({model:TERRA,reasoning:{effort:'medium'},input:[{role:'system',content:'Final adjudication only for an exceptionally complex residential valuation. Use only supplied genuine MLS evidence. Never invent sales. Determine Estimated Market Value first, then uncertainty range. Return JSON only.'},{role:'user',content:JSON.stringify({subject:p.facts,evidence_quality:p.evidence_quality,comparables:(p.comparables||[]).slice(0,8)})}],text:{format:{type:'json_schema',name:'thm_v73_terra',strict:true,schema}}})});
+  const r=await reportFetch.bind(null, typeof env === "undefined" ? null : env)(OPENAI,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${env.OPENAI_API_KEY}`},signal:AbortSignal.timeout(22000),body:JSON.stringify({model:TERRA,reasoning:{effort:'medium'},input:[{role:'system',content:'Final adjudication only for an exceptionally complex residential valuation. Use only supplied genuine MLS evidence. Never invent sales. Determine Estimated Market Value first, then uncertainty range. Return JSON only.'},{role:'user',content:JSON.stringify({subject:p.facts,evidence_quality:p.evidence_quality,comparables:(p.comparables||[]).slice(0,8)})}],text:{format:{type:'json_schema',name:'thm_v73_terra',strict:true,schema}}})});
   const d=await r.json();if(!r.ok)throw new Error(`Terra ${r.status}`);const text=d.output_text||(d.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('');return JSON.parse(text);
 }
 function applyTerra(p,t,c){const mv=round(Number(t.estimated_market_value)),low=round(Number(t.range_low)),high=round(Number(t.range_high));p.valuation={...(p.valuation||{}),available:true,estimated_market_value:mv,market_value:mv,midpoint:mv,low,high,likely_market_range:{low,high},confidence:t.confidence};p.decision_summary={...(p.decision_summary||{}),estimated_market_value:mv,likely_market_range:{low,high},evidence_confidence:t.confidence,market_read:t.market_read,strategy:t.strategy};p.model_policy={primary:LUNA,terra_review:true,terra_model:TERRA,terra_reason:c.flags,complexity_score:c.score};return p;}
 
-async function emails(env,limit){if(!env.RESEND_API_KEY)return;const jobs=await rpc(env,'claim_email_jobs',{p_limit:limit}).catch(()=>[]);for(const j of Array.isArray(jobs)?jobs:[]){try{await deliverEmailJob(env,j);}catch(e){await rpc(env,'fail_email_job',{p_job_id:j.id,p_error:String(e?.message||e).slice(0,300)}).catch(()=>null);}}}
+async function emails(env,limit){if(!env.RESEND_API_KEY||!reportHeadroom(env,12))return;limit=Math.min(limit,2);const jobs=await rpc(env,'claim_email_jobs',{p_limit:limit}).catch(()=>[]);for(const j of Array.isArray(jobs)?jobs:[]){try{await deliverEmailJob(env,j);}catch(e){await rpc(env,'fail_email_job',{p_job_id:j.id,p_error:String(e?.message||e).slice(0,300)}).catch(()=>null);}}}
 async function rpc(env,name,body){const r=await db(env,`/rest/v1/rpc/${name}`,{method:'POST',body:JSON.stringify(body)}),d=await r.json().catch(()=>null);if(!r.ok)throw new Error(d?.message||name);return d;}
-function db(env,path,init={}){const base=env.SUPABASE_URL||'https://pwbtxyavjjotxtvegrqe.supabase.co';return fetch(`${base}${path}`,{...init,signal:init.signal||AbortSignal.timeout(12000),headers:{'Content-Type':'application/json',apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:`Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,...(init.headers||{})}});}
+function db(env,path,init={}){const base=env.SUPABASE_URL||'https://pwbtxyavjjotxtvegrqe.supabase.co';return reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${base}${path}`,{...init,signal:init.signal||AbortSignal.timeout(12000),headers:{'Content-Type':'application/json',apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:`Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,...(init.headers||{})}});}
 function weightedMedian(a){const x=[...a].sort((a,b)=>a.v-b.v),t=x.reduce((s,z)=>s+z.w,0);let r=0;for(const z of x){r+=z.w;if(r>=t/2)return z.v;}return x.at(-1).v;}
 function sameBuilding(a,b){const A=norm(a).match(/^(\d+)\s+(.+?)(?:\s+(?:unit|suite|apt)\s*\w+|\s+\d{1,5})?$/),B=norm(b).match(/^(\d+)\s+(.+?)(?:\s+(?:unit|suite|apt)\s*\w+|\s+\d{1,5})?$/);return!!(A&&B&&A[1]===B[1]&&A[2]===B[2]);}
 function normType(v){return norm(v).replace(/semi detached.*/,'semi detached').replace(/detached.*/,'detached').replace(/att row townhouse.*/,'att row townhouse').replace(/condo apartment.*/,'condo apartment').replace(/condo townhouse.*/,'condo townhouse');}
@@ -127,3 +120,24 @@ function num(...v){for(const x of v){const n=Number(x);if(Number.isFinite(n)&&n>
 function median(v){const a=[...v].sort((x,y)=>x-y),m=Math.floor(a.length/2);return a.length%2?a[m]:(a[m-1]+a[m])/2;}
 function round(v){if(!Number.isFinite(v))return null;const s=v>=1e6?10000:5000;return Math.round(v/s)*s;}
 function json(body,status=200){return new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-THM-Version':VERSION}});}
+
+async function finalizePayload(env,source){
+  setReportStage(env,'finalize');
+  let p=decorate(source),cx=complexity(p);
+  p.model_policy={primary:LUNA,terra_review:false,terra_status:'not_required',terra_threshold:'compound severe complexity only',complexity_score:cx.score,complexity_flags:cx.flags};
+  if(cx.escalate&&env.OPENAI_API_KEY){
+    if(reportHeadroom(env,4)){
+      try { const t=await terra(env,p); if(!Number.isFinite(t.estimated_market_value)||!(t.range_low>0&&t.range_low<=t.estimated_market_value&&t.estimated_market_value<=t.range_high))throw new Error('Invalid Terra value ordering'); p=applyTerra(p,t,cx);p.model_policy.terra_status='completed'; }
+      catch(error){p.model_policy.terra_status='failed';p.model_policy.terra_error=String(error.message).slice(0,200);}
+    }else p.model_policy.terra_status='deferred_budget';
+  }
+  if(env.THM_REPORT_RUNTIME?.stopped.length||['failed','deferred_budget'].includes(p.model_policy.terra_status)){
+    if(p.valuation)p.valuation.confidence='Limited';
+    if(p.evidence_quality)p.evidence_quality.label='Limited';
+    if(p.decision_summary)p.decision_summary.evidence_confidence='Limited';
+    p.resource_warning='The analysis used the retrieved evidence; an optional stage reached its resource budget.';
+  }
+  p.version=7.3;p.version_label='Toronto House Market Version 7.3';
+  p.ai_note=p.model_policy.terra_review?'Version 7.3 · exceptional-complexity Terra review':cx.escalate?'Version 7.3 · exceptional review not completed':'Version 7.3 · Terra not required';
+  return p;
+}

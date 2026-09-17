@@ -1,3 +1,4 @@
+import { reportFetch, createReportRuntime, runtimeSummary, reportHeadroom, setReportStage } from "./report-runtime.js";
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
@@ -458,9 +459,9 @@ async function handleMedia(request, env) {
   } catch {
     return new Response("", { status: 404 });
   }
-  let imageResponse = await fetch(remoteUrl.toString(), { headers: { Accept: "image/*" } });
+  let imageResponse = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(remoteUrl.toString(), { headers: { Accept: "image/*" } });
   if (imageResponse.status === 401 || imageResponse.status === 403) {
-    imageResponse = await fetch(remoteUrl.toString(), {
+    imageResponse = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(remoteUrl.toString(), {
       headers: { Accept: "image/*", Authorization: `Bearer ${env.AMPRE_TOKEN}` }
     });
   }
@@ -966,7 +967,9 @@ var COMPARABLE_SELECT_FIELDS = [
   "StreetName",
   "StreetSuffix",
   "StreetDirSuffix",
-  "UnitNumber"
+  "UnitNumber",
+  "PublicRemarks",
+  "BedroomsAboveGrade"
 ];
 function qualifiedSoldComparableRows(subject, records, maxAgeDays, options = {}) {
   const condo = isCondominiumProperty(subject);
@@ -1538,7 +1541,7 @@ async function handleLead(request, env) {
   const propertySnapshot = sanitizeSnapshot(payload.property_snapshot);
   if (!propertyInput || !name || !mobile || !email) return json({ ok: false, error: "Property, name, mobile and email are required." }, 400);
   if (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email)) return json({ ok: false, error: "Please enter a valid email address." }, 400);
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/create_lead_manual`, {
+  const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${SUPABASE_URL}/rest/v1/rpc/create_lead_manual`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1588,7 +1591,7 @@ function sanitizeSnapshot(value) {
 __name(sanitizeSnapshot, "sanitizeSnapshot");
 __name2(sanitizeSnapshot, "sanitizeSnapshot");
 async function amplifyFetch(endpoint, env) {
-  return fetch(endpoint, {
+  return reportFetch.bind(null, typeof env === "undefined" ? null : env)(endpoint, {
     headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" },
     signal: AbortSignal.timeout(5e3)
   });
@@ -2049,8 +2052,8 @@ async function mediaProxy(request, env) {
   }
   let img;
   try {
-    img = await fetch(remote, { headers: { Accept: "image/*" } });
-    if (img.status === 401 || img.status === 403) img = await fetch(remote, { headers: { Accept: "image/*", Authorization: `Bearer ${env.AMPRE_TOKEN}` } });
+    img = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(remote, { headers: { Accept: "image/*" } });
+    if (img.status === 401 || img.status === 403) img = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(remote, { headers: { Accept: "image/*", Authorization: `Bearer ${env.AMPRE_TOKEN}` } });
   } catch {
     return new Response("", { status: 404 });
   }
@@ -2127,7 +2130,7 @@ function str(v, n) {
 __name(str, "str");
 __name2(str, "str");
 function api(url, env) {
-  return fetch(url, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+  return reportFetch.bind(null, typeof env === "undefined" ? null : env)(url, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
 }
 __name(api, "api");
 __name2(api, "api");
@@ -2463,7 +2466,7 @@ function clean2(v, max) {
 __name(clean2, "clean2");
 __name2(clean2, "clean");
 function api2(url, env) {
-  return fetch(url, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+  return reportFetch.bind(null, typeof env === "undefined" ? null : env)(url, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
 }
 __name(api2, "api2");
 __name2(api2, "api");
@@ -2563,7 +2566,7 @@ async function runQuery(filter, env, top) {
     "OriginalEntryTimestamp"
   ].join(","));
   try {
-    const response = await fetch(`${AMPRE3}/Property?${params.toString()}`, {
+    const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${AMPRE3}/Property?${params.toString()}`, {
       headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }
     });
     if (!response.ok) return [];
@@ -2871,10 +2874,10 @@ async function featuredQuery(filter, fields, top, env) {
   const params = new URLSearchParams({ "$top": String(top), "$select": fields, "$orderby": "OriginalEntryTimestamp desc,ListingKey desc" });
   if (filter) params.set("$filter", filter);
   try {
-    let response = await fetch(`${AMPRE4}/Property?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+    let response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${AMPRE4}/Property?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
     if (!response.ok) {
       params.delete("$orderby");
-      response = await fetch(`${AMPRE4}/Property?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+      response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${AMPRE4}/Property?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
     }
     if (!response.ok) return [];
     const body = await response.json();
@@ -2889,7 +2892,7 @@ async function firstPhoto(listingKey, env) {
   if (!listingKey) return null;
   const params = new URLSearchParams({ "$top": "20", "$filter": `ResourceRecordKey eq '${escapeOData2(listingKey)}' and ResourceName eq 'Property'`, "$orderby": "MediaModificationTimestamp,MediaKey" });
   try {
-    const response = await fetch(`${AMPRE4}/Media?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
+    const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${AMPRE4}/Media?${params.toString()}`, { headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" } });
     if (!response.ok) return null;
     const body = await response.json();
     const record = (Array.isArray(body.value) ? body.value : []).find((m) => m?.MediaKey && m?.MediaURL && (/^image\//i.test(m.MediaType || "") || /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(m.MediaURL)));
@@ -2986,7 +2989,7 @@ async function runQuery2(filter, env, top, orderby = "") {
     "OriginalEntryTimestamp"
   ].join(","));
   try {
-    const response = await fetch(`${AMPRE4}/Property?${params.toString().replace(/\+/g, "%20")}`, {
+    const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${AMPRE4}/Property?${params.toString().replace(/\+/g, "%20")}`, {
       headers: { Authorization: `Bearer ${env.AMPRE_TOKEN}`, Accept: "application/json" }
     });
     if (!response.ok) return [];
@@ -3434,10 +3437,10 @@ async function addressSuggestions(request, env, selection = false) {
       url.searchParams.set("sessionToken", session);
       url.searchParams.set("languageCode", "en");
       url.searchParams.set("regionCode", "ca");
-      response = await fetch(url, { headers: googleHeaders, signal: AbortSignal.timeout(5e3) });
+      response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(url, { headers: googleHeaders, signal: AbortSignal.timeout(5e3) });
     } else {
       googleHeaders["X-Goog-FieldMask"] = "suggestions.placePrediction.placeId,suggestions.placePrediction.text.text";
-      response = await fetch("https://places.googleapis.com/v1/places:autocomplete", { method: "POST", headers: googleHeaders, signal: AbortSignal.timeout(5e3), body: JSON.stringify({ input: q, sessionToken: session, includedRegionCodes: ["ca"], includedPrimaryTypes: ["street_address", "premise", "subpremise"], languageCode: "en", regionCode: "ca", locationRestriction: { rectangle: { low: { latitude: 43.25, longitude: -80.25 }, high: { latitude: 44.5, longitude: -78.45 } } } }) });
+      response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)("https://places.googleapis.com/v1/places:autocomplete", { method: "POST", headers: googleHeaders, signal: AbortSignal.timeout(5e3), body: JSON.stringify({ input: q, sessionToken: session, includedRegionCodes: ["ca"], includedPrimaryTypes: ["street_address", "premise", "subpremise"], languageCode: "en", regionCode: "ca", locationRestriction: { rectangle: { low: { latitude: 43.25, longitude: -80.25 }, high: { latitude: 44.5, longitude: -78.45 } } } }) });
     }
     if (!response.ok) throw new Error("Address service unavailable");
     const data = await response.json();
@@ -4146,7 +4149,7 @@ async function resolveFreeCoordinates(address) {
     if (street) {
       const params = new URLSearchParams({ f: "json", where: `ADDRESS_NUMBER='${number}' AND upper(LINEAR_NAME_FULL) LIKE upper('${street}%')`, outFields: "LATITUDE,LONGITUDE", returnGeometry: "false", resultRecordCount: "1" });
       try {
-        const response = await fetch(`https://gis.toronto.ca/arcgis/rest/services/cot_geospatial27/FeatureServer/101/query?${params}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8e3) });
+        const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`https://gis.toronto.ca/arcgis/rest/services/cot_geospatial27/FeatureServer/101/query?${params}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8e3) });
         const attrs = (await response.json().catch(() => null))?.features?.[0]?.attributes;
         if (validCoordinate(attrs?.LATITUDE, attrs?.LONGITUDE)) return { latitude: Number(attrs.LATITUDE), longitude: Number(attrs.LONGITUDE), source: "City of Toronto Address Points" };
       } catch {
@@ -4155,7 +4158,7 @@ async function resolveFreeCoordinates(address) {
   }
   try {
     const params = new URLSearchParams({ format: "jsonv2", limit: "1", countrycodes: "ca", q: address });
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { headers: { Accept: "application/json", "User-Agent": "TorontoHouseMarket/1.0 (alireza.golestan@century21.ca)" }, signal: AbortSignal.timeout(8e3) });
+    const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`https://nominatim.openstreetmap.org/search?${params}`, { headers: { Accept: "application/json", "User-Agent": "TorontoHouseMarket/1.0 (alireza.golestan@century21.ca)" }, signal: AbortSignal.timeout(8e3) });
     const first = (await response.json().catch(() => null))?.[0];
     if (validCoordinate(first?.lat, first?.lon)) return { latitude: Number(first.lat), longitude: Number(first.lon), source: "OpenStreetMap Nominatim" };
   } catch {
@@ -4179,7 +4182,7 @@ async function findNearestFreeSchool(latitude, longitude) {
   for (const source of sources) {
     const params = new URLSearchParams({ f: "json", where: "1=1", geometry: `${longitude},${latitude}`, geometryType: "esriGeometryPoint", inSR: "4326", outSR: "4326", spatialRel: "esriSpatialRelIntersects", distance: "5000", units: "esriSRUnit_Meter", outFields: source.fields, returnGeometry: "true", resultRecordCount: "250" });
     try {
-      const response = await fetch(`${source.url}?${params}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8e3) });
+      const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${source.url}?${params}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8e3) });
       const payload = response.ok ? await response.json().catch(() => null) : null;
       if (Array.isArray(payload?.features) && payload.features.length) {
         features = payload.features;
@@ -4240,7 +4243,7 @@ async function vowRegister(request, env) {
   if (fullName.length < 2 || !normalizeNorthAmericanPhone(mobile)) return json7({ ok: false, error: "Enter your full name and a valid mobile number." }, 400);
   if (input.accept_terms !== true) return json7({ ok: false, error: "You must review and accept the VOW Terms of Use." }, 400);
   const endpoint = `${supabaseUrl(env)}/auth/v1/signup?redirect_to=${encodeURIComponent("https://torontohousemarket.com/vow.html")}`;
-  const response = await fetch(endpoint, { method: "POST", headers: authApiHeaders(env), body: JSON.stringify({ email, password, data: { full_name: fullName, mobile, vow_terms_version: vowTermsVersion(env) } }) });
+  const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(endpoint, { method: "POST", headers: authApiHeaders(env), body: JSON.stringify({ email, password, data: { full_name: fullName, mobile, vow_terms_version: vowTermsVersion(env) } }) });
   const data = await response.json().catch(() => null);
   if (!response.ok) return json7({ ok: false, error: clean5(data?.msg || data?.message || "Unable to create the account.", 240) }, response.status);
   const createdSession = publicSession(data?.session || data);
@@ -4251,7 +4254,7 @@ __name2(vowRegister, "vowRegister");
 async function vowLogin(request, env) {
   const input = await request.json().catch(() => ({})), email = clean5(input.email, 254).toLowerCase(), password = String(input.password || "");
   if (!validEmail(email) || !password) return json7({ ok: false, error: "Enter your email and password." }, 400);
-  const response = await fetch(`${supabaseUrl(env)}/auth/v1/token?grant_type=password`, { method: "POST", headers: authApiHeaders(env), body: JSON.stringify({ email, password }) });
+  const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${supabaseUrl(env)}/auth/v1/token?grant_type=password`, { method: "POST", headers: authApiHeaders(env), body: JSON.stringify({ email, password }) });
   const data = await response.json().catch(() => null);
   if (!response.ok) return json7({ ok: false, error: clean5(data?.error_description || data?.msg || data?.message || "Unable to sign in.", 240) }, 401);
   return json7({ ok: true, session: publicSession(data) });
@@ -4260,7 +4263,7 @@ __name(vowLogin, "vowLogin");
 __name2(vowLogin, "vowLogin");
 async function vowLogout(request, env) {
   const token = bearerToken(request);
-  if (token) await fetch(`${supabaseUrl(env)}/auth/v1/logout`, { method: "POST", headers: { ...authApiHeaders(env), Authorization: `Bearer ${token}` } }).catch(() => null);
+  if (token) await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${supabaseUrl(env)}/auth/v1/logout`, { method: "POST", headers: { ...authApiHeaders(env), Authorization: `Bearer ${token}` } }).catch(() => null);
   return json7({ ok: true });
 }
 __name(vowLogout, "vowLogout");
@@ -4339,7 +4342,7 @@ __name2(vowProperty, "vowProperty");
 async function authenticatedUser(request, env) {
   const token = bearerToken(request);
   if (!token) return null;
-  const response = await fetch(`${supabaseUrl(env)}/auth/v1/user`, { headers: { ...authApiHeaders(env), Authorization: `Bearer ${token}` } });
+  const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${supabaseUrl(env)}/auth/v1/user`, { headers: { ...authApiHeaders(env), Authorization: `Bearer ${token}` } });
   if (!response.ok) return null;
   return response.json().catch(() => null);
 }
@@ -4552,7 +4555,7 @@ async function vowQueryDiagnostics(request, env) {
   const inspect = /* @__PURE__ */ __name2(async (shape) => {
     const params = new URLSearchParams({ "$top": "5", "$filter": shape.filter, "$orderby": shape.orderby });
     try {
-      const response = await fetch(`https://query.ampre.ca/odata/Property?${params}`, { headers: { Authorization: `Bearer ${env.AMPRE_VOW_TOKEN}`, Accept: "application/json" }, signal: AbortSignal.timeout(8e3) });
+      const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`https://query.ampre.ca/odata/Property?${params}`, { headers: { Authorization: `Bearer ${env.AMPRE_VOW_TOKEN}`, Accept: "application/json" }, signal: AbortSignal.timeout(8e3) });
       const payload = await response.json().catch(() => null), rows = Array.isArray(payload?.value) ? payload.value : [];
       return { name: shape.name, status: response.status, count: rows.length, error: response.ok ? null : clean5(payload?.error?.message || payload?.message || "Query rejected.", 200), fields: rows[0] ? Object.keys(rows[0]).sort() : [] };
     } catch (error) {
@@ -4570,7 +4573,7 @@ async function mediaDiagnostics(request, env) {
   const inspect = /* @__PURE__ */ __name2(async (token) => {
     if (!token) return { configured: false };
     const params = new URLSearchParams({ "$top": "100", "$filter": `contains(ResourceRecordKey,'${listingKey}')` });
-    const response = await fetch(`https://query.ampre.ca/odata/Media?${params}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`https://query.ampre.ca/odata/Media?${params}`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
     const payload = await response.json().catch(() => null), rows = Array.isArray(payload?.value) ? payload.value : [];
     const exact = rows.filter((row) => String(row?.ResourceRecordKey || "").toUpperCase() === listingKey);
     return { status: response.status, count: exact.length, records: exact.map(mediaDiagnosticRecord) };
@@ -5015,7 +5018,7 @@ async function updateAgent(request, env, id) {
 __name(updateAgent, "updateAgent");
 __name2(updateAgent, "updateAgent");
 function supabase(env, path, init = {}) {
-  return fetch(`${env.SUPABASE_URL || "https://pwbtxyavjjotxtvegrqe.supabase.co"}${path}`, { ...init, signal: init.signal || AbortSignal.timeout(1e4), headers: { "Content-Type": "application/json", apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, ...init.headers || {} } });
+  return reportFetch.bind(null, typeof env === "undefined" ? null : env)(`${env.SUPABASE_URL || "https://pwbtxyavjjotxtvegrqe.supabase.co"}${path}`, { ...init, signal: init.signal || AbortSignal.timeout(1e4), headers: { "Content-Type": "application/json", apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, ...init.headers || {} } });
 }
 __name(supabase, "supabase");
 __name2(supabase, "supabase");
@@ -5026,6 +5029,7 @@ async function runScheduledNotifications(env) {
 __name(runScheduledNotifications, "runScheduledNotifications");
 __name2(runScheduledNotifications, "runScheduledNotifications");
 async function processAutomationJobs(env) {
+  if (env.THM_SKIP_LEGACY_AUTOMATION) return { deferred: true };
   const delivery = await reconcileRecentEmailDeliveries(env, 5);
   const emailsBefore = await processEmailJobs(env, 20);
   const reports = await processReportJobs(env, 1);
@@ -5239,6 +5243,7 @@ async function buildPropertyReport(env, lead, property2, requestId = null) {
 __name(buildPropertyReport, "buildPropertyReport");
 __name2(buildPropertyReport, "buildPropertyReport");
 async function generateAiNarrative(env, facts, valuation, comparables, property2, publicResearch = null, requestId = null) {
+  if (env.THM_DEFER_NARRATIVE) return null;
   const system = "You are a careful Toronto real-estate research analyst. Ground every statement in the supplied licensed evidence. Never invent sold prices, comparable sales, taxes, measurements, schools, permits, zoning, distances, history or neighbourhood statistics. Do not call this an appraisal. Return JSON only.";
   const prompt = `Return an object with string fields executive_summary, market_read, buyer_strategy and string arrays strengths, risks, inspection_priorities, questions_for_realtor. Write like a sharp buyer adviser, not a generic property brochure. The executive summary must give a direct 30-second read in no more than 55 words and mention two or three distinctive supplied property facts. The market read and buyer strategy must each be no more than 70 words. Keep every bullet concrete, property-specific and under 18 words; omit filler such as "verify all facts". Use the listing remarks to identify specific benefits, maintenance questions and potentially expensive uncertainties, but label listing claims as reported rather than independently proven. If sold evidence is unavailable, use the separately supplied public research only for public property, school, transit, development and neighbourhood context. Do not use consumer-site sold prices, asking prices or web estimates as comparable evidence, and never create a price range or value score from public research. Do not spend the whole report repeating the sold-data limitation: give a useful property-and-showing analysis, then state once that price requires fresh licensed sold evidence. Every claim must be traceable to the supplied facts, remarks, comparable rows or public research. Never infer a neighbourhood price range, market trend, demand level, renovation cost or recent-sale pattern unless that exact licensed evidence is supplied. Explain the valuation range and strongest comparable evidence when available. Do not call sold evidence recent when the newest sold date is more than 12 months old. If the verified facts contain bedrooms or bathrooms, never describe the subject as vacant land or a vacant lot. Use concise, warm Canadian English written to help a serious buyer decide whether to book a showing and speak with the assigned Realtor.
 
@@ -5339,11 +5344,12 @@ function buildBuyerReadScore(facts, narrative = {}) {
 __name(buildBuyerReadScore, "buildBuyerReadScore");
 __name2(buildBuyerReadScore, "buildBuyerReadScore");
 async function generatePublicResearch(env, property2) {
+  if (env.THM_DEFER_NARRATIVE) return null;
   if (!env.GEMINI_API_KEY) throw new Error("Gemini is not configured.");
   const model = String(env.GEMINI_MODEL || "gemini-2.5-flash"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12e3);
   const prompt = `Research current, publicly available buyer context for this publicly listed property: ${JSON.stringify(property2)}. Focus only on official or trustworthy sources for nearby schools and attendance caveats, transit, parks/trails, road or development context, and practical location considerations. Do not search for, quote or summarize sold prices, asking prices, valuations, estimates, owner information or private facts. Return a concise factual brief under 450 words. Clearly distinguish verified public facts from listing claims.`;
   try {
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY }, body: JSON.stringify({ model, input: prompt, store: false, tools: [{ type: "google_search" }], generation_config: { max_output_tokens: 1e3 } }) });
+    const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY }, body: JSON.stringify({ model, input: prompt, store: false, tools: [{ type: "google_search" }], generation_config: { max_output_tokens: 1e3 } }) });
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(`Gemini research ${response.status}: ${clean5(data?.error?.message || "request failed", 180)}`);
     const textBlocks = (data?.steps || []).filter((x) => x?.type === "model_output").flatMap((x) => x?.content || []).filter((x) => x?.type === "text");
@@ -5361,7 +5367,7 @@ async function generateWithGemini(env, system, prompt) {
   if (!env.GEMINI_API_KEY) throw new Error("Gemini is not configured.");
   const model = String(env.GEMINI_MODEL || "gemini-2.5-flash"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 12e3);
   try {
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY }, body: JSON.stringify({ model, input: prompt, system_instruction: system, store: false, generation_config: { max_output_tokens: 2e3 }, response_format: { type: "text", mime_type: "application/json", schema: narrativeJsonSchema() } }) });
+    const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY }, body: JSON.stringify({ model, input: prompt, system_instruction: system, store: false, generation_config: { max_output_tokens: 2e3 }, response_format: { type: "text", mime_type: "application/json", schema: narrativeJsonSchema() } }) });
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(`Gemini ${response.status}: ${clean5(data?.error?.message || "request failed", 180)}`);
     const text = (data?.steps || []).filter((x) => x?.type === "model_output").flatMap((x) => x?.content || []).filter((x) => x?.type === "text").map((x) => x?.text || "").join("");
@@ -5377,7 +5383,7 @@ async function generateWithOpenRouter(env, system, prompt) {
   if (!env.OPENROUTER_API_KEY) throw new Error("OpenRouter is not configured.");
   const model = String(env.OPENROUTER_MODEL || "openrouter/free"), controller = new AbortController(), timer = setTimeout(() => controller.abort(), 1e4);
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "HTTP-Referer": "https://torontohousemarket.com", "X-Title": "Toronto House Market" }, body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }], temperature: 0.2, max_tokens: 2e3, response_format: { type: "json_schema", json_schema: { name: "property_report_narrative", strict: true, schema: narrativeJsonSchema() } } }) });
+    const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)("https://openrouter.ai/api/v1/chat/completions", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.OPENROUTER_API_KEY}`, "HTTP-Referer": "https://torontohousemarket.com", "X-Title": "Toronto House Market" }, body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }], temperature: 0.2, max_tokens: 2e3, response_format: { type: "json_schema", json_schema: { name: "property_report_narrative", strict: true, schema: narrativeJsonSchema() } } }) });
     const data = await response.json().catch(() => null);
     if (!response.ok) throw new Error(`OpenRouter ${response.status}: ${clean5(data?.error?.message || "request failed", 180)}`);
     const text = data?.choices?.[0]?.message?.content;
@@ -5480,7 +5486,7 @@ async function reconcileRecentEmailDeliveries(env, limit = 5) {
   let updated = 0;
   for (const job of pending) {
     try {
-      const deliveryResponse = await fetch(`https://api.resend.com/emails/${encodeURIComponent(job.payload.provider_id)}`, { headers: { Authorization: `Bearer ${env.RESEND_API_KEY}` }, signal: AbortSignal.timeout(5e3) });
+      const deliveryResponse = await reportFetch.bind(null, typeof env === "undefined" ? null : env)(`https://api.resend.com/emails/${encodeURIComponent(job.payload.provider_id)}`, { headers: { Authorization: `Bearer ${env.RESEND_API_KEY}` }, signal: AbortSignal.timeout(5e3) });
       const delivery = await deliveryResponse.json().catch(() => ({}));
       if (!deliveryResponse.ok || !delivery?.last_event) continue;
       const event = String(delivery.last_event).toLowerCase();
@@ -5508,7 +5514,7 @@ async function deliverEmailJob(env, job) {
   const message = buildEmail(job, lead);
   const sendPayload = { from: env.RESEND_FROM_EMAIL || "Alireza Golestan | Toronto House Market <notifications@updates.torontohousemarket.com>", to: [job.recipient], reply_to: "alireza.golestan@century21.ca", subject: message.subject, html: message.html, text: message.text };
   if (Array.isArray(message.attachments) && message.attachments.length) sendPayload.attachments = message.attachments;
-  const response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": `thm-job-${job.id}-v1` }, body: JSON.stringify(sendPayload), signal: AbortSignal.timeout(1e4) });
+  const response = await reportFetch.bind(null, typeof env === "undefined" ? null : env)("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": `thm-job-${job.id}-v1` }, body: JSON.stringify(sendPayload), signal: AbortSignal.timeout(1e4) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Resend ${response.status}: ${clean5(result?.message || result?.name || "delivery rejected", 300)}`);
   await completeJob(env, "complete_email_job", { p_job_id: job.id, p_provider_id: String(result.id || "") });
