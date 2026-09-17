@@ -1,0 +1,24 @@
+name: V7.3 Stability Validation
+on:
+  push:
+    branches: [v73-stability-fix]
+    paths: ['worker-v22.js','wrangler.jsonc','seller.js','.github/workflows/v73-stability-validate.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate stable orchestrator
+        run: |
+          set -euo pipefail
+          node --check worker-v22.js
+          node --check seller.js
+          grep -F '"main":"worker-v22.js"' wrangler.jsonc >/dev/null
+          grep -F 'single report pipeline' worker-v22.js >/dev/null
+          if grep -F '/api/internal/v73-' worker-v22.js >/dev/null; then
+            echo 'Temporary QA endpoint found in production entry.'
+            exit 1
+          fi
