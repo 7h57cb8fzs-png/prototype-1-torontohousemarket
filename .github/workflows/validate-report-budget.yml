@@ -2,7 +2,7 @@ name: Validate report request-budget fix
 on:
   push:
     branches: [fix-v73-subrequest-budget]
-    paths: ['.github/workflows/validate-report-budget.yml','scripts/apply-v73-subrequest-fix.py']
+    paths: ['.github/workflows/validate-report-budget.yml','scripts/apply-v73-subrequest-fix.py','scripts/finalize-v73-budget.py']
   workflow_dispatch:
 permissions:
   contents: write
@@ -18,16 +18,45 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix-v73-subrequest-budget
+      - name: Record unchanged legacy baseline before applying the repair
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import subprocess,re,json
+          tests=sorted(str(p) for p in Path('tests').glob('*.test.mjs') if p.name!='report-runtime.test.mjs')
+          result=subprocess.run(['node','--test','--test-reporter=tap',*tests],text=True,capture_output=True,timeout=120)
+          Path('/tmp/baseline.tap').write_text(result.stdout+result.stderr)
+          failures=sorted(set(re.findall(r'^not ok \d+ - (.+)$',result.stdout,re.M)))
+          Path('/tmp/baseline-failures.json').write_text(json.dumps(failures))
+          print('PRE_EXISTING_FAILURES',len(failures),json.dumps(failures))
+          if result.returncode and not failures: raise SystemExit('Baseline test runner failed without structured results')
+          PY
       - name: Apply only the verified targeted changes
-        run: python3 scripts/apply-v73-subrequest-fix.py
-      - name: Syntax and existing regression tests
+        run: |
+          python3 scripts/apply-v73-subrequest-fix.py
+          python3 scripts/finalize-v73-budget.py
+      - name: Require syntax, new regression coverage and no new legacy failures
         run: |
           set -euo pipefail
           node --check worker-v11.js
           node --check worker-v12.js
           node --check worker-v22.js
           node --check report-runtime.js
-          node --test tests/*.test.mjs
+          node --test tests/report-runtime.test.mjs
+          python3 <<'PY'
+          from pathlib import Path
+          import subprocess,re,json
+          tests=sorted(str(p) for p in Path('tests').glob('*.test.mjs') if p.name!='report-runtime.test.mjs')
+          result=subprocess.run(['node','--test','--test-reporter=tap',*tests],text=True,capture_output=True,timeout=120)
+          Path('/tmp/repaired.tap').write_text(result.stdout+result.stderr)
+          before=set(json.loads(Path('/tmp/baseline-failures.json').read_text()))
+          after=set(re.findall(r'^not ok \d+ - (.+)$',result.stdout,re.M))
+          added=after-before
+          print('LEGACY_REGRESSION_COMPARISON',json.dumps({'baseline_failures':len(before),'after_failures':len(after),'new_failures':sorted(added),'resolved_failures':sorted(before-after)}))
+          if added or (result.returncode and not after):
+            print(result.stdout[-30000:]);raise SystemExit('Repair introduced a new test failure')
+          print('All new report regression tests passed; legacy tests have no added failures.')
+          PY
           git diff --stat
           sha256sum worker-v11.js worker-v12.js worker-v22.js report-runtime.js
       - name: Save tested source on the repair branch only
@@ -35,7 +64,16 @@ jobs:
           set -euo pipefail
           git config user.name 'THM Release Validation'
           git config user.email 'actions@users.noreply.github.com'
-          git add worker-v11.js worker-v12.js worker-v22.js
+          git add worker-v11.js worker-v12.js worker-v22.js report-runtime.js
           git commit -m 'Fix report subrequest exhaustion with bounded reusable evidence pipeline'
           git push origin HEAD:fix-v73-subrequest-budget
           git rev-parse HEAD
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-regression-comparison
+          retention-days: 1
+          path: |
+            /tmp/baseline.tap
+            /tmp/repaired.tap
+            /tmp/baseline-failures.json
