@@ -9,31 +9,38 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Read recent Worker diagnostics (no report generation)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thm-report-source-audit
+          retention-days: 1
+          path: |
+            worker-v11.js
+            worker-v12.js
+            worker-v22.js
+            package.json
+            wrangler.jsonc
+      - name: Capture runtime errors without changing reports
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
         run: |
+          set +e
+          timeout 150s npx --yes wrangler@4.129.0 tail prototype-1-torontohousemarket --format json > /tmp/thm-tail.json 2>/tmp/thm-tail.err
+          result=$?
+          echo "tail_process_exit=$result"
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
-          const root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
-          const token=process.env.CLOUDFLARE_API_TOKEN;
-          if(!token)throw new Error('Cloudflare diagnostic credential unavailable');
-          const headers={Authorization:`Bearer ${token}`,'Content-Type':'application/json'};
-          const sr=await fetch(root+'/workers/scripts/prototype-1-torontohousemarket/settings',{headers,signal:AbortSignal.timeout(15000)});
-          const sd=await sr.json();
-          console.log('runtime_settings',JSON.stringify({http:sr.status,usage_model:sd.result?.usage_model,limits:sd.result?.limits,observability:sd.result?.observability,binding_names:sd.result?.bindings?.map(x=>({name:x.name,type:x.type})),errors:sd.errors}));
-          const end=Date.now();
-          const qr=await fetch(root+'/workers/observability/telemetry/query',{method:'POST',headers,signal:AbortSignal.timeout(30000),body:JSON.stringify({queryId:'thm-report-hang-audit',view:'events',dry:true,limit:250,timeframe:{from:end-40*60000,to:end},parameters:{datasets:[],needle:{value:'prototype-1-torontohousemarket',matchCase:false}}})});
-          const qd=await qr.json();console.log('telemetry_http',qr.status,JSON.stringify(qd.errors||[]));
-          const entries=Array.isArray(qd.result?.events)?qd.result.events:(qd.result?.events?.events||[]);
-          console.log('telemetry_shape',JSON.stringify({keys:Object.keys(qd.result||{}),eventKeys:Object.keys(qd.result?.events||{}),count:entries.length}));
-          for(const e of entries){const m=e.$metadata||{},s=e.source||{},w=s.$workers||{};const line={time:e.timestamp||m.startTime,id:m.requestId,level:m.level,type:m.type,message:m.message,error:m.error,outcome:w.outcome,cpuMs:w.cpuTimeMs,wallMs:w.wallTimeMs};if(/report|error|exception|cpu|subrequest|limit|v7|cron|scheduled/i.test(JSON.stringify(line)))console.log(JSON.stringify(line));}
-          for(const path of ['worker-v11.js','worker-v12.js','worker-v15.js']){
-            const lines=fs.readFileSync(path,'utf8').split('\n');
-            const re=/^(export\s+(async\s+)?function|async function (buildPropertyReport|loadPropertyForReport|processV7ReportJobs|buildVersion7Report|runAutomation|processReportJobs)|function (startReportHeartbeat|withTimeout))\b|Promise\.race|setTimeout|export\s*\{/;
-            console.log('FUNCTION_INDEX',path,lines.map((s,i)=>re.test(s)?`${i+1}: ${s}`:null).filter(Boolean).join('\n'));
+          const text=fs.readFileSync('/tmp/thm-tail.json','utf8');
+          let depth=0,start=-1,quoted=false,escape=false,count=0;
+          for(let i=0;i<text.length;i++){
+            const c=text[i];if(quoted){if(escape)escape=false;else if(c==='\\')escape=true;else if(c==='"')quoted=false;continue;}
+            if(c==='"'){quoted=true;continue;}if(c==='{'){if(depth++===0)start=i;}else if(c==='}'&&--depth===0&&start>=0){
+              try{const e=JSON.parse(text.slice(start,i+1));if(!e.outcome)continue;count++;console.log('INVOCATION',JSON.stringify({time:e.eventTimestamp,outcome:e.outcome,cpuMs:e.cpuTime,wallMs:e.wallTime,cron:e.event?.cron,exceptions:e.exceptions?.map(x=>({name:x.name,message:x.message}))}));for(const l of e.logs||[]){for(const m of l.message||[]){const t=typeof m==='string'?m:JSON.stringify(m);if(/v7|report|ampre|comparable|timeout|subrequest|exceed/i.test(t))console.log('LOG',t.slice(0,1500));}}}catch{}
+            }
           }
+          console.log('captured_invocations',count);
+          console.log(fs.readFileSync('/tmp/thm-tail.err','utf8').replace(/Bearer\s+\S+/g,'Bearer [redacted]').slice(0,1500));
           NODE
