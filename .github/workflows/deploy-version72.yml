@@ -44,10 +44,12 @@ jobs:
         run: |
           set -euo pipefail
           for i in 1 2 3 4 5 6; do
-            code=$(curl -sS -o version.json -w '%{http_code}' --max-time 20 "https://torontohousemarket.com/api/version?revision=$GITHUB_SHA" || true)
+            code=$(curl -sSL -o version.json -w '%{http_code}' --max-time 20 "https://torontohousemarket.com/api/version?revision=$GITHUB_SHA" || true)
             if [ "$code" = "200" ] && grep -F 'version-7.3-request-budget-20260917' version.json >/dev/null 2>&1; then
-              curl -fsS --max-time 20 'https://torontohousemarket.com/seller.html' | grep -q 'sellerRenovation'
               cat version.json
+              curl -fsSL --max-time 20 'https://torontohousemarket.com/seller.html' -o seller-live.html
+              grep -F 'sellerRenovation' seller-live.html >/dev/null
+              echo 'Verified exact production release and native renovation control.'
               exit 0
             fi
             sleep 4
