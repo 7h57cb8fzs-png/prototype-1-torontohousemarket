@@ -1,0 +1,17 @@
+name: Validate seller previous MLS fallback
+on:
+  push:
+    branches: [seller-previous-mls-fallback-20260917]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -euo pipefail
+          node --check worker-v11.js
+          grep -F 'previous_mls_number' worker-v11.js >/dev/null
+          grep -F 'previousMlsMatch' worker-v11.js >/dev/null
