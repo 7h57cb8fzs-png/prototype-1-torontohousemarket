@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="description" content="Get an AI buyer report for any GTA home. Understand comparable prices, explore the details and request a fast showing when you’re ready." />
   <title>AI Home Insights | Toronto House Market</title>
+  <link rel="icon" type="image/svg+xml" href="/thm-mark.svg" />
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-44826VKX1E"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -12,13 +13,13 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=7406" />
+  <link rel="stylesheet" href="/styles.css?v=7407" />
 </head>
 <body>
 <header class="site-header">
   <div class="wrap nav">
     <a class="brand" href="#top" aria-label="Toronto House Market home">
-      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none"><path d="M7 39V22L18 12l11 10v17M19 39V8h16v31M5 39h38" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/><path d="M25 15h4m-4 7h4m-4 7h4M12 39V28h6v11" stroke="currentColor" stroke-width="2.6"/><circle cx="39" cy="9" r="4" fill="#bf795b"/></svg></span>
+      <span class="brand-mark" aria-hidden="true">THM</span>
       <span class="brand-name">Toronto<span>House Market</span></span>
     </a>
     <div class="nav-actions"><a class="chat-nav-link" href="#explore">Find homes</a><a class="seller-nav-link" href="/seller.html">Home value <span aria-hidden="true">↗</span></a><button id="headerReportButton" class="nav-cta" type="button">Get my AI report <span aria-hidden="true">→</span></button></div>
@@ -223,11 +224,12 @@
           <button class="chat-send" id="homeSearchSubmit" type="submit" aria-label="Send home search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
         </form><p id="homeSearchStatus" class="home-search-status" role="status" aria-live="polite"></p></div>
         <div id="chatWelcome" class="chat-welcome">
-          <p class="finder-hint">An area, a budget, a wish list. Start anywhere.</p>
-          <nav class="finder-prompts" aria-label="Try a home search">
-            <button type="button" data-chat-prompt="Show Annex listings with 2+ bedrooms"><span class="prompt-number">01</span><span>Life in the Annex<small>Homes with room for two</small></span><b aria-hidden="true">↗</b></button>
-            <button type="button" data-chat-prompt="Show condos in Richmond Hill under $800K"><span class="prompt-number">02</span><span>A condo, your way<small>Richmond Hill · under $800K</small></span><b aria-hidden="true">↗</b></button>
-            <button type="button" data-chat-prompt="Show homes listed by Century 21 Leading Edge in Toronto"><span class="prompt-number">03</span><span>Explore our brokerage<small>CENTURY 21 Leading Edge</small></span><b aria-hidden="true">↗</b></button>
+          <p class="finder-hint">Try one of these searches, or describe your own.</p>
+          <nav class="finder-shortcuts" aria-label="Try a home search">
+            <button type="button" data-chat-prompt="Show homes in Richmond Hill under $1 million"><span class="shortcut-icon" aria-hidden="true">⌂</span><span>Richmond Hill · under $1M</span></button>
+            <button type="button" data-chat-prompt="Show homes in the Annex with 2 or more bedrooms"><span class="shortcut-icon" aria-hidden="true">⌂</span><span>Annex · 2+ bedrooms</span></button>
+            <button type="button" data-chat-prompt="Show condos in Richmond Hill under $800K"><span class="shortcut-icon" aria-hidden="true">▥</span><span>Richmond Hill · condos</span></button>
+            <button type="button" data-chat-prompt="Show just listed homes in Toronto"><span class="shortcut-icon" aria-hidden="true">✦</span><span>Just listed · Toronto</span></button>
           </nav>
         </div>
         <div class="chat-scroll" id="chatScroll" tabindex="0" aria-label="Home search conversation">
