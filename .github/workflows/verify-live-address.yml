@@ -1,0 +1,27 @@
+name: Verify live address autocomplete
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/verify-live-address.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify live Google-backed address suggestions
+        run: |
+          set -euo pipefail
+          token="abcdefghijklmnop123456"
+          curl -fsS --max-time 20 'https://torontohousemarket.com/api/address-suggestions'             -H 'Origin: https://torontohousemarket.com'             -H 'Content-Type: application/json'             --data "{"q":"38 oak","sessionToken":"$token"}"             -o /tmp/address.json
+          cat /tmp/address.json
+          node <<'NODE'
+          const fs=require('fs');
+          const d=JSON.parse(fs.readFileSync('/tmp/address.json','utf8'));
+          if(!d.ok) throw new Error('address endpoint not ok');
+          if(d.available!==true) throw new Error('Google Places unavailable in live worker');
+          if(!Array.isArray(d.suggestions) || d.suggestions.length<1) throw new Error('no live suggestions returned');
+          console.log(JSON.stringify({count:d.suggestions.length,first:d.suggestions[0].label}));
+          NODE
