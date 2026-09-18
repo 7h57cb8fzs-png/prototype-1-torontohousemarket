@@ -1,0 +1,25 @@
+name: Validate seller slider submission
+on:
+  push:
+    branches: [fix-seller-condition-slider-20260917]
+    paths:
+      - worker-v11.js
+      - tests/seller-slider-validation.test.mjs
+      - .github/workflows/validate-seller-slider.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate seller profile contract
+        run: |
+          set -euo pipefail
+          node --check worker-v11.js
+          node --check seller.js
+          node --test tests/seller-slider-validation.test.mjs
+          grep -F "condition:'owner_reported'" seller.js >/dev/null
+          grep -F '"owner_reported"' worker-v11.js >/dev/null
