@@ -1,7 +1,7 @@
 name: Validate seller V7.3 policy
 on:
   push:
-    branches: [fix-seller-v73-policy-20260917]
+    branches: [fix-seller-v73-policy-20260917, fix-seller-v73-policy2-20260917]
     paths:
       - worker-v11.js
       - worker-v12.js
