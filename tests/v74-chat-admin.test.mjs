@@ -73,3 +73,15 @@ test('report summary cards preserve AI wording and separate current asks from so
  const report={version:7.4,generated_at:'2026-09-18',facts:{property_type:'Detached',for_sale:false},valuation:{available:true,midpoint:900000,low:800000,high:1000000,confidence:'Limited'},comparables:Array.from({length:3},(_,i)=>({listingKey:'C'+i,address:'Fixture '+i,soldPrice:900000,soldDate:'2026-09-01'})),narrative:{executive_summary:'The deep lot is the main distinction. Confirm the interior condition.'},seller:{strategy:{independent_market_read:'The deep lot is the main distinction. Confirm the interior condition.',listing_strategy:'Review these sales before choosing an asking price.'},evidence:{}}};
  for(const email of [propertyReportEmail('Fixture',{},report),sellerReportEmail('Fixture',report)]){assert.match(email.html,/YOUR 30-SECOND READ/);assert.match(email.html,/The deep lot is the main distinction/);assert.match(email.html,/Version 7.4/);}
 });
+
+test('property chat canonicalizes the explicit MLS and uses fresh public listing data',async t=>{
+ t.mock.method(globalThis,'fetch',async(_url,options)=>{
+  const body=JSON.parse(options.body),input=JSON.parse(body.input[1].content);
+  if(body.text.format.name==='thm_conversation_plan')return llm({action:'property',filters,propertyQuery:'MLS N1000000.',clarification:''});
+  assert.equal(input.currentHomes[0].listingKey,'N1000000');assert.equal(input.currentHomes[0].listPrice,600000);
+  return llm({reply:'This home asks $600,000. Confirm the condition before viewing.',followups:[],referencedListingKeys:['N1000000']});
+ });
+ const app={fetch:async r=>{const u=new URL(r.url);assert.equal(u.pathname,'/api/property');assert.equal(u.searchParams.get('listingKey'),'N1000000');return response({ok:true,property:{...homes[0],forSale:true}});}};
+ const out=await events(await homeChat(request('Tell me about MLS N1000000. What should I check?'),env,null,app));
+ assert.equal(out.find(x=>x.type==='results').listings.length,1);assert.equal(out.at(-1).ai,true);
+});

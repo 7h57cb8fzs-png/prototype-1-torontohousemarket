@@ -933,7 +933,7 @@ for (const button of document.querySelectorAll("[data-home-topic]")) {
   button.addEventListener("click", () => { if (!loading) loadHomeAssistant(button.dataset.homeTopic, button); });
 }
 
-// A conversation keeps its own property cards. Only the server creates listing facts.
+// The latest turn stays open; prior turns collapse while AI context stays intact.
 let chatState = null;
 let chatController = null;
 let chatBusy = false;
@@ -976,8 +976,9 @@ async function sendHomeChat(message){
   $('homeSearchSubmit').disabled=true;$('homeSearchStatus').textContent='';$('homeSearchQuery').value='';
   $('explore').classList.add('conversing');
   for(const group of chatRoot.querySelectorAll('.chat-followups'))group.remove();
-  const turn=document.createElement('div');turn.className='chat-turn';
-  turn.append(chatText('p','chat-message user',message));
+  for(const previousTurn of chatRoot.querySelectorAll('.chat-turn'))previousTurn.open=false;
+  const turn=document.createElement('details');turn.className='chat-turn';turn.open=true;
+  turn.append(chatText('summary','chat-turn-title',message));
   const status=chatText('p','chat-thinking','Understanding your search…');status.setAttribute('role','status');turn.append(status);chatRoot.append(turn);chatBottom();
   const controller=chatController,timeout=setTimeout(()=>controller.abort(),45000);let received=false,gotAnswer=false;
   try{
@@ -991,7 +992,7 @@ async function sendHomeChat(message){
       if(data.type==='results'){
         received=true;status.remove();
         if(data.listings.length)chatCards(turn,data);
-        else turn.append(chatText('p','chat-empty','No matching homes in this selection. Let’s adjust the search.'));
+        else turn.append(chatText('p','chat-empty',data.note||'No matching homes in this selection. Let’s adjust the search.'));
         status.textContent='Reading the details for you…';turn.append(status);chatBottom();
       }
       if(data.type==='answer'){
