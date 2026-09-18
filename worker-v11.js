@@ -64,7 +64,9 @@ async function handleFeaturedListings(env) {
       address: p.UnparsedAddress || buildAddress(p),
       city: p.City || null,
       listPrice: numberOrNull(p.ListPrice),
-      beds: numberOrNull(p.BedroomsTotal),
+      beds: numberOrNull(p.BedroomsAboveGrade ?? p.BedroomsTotal),
+      parking: numberOrNull(p.ParkingTotal),
+      neighbourhood: cleanText(p.CityRegion),
       baths: numberOrNull(p.BathroomsTotalInteger),
       propertySubType: cleanText(p.PropertySubType || p.PropertyType),
       listingOffice: cleanText(p.ListOfficeName),
@@ -3373,6 +3375,7 @@ var worker_v11_default = {
     if (url.pathname === "/api/appointments" && ["GET", "POST"].includes(request.method) || url.pathname === "/api/appointments/calendar" && request.method === "GET") return appointmentRequest(request, env, ctx);
     if (url.pathname === "/api/admin/leads" && request.method === "POST") return createBuyerRequest(request, env, ctx, true);
     if (url.pathname.startsWith("/api/admin/leads/") && request.method === "DELETE") return removeLead(request, env, url.pathname.split("/").pop());
+    if (/^\/api\/admin\/leads\/[^/]+\/reports$/.test(url.pathname) && request.method === "GET") return adminLeadReports(request,env,url.pathname.split('/')[4]);
     if (url.pathname === "/api/admin/leads" && request.method === "GET") return adminLeads(request, env);
     if (url.pathname.startsWith("/api/admin/leads/") && request.method === "PATCH") return updateLead(request, env, url.pathname.split("/").pop(), ctx);
     if (url.pathname === "/api/admin/agents" && request.method === "GET") return adminAgents(request, env);
@@ -3895,7 +3898,9 @@ function discoveryOptions(url) {
   if (mode === "budget" && maxPrice === null) throw new Error("Enter your maximum asking price.");
   const minBeds=Number(p.get("minBeds")||0), minBaths=Number(p.get("minBaths")||0), minParking=Number(p.get("minParking")||0), area=String(p.get("area")||"").trim();
   if ([minBeds,minBaths,minParking].some(v=>!Number.isInteger(v)||v<0||v>9)||area.length>80) throw new Error("Check your bedroom, bathroom, parking or area filters.");
-  return { city, mode, type, maxPrice, minBeds, minBaths, minParking, area };
+  const minPrice=Number(p.get("minPrice")||0), maxBeds=Number(p.get("maxBeds")||0), minSqft=Number(p.get("minSqft")||0), limit=Number(p.get("limit")||12), sort=p.get("sort")||"newest";
+  if(!Number.isInteger(minPrice)||minPrice<0||minPrice>20000000||maxPrice!==null&&minPrice>maxPrice||!Number.isInteger(maxBeds)||maxBeds<0||maxBeds>9||maxBeds&&maxBeds<minBeds||!Number.isInteger(minSqft)||minSqft<0||minSqft>20000||!Number.isInteger(limit)||limit<1||limit>60||!["newest","price_asc","price_desc","beds_desc"].includes(sort))throw new Error("Check your price, bedrooms and size preferences.");
+  return { city, mode, type, maxPrice, minBeds, minBaths, minParking, area, minPrice, maxBeds, minSqft, limit, sort };
 }
 __name(discoveryOptions, "discoveryOptions");
 function discoverySelection(records, options, now = Date.now()) {
@@ -3913,12 +3918,14 @@ function discoverySelection(records, options, now = Date.now()) {
     if (allowedTypes && !allowedTypes.includes(subtype)) continue;
     const facts = publicListingFacts(p);
     if (options.minBeds && Number(p.BedroomsAboveGrade ?? p.BedroomsTotal ?? -1) < options.minBeds) continue;
+    if (options.maxBeds && Number(p.BedroomsAboveGrade ?? p.BedroomsTotal ?? 99) > options.maxBeds) continue;
+    if (options.minSqft && Number(String(p.LivingAreaRange||'').replace(/,/g,'').match(/^\s*(\d+)/)?.[1]||p.LivingArea||0) < options.minSqft) continue;
     if (options.minBaths && Number(p.BathroomsTotalInteger ?? -1) < options.minBaths) continue;
     if (options.minParking && Number(p.ParkingTotal ?? -1) < options.minParking) continue;
     if (options.area && ![p.City,p.CityRegion,p.UnparsedAddress].some(v=>String(v||'').toLowerCase().includes(options.area.toLowerCase()))) continue;
     if (options.mode === "reduced" && !facts.priceChange) continue;
     const price = numberOrNull(p.ListPrice);
-    if (!(price > 0) || options.maxPrice !== null && price > options.maxPrice) continue;
+    if (!(price > 0) || options.maxPrice !== null && price > options.maxPrice || options.minPrice && price < options.minPrice) continue;
     const listedMs = facts.listedAt ? Date.parse(facts.listedAt) : NaN;
     const ageDays = Number.isFinite(listedMs) && listedMs <= now ? Math.floor((now - listedMs) / 864e5) : null;
     if (options.mode === "new" && (ageDays === null || ageDays > 7)) continue;
@@ -3929,7 +3936,9 @@ function discoverySelection(records, options, now = Date.now()) {
       address: cleanText(p.UnparsedAddress || buildAddress(p)),
       city,
       listPrice: price,
-      beds: numberOrNull(p.BedroomsTotal),
+      beds: numberOrNull(p.BedroomsAboveGrade ?? p.BedroomsTotal),
+      parking: numberOrNull(p.ParkingTotal),
+      neighbourhood: cleanText(p.CityRegion),
       baths: numberOrNull(p.BathroomsTotalInteger),
       bedroomLayout: facts.bedroomsAboveGrade != null && facts.bedroomsBelowGrade > 0 ? `${facts.bedroomsAboveGrade}+${facts.bedroomsBelowGrade}` : null,
       propertySubType: subtype,
@@ -3941,8 +3950,9 @@ function discoverySelection(records, options, now = Date.now()) {
     });
   }
   listings.sort((a, b) => {
-    if (options.mode === "budget") return a.listPrice - b.listPrice || a.listingKey.localeCompare(b.listingKey);
-    if (options.mode === "luxury") return b.listPrice - a.listPrice || a.listingKey.localeCompare(b.listingKey);
+    if (options.sort === "beds_desc") return (b.beds||0)-(a.beds||0)||a.listPrice-b.listPrice;
+    if (options.sort === "price_asc" || options.mode === "budget") return a.listPrice - b.listPrice || a.listingKey.localeCompare(b.listingKey);
+    if (options.sort === "price_desc" || options.mode === "luxury") return b.listPrice - a.listPrice || a.listingKey.localeCompare(b.listingKey);
     return (Date.parse(b.listedAt) || 0) - (Date.parse(a.listedAt) || 0) || a.listingKey.localeCompare(b.listingKey);
   });
   return listings;
@@ -3996,18 +4006,51 @@ async function publicRecommendations(request, env, ctx) {
 }
 __name(publicRecommendations, "publicRecommendations");
 async function discoveryPhoto(request, env, ctx) {
-  if (env.PUBLIC_DISCOVERY_ENABLED !== "true") return new Response(null, { status: 404 });
-  const key = new URL(request.url).searchParams.get("listingKey");
-  if (!/^[A-Z]\d{7,9}$/.test(key || "")) return new Response(null, { status: 400 });
-  const url = new URL("/api/property", request.url);
-  url.searchParams.set("listingKey", key);
-  const response = await publicProperty(new Request(url), env, ctx), p = (await response.json().catch(() => null))?.property;
-  const photo = p?.photos?.[0];
-  const path = photo?.fallbackUrl?.startsWith("/api/media?") ? photo.fallbackUrl : /^[A-Za-z0-9._:-]{1,200}$/.test(String(photo?.key || "")) ? `/api/media?key=${encodeURIComponent(photo.key)}` : photo?.url;
-  if (!response.ok || !p?.forSale || p.displayRestricted || !path?.startsWith("/api/media?")) return new Response(null, { status: 404 });
-  return new Response(null, { status: 302, headers: { Location: new URL(path, request.url).toString(), "Cache-Control": "public, max-age=60" } });
+  if(env.PUBLIC_DISCOVERY_ENABLED!=="true"||!env.AMPRE_TOKEN)return new Response(null,{status:404});
+  const listingKey=new URL(request.url).searchParams.get('listingKey');
+  if(!/^[A-Z]\d{7,9}$/.test(listingKey||''))return new Response(null,{status:400});
+  const cache=typeof caches!=='undefined'?caches.default:null,key=new Request(new URL('/api/discovery-photo?listingKey='+listingKey+'&photoVersion=2',request.url));
+  const hit=await cache?.match(key);if(hit)return hit;
+  try{
+    const p=await fetchPropertyByKey(listingKey,env,true);
+    if(!p||!publicListingFacts(p))return new Response(null,{status:404});
+    const media=Array.isArray(p.Media)&&p.Media.length?p.Media:await fetchPropertyMedia(listingKey,env);
+    const photo=normalizeMedia(media)[0];if(!photo)return new Response(null,{status:404});
+    const image=await mediaProxy(new Request(new URL('/api/media?key='+encodeURIComponent(photo.key),request.url)),env);
+    if(!image.ok)return image;
+    const result=new Response(image.body,{headers:{'Content-Type':image.headers.get('Content-Type')||'image/jpeg','Cache-Control':'public, max-age=300, s-maxage=300','X-Content-Type-Options':'nosniff'}});
+    if(cache&&ctx?.waitUntil)ctx.waitUntil(cache.put(key,result.clone()));return result;
+  }catch{return new Response(null,{status:404});}
 }
 __name(discoveryPhoto, "discoveryPhoto");
+const discoveryInflight=new Map();
+async function discoveryInventory(city,origin,env,ctx){
+  const cache=typeof caches!=="undefined"?caches.default:null;
+  const key=new Request(new URL('/internal-idx-inventory/v74-2/'+encodeURIComponent(city),origin));
+  const hit=await cache?.match(key);if(hit)return hit.json();
+  if(discoveryInflight.has(city))return discoveryInflight.get(city);
+  const task=(async()=>{
+    const u=new URL(`${AMPRE_BASE}/Property`);
+    u.search=new URLSearchParams({'$filter':`contains(City,'${city}')`,'$count':'true','$top':'1'}).toString();
+    const r=await amplifyFetch(u.href.replace(/\+/g,'%20'),{AMPRE_TOKEN:env.AMPRE_TOKEN});
+    if(!r.ok)throw Error('IDX count unavailable');
+    const count=Number((await r.json())['@odata.count']);
+    if(!Number.isSafeInteger(count)||count<0)throw Error('IDX count invalid');
+    const skipped=Math.max(0,count-500);u.searchParams.delete('$count');
+    const pages=Array.from({length:Math.ceil(Math.min(count,500)/100)},(_,i)=>i);
+    const batches=await Promise.all(pages.map(async i=>{
+      const page=new URL(u);page.searchParams.set('$skip',String(skipped+i*100));page.searchParams.set('$top',String(Math.min(100,count-skipped-i*100)));
+      const r=await amplifyFetch(page.href.replace(/\+/g,'%20'),{AMPRE_TOKEN:env.AMPRE_TOKEN});
+      if(!r.ok)throw Error('IDX inventory unavailable');const d=await r.json();
+      if(!Array.isArray(d.value)||d.value.length>100)throw Error('Invalid IDX page');return d.value;
+    }));
+    const rows=batches.flat(),data={rows,skipped,partial:rows.length<Math.min(count,500),checkedAt:new Date().toISOString()};
+    if(cache&&ctx?.waitUntil)ctx.waitUntil(cache.put(key,new Response(JSON.stringify(data),{headers:{'Cache-Control':'max-age=300','Content-Type':'application/json'}})));
+    return data;
+  })();
+  discoveryInflight.set(city,task);
+  try{return await task;}finally{discoveryInflight.delete(city);}
+}
 async function publicDiscovery(request, env, ctx) {
   if (env.PUBLIC_DISCOVERY_ENABLED !== "true") return json7({ ok: false, code: "discovery_disabled", error: "Browse is not available yet. You can still check a home by address or MLS number above." }, 503);
   let options;
@@ -4018,50 +4061,24 @@ async function publicDiscovery(request, env, ctx) {
   }
   if (!env.AMPRE_TOKEN) return json7({ ok: false, error: "Listing search is temporarily unavailable. Check a known address or MLS number above." }, 503);
   const canonical = new URL("/api/discovery", request.url);
-  canonical.search = new URLSearchParams({ version: "7.4", ...options, maxPrice: options.maxPrice ?? "" }).toString();
+  canonical.search = new URLSearchParams({ version: "7.4-chat2", ...options, maxPrice: options.maxPrice ?? "" }).toString();
   const cacheKey = new Request(canonical);
   const edgeCache = typeof caches !== "undefined" ? caches.default : null;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
   if (cached) return cached;
-  // AMPRE does not reliably support sorting on this feed. Query the city directly,
-  // locate the tail with $count, then inspect only the newest bounded window.
-  const countUrl = new URL(`${AMPRE_BASE}/Property`);
-  countUrl.search = new URLSearchParams({ "$filter": `contains(City,'${options.city}')`, "$count": "true", "$top": "1" }).toString();
-  const visited = /* @__PURE__ */ new Set();
-  const rows = [];
-  const started = Date.now();
-  let pages = 0;
-  let skipped = 0;
+  const started=Date.now();
   try {
-    const countResponse = await amplifyFetch(countUrl.href.replace(/\+/g, "%20"), { AMPRE_TOKEN: env.AMPRE_TOKEN });
-    if (!countResponse.ok) throw new Error("IDX count unavailable");
-    const countBody = await countResponse.json();
-    const total = Number(countBody["@odata.count"]);
-    if (!Number.isSafeInteger(total) || total < 0) throw new Error("Cannot locate a bounded inventory window");
-    skipped = Math.max(0, total - 500);
-    countUrl.searchParams.delete("$count");
-    countUrl.searchParams.set("$top", "100");
-    if (skipped) countUrl.searchParams.set("$skip", String(skipped));
-    let next = countUrl.href;
-    while (next && pages < 5 && Date.now() - started < 12e3) {
-      const u = new URL(next, AMPRE_BASE);
-      if (u.origin !== new URL(AMPRE_BASE).origin || u.pathname !== "/odata/Property" || u.username || u.password || u.hash || visited.has(u.href)) throw new Error("Invalid pagination");
-      visited.add(u.href);
-      const response = await amplifyFetch(u.href.replace(/\+/g, "%20"), { AMPRE_TOKEN: env.AMPRE_TOKEN });
-      if (!response.ok) throw new Error("IDX request failed");
-      const body = await response.json();
-      if (!Array.isArray(body.value)) throw new Error("Invalid IDX response");
-      rows.push(...body.value.slice(0, 100));
-      pages++;
-      next = body["@odata.nextLink"] || null;
-      if (body.value.length > 100) throw new Error("Unexpected page size");
-    }
+    // Share the bounded, private IDX inventory between filter refinements. Never
+    // serve raw rows: display permissions and active status are checked below.
+    const inventory=await discoveryInventory(options.city,request.url,env,ctx);
+    const {rows,skipped,partial}=inventory;
+
     const matches = discoverySelection(rows, options);
     const result = json7({
       ok: true,
-      listings: matches.slice(0, 12),
-      checkedAt: (/* @__PURE__ */ new Date()).toISOString(),
-      coverage: { scanned: rows.length, partial: !!next || skipped > 0, moreMatches: matches.length > 12 },
+      listings: matches.slice(0, options.limit),
+      checkedAt: inventory.checkedAt,
+      coverage: { scanned: rows.length, matched: matches.length, partial: partial || skipped > 0, moreMatches: matches.length > options.limit },
       note: "A selection from public IDX listings, not the entire market. Availability and asking prices can change. Open a home to recheck its listing."
     }, 200, { "Cache-Control": "public, max-age=60, s-maxage=300" });
     if (edgeCache && ctx?.waitUntil) ctx.waitUntil(edgeCache.put(cacheKey, result.clone()));
@@ -4785,10 +4802,38 @@ async function removeLead(request, env, id) {
   }
 }
 __name(removeLead, "removeLead");
+async function adminLeadReports(request,env,leadId){
+  const headers={'Cache-Control':'private, no-store'};
+  if(!authorized(request,env))return json7({ok:false,error:'Unauthorized'},401,headers);
+  if(!/^[0-9a-f-]{36}$/i.test(leadId))return json7({ok:false,error:'Invalid lead.'},400,headers);
+  const jobId=new URL(request.url).searchParams.get('copy');
+  if(jobId&&jobId!=='current'&&!/^\d{1,16}$/.test(jobId))return json7({ok:false,error:'Invalid report copy.'},400,headers);
+  if(jobId&&jobId!=='current'){
+    const r=await supabase(env,`/rest/v1/automation_jobs?lead_id=eq.${leadId}&id=eq.${jobId}&job_type=eq.email_buyer&select=id,status,created_at,completed_at,payload&limit=1`);
+    const job=(await r.json().catch(()=>[]))?.[0],email=job?.payload?.frozen_email,archive=job?.payload?.report_archive;
+    if(!r.ok)return json7({ok:false,error:'Could not load this saved report.'},502,headers);
+    if(!email?.html)return json7({ok:false,error:'This exact email copy is not available.'},404,headers);
+    return json7({ok:true,copy:{id:job.id,status:job.status,savedAt:job.created_at,sentAt:job.completed_at,version:archive?.version||null,generatedAt:archive?.generated_at||null,subject:email.subject,html:email.html,text:email.text,report:archive?.report||null,exactEmail:true}},200,headers);
+  }
+  const r=await supabase(env,`/rest/v1/property_reports?lead_id=eq.${leadId}&select=id,status,generated_at,report_payload&limit=1`);
+  const report=(await r.json().catch(()=>[]))?.[0];
+  if(!r.ok)return json7({ok:false,error:'Could not load saved reports.'},502,headers);
+  if(jobId==='current'){
+    if(report?.status!=='ready'||!report.report_payload)return json7({ok:false,error:'The report is still being prepared.'},409,headers);
+    const p=report.report_payload,address=p.facts?.address||'Property';
+    const email=p.seller||p.report_type==='THM Seller Price Perspective'?sellerReportEmail(address,p):propertyReportEmail(address,{},p);
+    return json7({ok:true,copy:{id:'current',status:report.status,generatedAt:report.generated_at,version:p.version||null,...email,report:p,exactEmail:false}},200,headers);
+  }
+  const select='id,status,created_at,completed_at,subject:payload->frozen_email->>subject,version:payload->report_archive->>version,generated_at:payload->report_archive->>generated_at';
+  const jr=await supabase(env,`/rest/v1/automation_jobs?lead_id=eq.${leadId}&job_type=eq.email_buyer&select=${encodeURIComponent(select)}&order=created_at.desc&limit=50`);
+  const jobs=await jr.json().catch(()=>[]);if(!jr.ok)return json7({ok:false,error:'Could not load email history.'},502,headers);
+  const copies=(Array.isArray(jobs)?jobs:[]).filter(j=>j.subject).map(j=>({id:j.id,status:j.status,savedAt:j.created_at,sentAt:j.completed_at,subject:j.subject,version:j.version,generatedAt:j.generated_at,exactEmail:true}));
+  return json7({ok:true,copies,current:report?{id:'current',status:report.status,generatedAt:report.generated_at,version:report.report_payload?.version||null}:null},200,headers);
+}
 async function adminLeads(request, env) {
   if (!authorized(request, env)) return json7({ ok: false, error: "Unauthorized" }, 401);
   if (!env.SUPABASE_SERVICE_ROLE_KEY) return json7({ ok: false, error: "Admin database connection is not configured." }, 503);
-  const select = "id,name,mobile,email,lead_mode,showing_requested,preferred_showing_at,confirmed_showing_at,status,stage,next_action,next_action_at,first_response_due_at,resolved_address,showing_timing,created_at,updated_at,property_snapshot,metadata,vow_user_id,agents(id,code,display_name,email,mobile),property_reports(id,status,report_payload,generated_at,updated_at,error_message),automation_jobs(id,job_type,status,recipient,attempts,available_at,completed_at,last_error)";
+  const select = "id,name,mobile,email,lead_mode,showing_requested,preferred_showing_at,confirmed_showing_at,status,stage,next_action,next_action_at,first_response_due_at,resolved_address,showing_timing,created_at,updated_at,property_snapshot,metadata,vow_user_id,agents(id,code,display_name,email,mobile),property_reports(id,status,generated_at,updated_at,error_message),automation_jobs(id,job_type,status,recipient,attempts,available_at,completed_at,last_error)";
   const propertySearch = clean5(new URL(request.url).searchParams.get("property"), 120);
   const response = await supabase(env, `/rest/v1/leads?select=${encodeURIComponent(select)}&order=created_at.desc&limit=${propertySearch ? 1e3 : 100}`);
   let data = await response.json().catch(() => null);
@@ -5537,7 +5582,7 @@ async function deliverEmailJob(env, job) {
     const message = buildEmail(job, lead);
     sendPayload = { from: env.RESEND_FROM_EMAIL || "Alireza Golestan | Toronto House Market <notifications@updates.torontohousemarket.com>", to: [job.recipient], reply_to: "alireza.golestan@century21.ca", subject: message.subject, html: message.html, text: message.text };
     if (Array.isArray(message.attachments) && message.attachments.length) sendPayload.attachments = message.attachments;
-    const saved=await supabase(env, `/rest/v1/automation_jobs?id=eq.${job.id}&status=eq.processing&attempts=eq.${job.attempts}`, {method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify({payload:{...job.payload,frozen_email:sendPayload}})});
+    const saved=await supabase(env, `/rest/v1/automation_jobs?id=eq.${job.id}&status=eq.processing&attempts=eq.${job.attempts}`, {method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify({payload:{...job.payload,frozen_email:sendPayload,...job.job_type==='email_buyer'?{report_archive:{version:firstRelation(lead.property_reports)?.report_payload?.version||7.4,generated_at:firstRelation(lead.property_reports)?.generated_at||null,report:firstRelation(lead.property_reports)?.report_payload||null}}:{}}})});
     const rows=await saved.json().catch(()=>null);
     if (!saved.ok || !Array.isArray(rows) || rows.length!==1) throw new Error("Email attempt no longer owns the job; send cancelled.");
   }
@@ -5717,6 +5762,12 @@ function reportPriceSuggestion(report) {
   return available ? { available: true, price: Number(v.midpoint), text: `Price reference to discuss: ${cad(v.midpoint)}. The modelled midpoint of current same-community sold evidence; agree an offer with your Realtor after checking condition and offer instructions.` } : { available: false, price: null, text: "Price suggestion: Realtor review needed. A specific price requires enough recent sales of the same home type in the same community, with at least medium confidence." };
 }
 __name(reportPriceSuggestion, "reportPriceSuggestion");
+function reportBrief(value){
+  const sentences=String(value||'').trim().match(/[^.!?]+(?:[.!?]+(?:\s|$)|$)/g)||[];
+  let result='';for(const sentence of sentences){if(result&&result.length+sentence.length>430)break;result+=sentence;if(result.length>=260)break;}
+  return result.trim()||String(value||'').trim().slice(0,430);
+}
+function reportBriefCard(value){return value?`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eaf1e8;border:1px solid #d3dfcf;border-radius:14px;margin:0 0 18px"><tr><td style="padding:20px 22px"><p style="font:700 11px Arial,sans-serif;letter-spacing:1px;color:#38704f;margin:0 0 10px">YOUR 30-SECOND READ · AI SUMMARY</p><p style="font:16px/1.65 Arial,sans-serif;color:#294c38;margin:0">${html(value)}</p></td></tr></table>`:'';}
 function propertyReportEmail(address, agentData, input, options = {}) {
   const report = reportWithoutUnsupportedRating(input);
   const f = report.facts, v = report.valuation, comps = report.comparables, policy = report.comparable_policy || {};
@@ -5795,8 +5846,8 @@ function propertyReportEmail(address, agentData, input, options = {}) {
   const cashbackText = active2 ? "YOUR BUYER BENEFIT: Up to $10,000 cashback on an eligible purchase through Toronto House Market. Ask about your eligibility and terms." : "";
   const cashbackHtml = active2 ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#edf5f1;border-radius:12px;margin:0 0 22px"><tr><td style="padding:18px"><p style="margin:0 0 7px;color:#466e60;font-size:11px;font-weight:bold;letter-spacing:1px">YOUR BUYER BENEFIT</p><p style="margin:0;color:#153e33;font-family:Georgia,Times New Roman,serif;font-size:28px;font-weight:400;line-height:1.25">Up to $10,000 cashback</p><p style="margin:8px 0 0;color:#496259;font-size:14px;line-height:1.5">On an eligible purchase through Toronto House Market. Ask us about eligibility and terms.</p></td></tr></table>` : "";
   const ratingText = rating.available ? `Value rating: ${rating.score}/10 \u2014 ${rating.label}` : "Value rating unavailable. Review the sold evidence below with the team.";
-  const textParts = [title, address, status, `Prepared ${generated}`, "YOUR PRICE PICTURE", verdict, priceGraphic.text, suggestion.available ? suggestion.text : null, ratingText, cashbackText, contactText, "HOME AT A GLANCE", factsRead, "Recent comparable sales", evidence, `Observed sold prices: ${observedRange}. This may differ from the modelled range.`, locality, size, ...comps.map((c, i) => `${i + 1}. ${c.address} \xB7 ${cad(c.soldPrice)} \xB7 ${c.soldDate} \xB7 ${c.livingAreaRange || (c.buildingAreaTotal ? c.buildingAreaTotal + " sq ft" : "Size not reported")} \xB7 ${c.distanceKm != null ? `${c.distanceKm} km` : "Distance unavailable"}`), "WHAT THE NUMBERS SAY", n.market_read || v.basis, n.buyer_strategy ? "YOUR BUYING PLAN" : null, n.buyer_strategy, "KNOWN MONTHLY COSTS", ...costs, "CHECK BEFORE AN OFFER", ...checks, ...questions, contactText, actionNote, generatedMode, disclaimer, TEAM_NAMES + " \xB7 Sales Representatives", TEAM_BROKERAGE];
-  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="format-detection" content="telephone=no,address=no,date=no,email=no"><title>${html(title)}</title><style>a[x-apple-data-detectors]{color:inherit!important;font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;text-decoration:none!important}.report-address,.report-address a{color:#ffffff!important;font-family:Georgia,Times New Roman,serif!important;font-weight:400!important;text-decoration:none!important}@media(max-width:480px){.report-section{padding:20px 16px!important}.report-address{font-size:26px!important}}</style></head><body style="margin:0;background:#f5f2eb;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} \xB7 ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:16px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#faf9f4;border:1px solid #dedfd5;border-radius:16px;overflow:hidden"><tr><td style="padding:26px 22px;background:#123f39;color:#fff"><p style="color:#b9dccc;font-size:12px;letter-spacing:1px;margin:0 0 8px">${html(title)}</p><h1 class="report-address" style="font-family:Georgia,Times New Roman,serif;font-size:32px;font-weight:400;color:#ffffff;line-height:1.3;margin:8px 0 12px;overflow-wrap:anywhere"><a href="${html(viewPropertyUrl)}" style="font-family:Georgia,Times New Roman,serif;font-size:inherit;font-weight:400;line-height:inherit;color:#ffffff!important;text-decoration:none!important">${html(address)}</a></h1><p style="font-size:16px;line-height:1.5;margin:0;color:#dedfd5">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section("YOUR PRICE PICTURE", `${priceGraphic.html}${suggestion.available ? paragraph(suggestion.text) : ""}<p style="font-size:12px;color:#61746c;line-height:1.5;margin:0">${html(ratingText)}</p>`)}${section("YOUR BUYER BENEFIT", cashbackHtml + contactHtml)}${section("HOME AT A GLANCE", paragraph(factsRead))}${section("Recent comparable sales", paragraph(evidence) + paragraph(`These sales span ${observedRange}. The estimate also considers how closely each home matches.`) + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>` + paragraph([locality, size].filter(Boolean).join(" ")))}${section("WHAT THE NUMBERS SAY", paragraph(n.market_read || v.basis || reason) + (n.buyer_strategy ? paragraph(n.buyer_strategy) : "") + paragraph(/condo|apartment/i.test(f.property_type || "") ? "Condo method: same community, same home type and same interior size range. Units verified in the same building and full postal code remain eligible when MLS community labels differ. A price estimate requires at least 3 qualifying sales. Reports may change when the listing facts, qualifying sales or method change." : "A price estimate requires at least 3 qualifying sold homes. Reports may change when the listing facts or qualifying sales change."))}${section("KNOWN MONTHLY COSTS", bullets(costs))}${section("CHECK BEFORE AN OFFER", bullets(checks) + (questions.length ? label("QUESTIONS TO ASK US") + bullets(questions) : ""))}${section("YOUR NEXT MOVE", contactHtml)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6"><strong style="color:#123f39">${html(TEAM_NAMES)}</strong><br>Sales Representatives<br><strong>${html(TEAM_BROKERAGE)}</strong><br><a href="tel:+16478904704" style="color:#236b5e">Contact the team</a><br><br>${html(generatedMode)}<br>${html(disclaimer)}<br>Toronto House Market</td></tr></table></td></tr></table></body></html>`;
+  const textParts = [title, address, status, `Prepared ${generated}`, "YOUR 30-SECOND READ · AI SUMMARY", reportBrief(n.executive_summary), "YOUR PRICE PICTURE", verdict, priceGraphic.text, suggestion.available ? suggestion.text : null, ratingText, cashbackText, contactText, "HOME AT A GLANCE", factsRead, "Recent comparable sales", evidence, `Observed sold prices: ${observedRange}. This may differ from the modelled range.`, locality, size, ...comps.map((c, i) => `${i + 1}. ${c.address} \xB7 ${cad(c.soldPrice)} \xB7 ${c.soldDate} \xB7 ${c.livingAreaRange || (c.buildingAreaTotal ? c.buildingAreaTotal + " sq ft" : "Size not reported")} \xB7 ${c.distanceKm != null ? `${c.distanceKm} km` : "Distance unavailable"}`), "WHAT THE NUMBERS SAY", n.market_read || v.basis, n.buyer_strategy ? "YOUR BUYING PLAN" : null, n.buyer_strategy, "KNOWN MONTHLY COSTS", ...costs, "CHECK BEFORE AN OFFER", ...checks, ...questions, contactText, actionNote, generatedMode, disclaimer, TEAM_NAMES + " \xB7 Sales Representatives", TEAM_BROKERAGE];
+  const htmlBody = `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="format-detection" content="telephone=no,address=no,date=no,email=no"><title>${html(title)}</title><style>a[x-apple-data-detectors]{color:inherit!important;font-family:inherit!important;font-size:inherit!important;font-weight:inherit!important;text-decoration:none!important}.report-address,.report-address a{color:#ffffff!important;font-family:Georgia,Times New Roman,serif!important;font-weight:400!important;text-decoration:none!important}@media(max-width:480px){.report-section{padding:20px 16px!important}.report-address{font-size:26px!important}}</style></head><body style="margin:0;background:#f5f2eb;font-family:Arial,sans-serif"><div style="display:none;max-height:0;overflow:hidden">${html(verdict)} \xB7 ${html(confidence)} evidence confidence</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:16px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#faf9f4;border:1px solid #dedfd5;border-radius:16px;overflow:hidden"><tr><td style="padding:26px 22px;background:#123f39;color:#fff"><p style="color:#b9dccc;font-size:12px;letter-spacing:1px;margin:0 0 8px">${html(title)}</p><h1 class="report-address" style="font-family:Georgia,Times New Roman,serif;font-size:32px;font-weight:400;color:#ffffff;line-height:1.3;margin:8px 0 12px;overflow-wrap:anywhere"><a href="${html(viewPropertyUrl)}" style="font-family:Georgia,Times New Roman,serif;font-size:inherit;font-weight:400;line-height:inherit;color:#ffffff!important;text-decoration:none!important">${html(address)}</a></h1><p style="font-size:16px;line-height:1.5;margin:0;color:#dedfd5">${html(status)}</p><p style="font-size:12px;margin:12px 0 0;color:#cbd5e1">Prepared ${html(generated)}</p></td></tr>${section("YOUR PRICE PICTURE", `${reportBriefCard(reportBrief(n.executive_summary))}${priceGraphic.html}${suggestion.available ? paragraph(suggestion.text) : ""}<p style="font-size:12px;color:#61746c;line-height:1.5;margin:0">${html(ratingText)}</p>`)}${section("YOUR BUYER BENEFIT", cashbackHtml)}${section("HOME AT A GLANCE", paragraph(factsRead))}${section("Recent comparable sales", paragraph(evidence) + paragraph(`These sales span ${observedRange}. The estimate also considers how closely each home matches.`) + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${compRows}</table>` + paragraph([locality, size].filter(Boolean).join(" ")))}${section("WHAT THE NUMBERS SAY", paragraph(n.market_read || v.basis || reason) + (n.buyer_strategy ? paragraph(n.buyer_strategy) : "") + paragraph(report.expert_comp_mode?.used ? "Selected sales were reviewed individually, with documented adjustments for meaningful differences. Their recorded sold prices are unchanged; the range remains preliminary." : /condo|apartment/i.test(f.property_type || "") ? "Condo method: same community, same home type and same interior size range. Units verified in the same building and full postal code remain eligible when MLS community labels differ. A price estimate requires at least 3 qualifying sales. Reports may change when the listing facts, qualifying sales or method change." : "A price estimate requires at least 3 qualifying sold homes. Reports may change when the listing facts or qualifying sales change."))}${section("KNOWN MONTHLY COSTS", bullets(costs))}${section("CHECK BEFORE AN OFFER", bullets(checks) + (questions.length ? label("QUESTIONS TO ASK US") + bullets(questions) : ""))}${section("YOUR NEXT MOVE", contactHtml)}<tr><td style="padding:22px 26px;color:#64748b;font-size:12px;line-height:1.6"><strong style="color:#123f39">${html(TEAM_NAMES)}</strong><br>Sales Representatives<br><strong>${html(TEAM_BROKERAGE)}</strong><br><a href="tel:+16478904704" style="color:#236b5e">Contact the team</a><br><br>${html(generatedMode)}<br>${html(disclaimer)}<br>Toronto House Market · Version ${html(report.version||"7.4")}</td></tr></table></td></tr></table></body></html>`;
   return { subject: `AI Property Report Ready: ${address} | ${rating.available ? `Value Rating ${rating.score}/10` : active2 ? "Realtor Review" : "Property Review"}`, html: htmlBody, text: textParts.filter(Boolean).join("\n\n") };
 }
 __name(propertyReportEmail, "propertyReportEmail");
@@ -6677,7 +6728,7 @@ function sellerReportEmail(address, report) {
   const pendingTitle = "Let\u2019s take a closer look at your home.";
   const pendingBasis = v.dataUnavailable ? "We couldn\u2019t complete the market check this time, so we haven\u2019t estimated a price." : !(seller.evidence?.subjectMatched ?? seller.evidence?.listingMatched) ? "We couldn\u2019t confidently match your home to our property records, so we haven\u2019t estimated a price." : "We found your home, but not enough closely matching sales to give you a useful price estimate yet.";
   const pendingQuestion = "Reply to this email or call us at 647-890-4704. Let\u2019s discuss your home and the next step together.";
-  const priceHtml = available ? `<tr><td class="pad" style="padding:28px 30px 30px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d9dfd6;border-top:4px solid #236b5e"><tr><td class="price-pad" style="padding:25px 24px"><p style="${label}">${midpoint ? "Preliminary estimated value" : "Preliminary price range"}</p><p class="hero-price" style="margin:0 0 9px;font-family:Georgia,'Times New Roman',serif;font-size:44px;line-height:1.15;letter-spacing:-1px;color:#123f39">${html(midpoint ? cad(midpoint) : range(v.low, v.high))}</p>${midpoint ? `<p class="price-range" style="margin:0 0 18px;font-size:20px;line-height:1.4;color:#123f39">${html(range(v.low, v.high))}<br><span style="font-size:12px;color:#53655e">Preliminary selling range \xB7 CAD</span></p>` : ""}<p style="margin:0 0 9px;font-size:13px;font-weight:700;line-height:1.5;color:#123f39">${html(confidence)} \xB7 ${comps.length} selected sales</p>${reasons.map((reason) => `<p style="${small}margin-bottom:8px">${html(reason)}</p>`).join("")}<p style="${small}margin-top:12px">A starting point for your selling plan, not an appraisal or a promised sale price.</p>${expectedHtml}</td></tr></table><p style="${small}margin-top:15px">${html(v.basis || "Based on the qualifying sold homes shown below.")}</p></td></tr>` : `<tr><td class="pad" style="padding:28px 30px"><p style="${label}">Your review is started</p><h2 style="margin:0 0 15px;font-family:Georgia,'Times New Roman',serif;font-size:29px;line-height:1.25;font-weight:400;color:#123f39">${html(pendingTitle)}</h2>${paragraph(pendingBasis)}${paragraph(pendingQuestion)}<p style="${small}">No valuation has been produced yet. Your details are saved; you do not need to submit another request.</p>${expectedHtml}</td></tr>`;
+  const priceHtml = available ? `<tr><td class="pad" style="padding:28px 30px 30px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d9dfd6;border-top:4px solid #236b5e"><tr><td class="price-pad" style="padding:25px 24px"><p style="${label}">${midpoint ? "Preliminary estimated value" : "Preliminary price range"}</p><p class="hero-price" style="margin:0 0 9px;font-family:Georgia,'Times New Roman',serif;font-size:44px;line-height:1.15;letter-spacing:-1px;color:#123f39">${html(midpoint ? cad(midpoint) : range(v.low, v.high))}</p>${midpoint ? `<p class="price-range" style="margin:0 0 18px;font-size:20px;line-height:1.4;color:#123f39">${html(range(v.low, v.high))}<br><span style="font-size:12px;color:#53655e">Preliminary selling range \xB7 CAD</span></p>` : ""}<p style="margin:0 0 9px;font-size:13px;font-weight:700;line-height:1.5;color:#123f39">${html(confidence)} \xB7 ${comps.length} selected sales</p><p style="${small}">A preliminary guide. Confirm current condition and the closest comparable sales before pricing.</p><p style="${small}margin-top:12px">A starting point for your selling plan, not an appraisal or a promised sale price.</p>${expectedHtml}</td></tr></table></td></tr>` : `<tr><td class="pad" style="padding:28px 30px"><p style="${label}">Your review is started</p><h2 style="margin:0 0 15px;font-family:Georgia,'Times New Roman',serif;font-size:29px;line-height:1.25;font-weight:400;color:#123f39">${html(pendingTitle)}</h2>${paragraph(pendingBasis)}${paragraph(pendingQuestion)}<p style="${small}">No valuation has been produced yet. Your details are saved; you do not need to submit another request.</p>${expectedHtml}</td></tr>`;
   const soldRows = comps.map((c) => `<tr><td class="comp-info" valign="top" style="padding:16px 13px 16px 0;border-top:1px solid #dedfd5"><p style="margin:0 0 5px;font-size:15px;font-weight:700;line-height:1.45;color:#123f39">${html(c.address || "Address unavailable")}</p><p style="${small}">${html(compDetails(c))}</p>${c.geographyNote ? `<p style="${small}">${html(c.geographyNote)}</p>` : ""}${c.timeAdjustmentPct ? `<p style="${small}">Time-adjusted indication: ${html(cad(c.adjustedPrice))} (${html(c.timeAdjustmentPct)}%). Actual sale price shown at right.</p>` : ""}</td><td class="comp-price" align="right" valign="top" width="132" style="padding:16px 0;border-top:1px solid #dedfd5"><p style="margin:0 0 5px;font-size:19px;font-weight:700;line-height:1.4;white-space:nowrap;color:#123f39">${html(cad(c.soldPrice) || "Not recorded")}</p><p style="${small}">Sold${shortDate(c.soldDate) ? "<br>" + html(shortDate(c.soldDate)) : ""}</p></td></tr>`).join("");
   const soldIntro = available ? "Completed sales used in your estimate. The actual sale prices are shown below." : "These completed sales were recovered, but they do not yet provide enough evidence for an estimate.";
   const soldHtml = comps.length ? section("01 / Sold evidence", available ? "What similar homes sold for." : "The sales recovered so far.", paragraph(soldIntro) + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${soldRows}</table>`) : "";
@@ -6696,10 +6747,10 @@ function sellerReportEmail(address, report) {
   const nextHtml = section(available ? "03 / Your next move" : "Next / Complete your review", available ? "Turn a price into a plan." : "A conversation is the next step.", paragraph(nextText) + (renovationContext ? `<p style="${label}">Current condition</p>${paragraph(renovationContext)}` : "") + (cleanOwnerNote ? `<p style="${label}">Your note</p>${paragraph(cleanOwnerNote)}` : "") + (available && checks.length ? `<p style="${label}">For your review</p>${checks.map((check) => `<p style="${small}margin-bottom:7px">${html(check)}</p>`).join("")}` : "") + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px"><tr><td align="center" bgcolor="#123f39" style="border-radius:7px"><a href="tel:${TEAM_PHONE}" style="display:block;padding:17px 12px;border:1px solid #123f39;border-radius:7px;color:#ffffff!important;font-size:15px;font-weight:700;line-height:1.4;text-decoration:none">${html(cta)}</a></td></tr></table><p style="${small}margin-top:12px;text-align:center">Reply to this email or call <a href="tel:${TEAM_PHONE}" style="color:#236b5e;text-decoration:underline">647-890-4704</a>.</p>`);
   const method = available ? v.methodology : null;
   const disclaimer = v.available ? "Calculated from recovered MLS evidence. Listing facts and present condition need confirmation. The range is preliminary, not a statistical confidence interval, appraisal or guarantee." : "No price has been calculated. The address, available records and present condition need confirmation before a valuation can be supplied.";
-  const footer = `<tr><td class="pad" style="padding:25px 30px;border-top:1px solid #dedfd5;background:#eceee6">${historyHtml}${method ? `<p style="${small}margin-top:15px">${html(method)}</p>` : ""}<p style="${small}margin-top:12px">${html(disclaimer)}</p><p style="margin:22px 0 5px;font-size:13px;font-weight:700;line-height:1.6;color:#123f39">${html(TEAM_NAMES)}</p><p style="${small}">Sales Representatives<br>${html(TEAM_BROKERAGE)}</p><p style="${small}margin-top:14px">Toronto House Market \xB7 Seller Price Perspective</p></td></tr>`;
+  const footer = `<tr><td class="pad" style="padding:25px 30px;border-top:1px solid #dedfd5;background:#eceee6"><p style="${label}">How to read this report</p>${reasons.map(reason=>`<p style="${small}margin-bottom:8px">${html(reason)}</p>`).join("")}${historyHtml}${method ? `<p style="${small}margin-top:15px">${html(method)}</p>` : ""}<p style="${small}margin-top:12px">${html(disclaimer)}</p><p style="margin:22px 0 5px;font-size:13px;font-weight:700;line-height:1.6;color:#123f39">${html(TEAM_NAMES)}</p><p style="${small}">Sales Representatives<br>${html(TEAM_BROKERAGE)}</p><p style="${small}margin-top:14px">Toronto House Market \xB7 Seller Price Perspective \xB7 Version ${html(report.version||"7.4")}</p></td></tr>`;
   const marketRead = available ? seller.strategy?.independent_market_read : null;
   const listingPlan = available ? seller.strategy?.listing_strategy : null;
-  const strategyHtml = marketRead || listingPlan ? section("Your selling perspective", "What the evidence means.", (marketRead ? paragraph(marketRead) : "") + (listingPlan ? `<p style="${label}">Listing approach</p>${paragraph(listingPlan)}` : "")) : "";
+  const strategyHtml = marketRead || listingPlan ? section("Your selling perspective", "Your home, in perspective.", (marketRead ? reportBriefCard(reportBrief(marketRead)) : "") + (listingPlan ? `<p style="${label}">Listing approach</p>${paragraph(listingPlan)}` : "")) : "";
   const preheader = available ? `${midpoint ? cad(midpoint) + " estimated value. " : ""}${range(v.low, v.high)} preliminary range. ${confidence}.` : `${pendingTitle}. Your details are saved; reply to complete your review.`;
   const htmlBody = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="format-detection" content="telephone=no,address=no,date=no,email=no"><title>${html("Seller Price Perspective \xB7 " + address)}</title><style>a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important}.report-address a{color:#ffffff!important;text-decoration:none!important;font:inherit!important}@media(max-width:480px){.pad{padding:24px 18px!important}.price-pad{padding:22px 18px!important}.report-address{font-size:26px!important}.hero-price{font-size:36px!important}.price-range{font-size:18px!important}.comp-info{padding-right:10px!important}.comp-price{width:108px!important}.comp-price p{font-size:16px!important}.comp-price p+p{font-size:11px!important}}</style></head><body style="margin:0;padding:0;background:#f5f2eb;font-family:Arial,Helvetica,sans-serif;-webkit-text-size-adjust:100%;color:#123f39"><div style="display:none;font-size:1px;line-height:1px;color:#f5f2eb;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all">${html(preheader)}</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f2eb"><tr><td align="center" style="padding:24px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#faf9f4;border:1px solid #dedfd5"><tr><td class="pad" style="padding:30px;background:#123f39"><p style="margin:0 0 22px;font-size:11px;font-weight:700;line-height:1.5;letter-spacing:1.7px;color:#c4dfd1">TORONTO HOUSE MARKET</p><p style="margin:0 0 11px;font-family:Georgia,'Times New Roman',serif;font-size:19px;line-height:1.4;color:#dce9dd">Seller Price Perspective</p><h1 class="report-address" style="margin:0 0 16px;font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:400;line-height:1.25;color:#ffffff;overflow-wrap:anywhere">${html(address)}</h1>${homeFacts ? `<p style="margin:0 0 9px;font-size:13px;line-height:1.6;color:#dce9dd">${html(homeFacts)}</p>` : ""}<p style="margin:0;font-size:12px;line-height:1.6;color:#c4dfd1">${html(facts.market_status || "Listing status unconfirmed")}${prepared ? "<br>Prepared " + html(prepared) + " \xB7 Toronto time" : ""}</p></td></tr>${priceHtml}${strategyHtml}${soldHtml}${competitionHtml}${nextHtml}${footer}</table></td></tr></table></body></html>`;
   const text = ["Toronto House Market \xB7 Seller Price Perspective", address, homeFacts, facts.market_status, prepared ? `Prepared ${prepared} \xB7 Toronto time` : null, available ? midpoint ? `Preliminary estimated value: ${cad(midpoint)}` : null : pendingTitle, available ? `Preliminary selling range: ${range(v.low, v.high)} CAD` : pendingBasis, available ? `${confidence} \xB7 ${comps.length} selected sales` : pendingQuestion, available ? v.basis : "No valuation has been produced yet. Your details are saved; you do not need to submit another request.", ...available ? reasons : [], available ? "A starting point for your selling plan, not an appraisal or a promised sale price." : null, hasExpected ? `Your expected range: ${range(expected.low, expected.high)}. ${expectedNote} Your expectation does not set the estimate.` : null, marketRead ? "MARKET PERSPECTIVE — " + marketRead : null, listingPlan ? "LISTING APPROACH — " + listingPlan : null, comps.length ? "SOLD EVIDENCE \u2014 " + soldIntro : null, ...comps.map((c) => `${c.address || "Address unavailable"}
@@ -6713,6 +6764,7 @@ Reply to this email or call 647-890-4704.`, latestText ? `Latest matched MLS lis
 }
 __name(sellerReportEmail, "sellerReportEmail");
 export {
+  adminLeadReports,
   addressFromPlace,
   buildComparableContext,
   buildEmail,

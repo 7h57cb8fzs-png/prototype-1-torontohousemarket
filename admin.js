@@ -25,6 +25,7 @@ function renderLeads(leads){
   const visible=leads.filter(x=>filter==='seller'?(x.lead_mode||x.metadata?.lead_mode)==='seller':filter==='report'?!showing(x)&&(x.lead_mode||x.metadata?.lead_mode)!=='seller':filter==='showing'?showing(x):filter==='confirmed'?x.status==='appointment_confirmed':true);
   if(filter==='confirmed')visible.sort((a,b)=>Date.parse(a.confirmed_showing_at)-Date.parse(b.confirmed_showing_at));
   $('leads').innerHTML=visible.length?visible.map(card).join(''):'<p>No matching leads.</p>';
+  document.querySelectorAll('[data-report-lead]').forEach(d=>d.addEventListener('toggle',()=>{if(d.open&&!d.dataset.loaded)loadReportArchive(d);}));
   document.querySelectorAll('select[data-status-id]').forEach(s=>s.addEventListener('change',()=>updateLead(s.dataset.statusId,{status:s.value}).catch(e=>{alert(e.message);load();})));
   document.querySelectorAll('select[data-agent-id]').forEach(s=>s.addEventListener('change',()=>assignLead(s.dataset.agentId,s.value,s)));
   document.querySelectorAll('[data-remove-lead]').forEach(b=>b.addEventListener('click',()=>removeLead(b.dataset.removeLead,b)));
@@ -54,7 +55,7 @@ function calendarParts(value){if(!value)return {date:'',time:''};const p=new Int
 function card(x){
  const a=x.agents||null,report=Array.isArray(x.property_reports)?x.property_reports[0]:x.property_reports,jobs=x.automation_jobs||[],p=report?.report_payload||{},v=p.valuation||{},n=p.narrative||{};
  const showing=x.showing_requested || (x.metadata?.lead_mode||x.lead_mode)==='showing', preferred=calendarParts(x.preferred_showing_at),busy=jobs.some(j=>j.status==='processing');
- const reportView=report?.status==='ready'?`<details class="report-preview"><summary>View AI property report</summary><div><b>${esc(v.available?`${money(v.low)} – ${money(v.high)} · ${v.confidence||''} confidence`:'Range unavailable')}</b><p>${esc(n.executive_summary||'')}</p><small>${esc((p.comparables||[]).length)} sold comparable(s) · ${date(report.generated_at)}</small></div></details>`:'';
+ const reportView=report?`<details class="report-preview report-archive" data-report-lead="${x.id}"><summary>📄 Saved ${esc((x.lead_mode||x.metadata?.lead_mode)==='seller'?'seller':'buyer')} reports <span>${esc(report.status)} · ${date(report.generated_at)}</span></summary><div class="report-archive-body"><p>Open to view the saved report and email copies.</p></div></details>`:'';
  const sp=x.property_snapshot?.sellerProfile;
  const sellerView=sp?`<details class="report-preview seller-lead"><summary>Seller’s home &amp; pricing goals</summary><div><p><b>Target:</b> ${sp.targetMin?money(sp.targetMin)+'–'+money(sp.targetMax):sp.targetPrice?money(sp.targetPrice):'Open to guidance'} · <b>Timing:</b> ${esc(({exploring:'Exploring options','0_3':'Within 3 months','3_6':'3–6 months','6_12':'6–12 months'})[sp.timing]||sp.timing)}</p><p>${esc(sp.homeType)} · ${esc(sp.city)} · ${esc(sp.community||'Community to confirm')} · ${esc(sp.sizeBand==='unknown'?'Size to confirm':sp.sizeBand+' sq ft')} · ${esc(sp.beds)} above-ground bedrooms</p><p>Basement: ${esc(sp.basement)} · Separate entrance: ${esc(sp.entrance)} · Kitchens: ${esc(sp.kitchens??'To confirm')}</p><p><b>Condition:</b> ${esc(sp.condition)}</p><ul>${(sp.upgrades||[]).map(u=>`<li>${esc(({kitchen:'Kitchen',bathrooms:'Bathrooms',flooring:'Floors & finishes',basement:'Basement',windows:'Windows & doors',roof:'Roof',systems:'Heating & cooling',exterior:'Outdoor space',layout:'Layout & additions'})[u.id]||u.id)} · ${esc(({within_10:'Within the past 10 years','0_2':'Within 2 years','3_5':'3–5 years ago','6_plus':'More than 5 years ago',unknown:'Date to confirm'})[u.recency])}${u.documents?' · Documents available':''}</li>`).join('')||'<li>No individual upgrades selected</li>'}</ul>${sp.notes?`<p><b>Owner notes:</b> ${esc(sp.notes)}</p>`:''}<small>Owner-provided details. Ownership / permission and report contact consent recorded ${date(sp.consentAt)}.</small></div></details>`:'';
  const calendar=showing?`<div class="appointment-admin"><b>${x.confirmed_showing_at&&x.status==='appointment_confirmed'?`Confirmed: ${date(x.confirmed_showing_at)} · Toronto time`:`Requested: ${x.preferred_showing_at?date(x.preferred_showing_at)+' · Toronto time':esc(timing(x.showing_timing))}`}</b>${x.status!=='appointment_confirmed'?`<form data-confirm-lead="${x.id}"><label>Confirmed date<input type="date" name="date" required value="${attr(preferred.date)}"></label><label>Time · Toronto<input type="time" name="time" min="09:00" max="20:30" step="1800" required value="${attr(preferred.time)}"></label><button type="submit">Confirm &amp; email buyer</button></form><small>Confirm availability with the listing side first. The buyer receives the final time and a calendar option.</small>`:''}</div>`:'';
@@ -92,3 +93,25 @@ $('sellerAuditForm').addEventListener('submit',async e=>{
     $('sellerAuditStatus').textContent=`${completed-failed} of ${completed} checks succeeded${failed?`; ${failed} failed`:""}. No leads, report jobs or emails were created.`;
   }finally{$('sellerAuditRun').disabled=false;}
 });
+
+async function loadReportArchive(container){
+ const leadId=container.dataset.reportLead,body=container.querySelector('.report-archive-body');container.dataset.loaded='loading';body.textContent='Loading saved copies…';
+ try{
+  const data=await api('/api/admin/leads/'+leadId+'/reports');body.replaceChildren();
+  const copies=[...(data.copies||[])];if(data.current?.status==='ready')copies.push({...data.current,subject:'Latest generated report',exactEmail:false});
+  if(!copies.length){body.textContent='The report is still being prepared. Refresh after it is ready.';delete container.dataset.loaded;return;}
+  const select=document.createElement('select');select.setAttribute('aria-label','Saved report version');
+  copies.forEach(c=>{const o=document.createElement('option');o.value=c.id;o.textContent=(c.exactEmail?'Email copy':'Current report')+' · '+date(c.sentAt||c.generatedAt||c.savedAt)+(c.version?' · v'+c.version:'')+' · '+c.status;select.append(o);});
+  const status=document.createElement('p'),actions=document.createElement('div'),preview=document.createElement('div');actions.className='report-copy-actions';body.append(select,status,actions,preview);
+  let loadSequence=0;
+  async function openCopy(){const sequence=++loadSequence;status.textContent='Opening report…';actions.replaceChildren();preview.replaceChildren();try{
+    const result=await api('/api/admin/leads/'+leadId+'/reports?copy='+encodeURIComponent(select.value));if(sequence!==loadSequence)return;
+    const c=result.copy;status.textContent=c.exactEmail?'Exact saved email copy · '+c.status+' · '+date(c.sentAt||c.savedAt):'Saved report data, displayed with the current template. Select an email copy to see exactly what was sent.';
+    const frame=document.createElement('iframe');frame.title=c.subject||'Saved property report';frame.setAttribute('sandbox','');frame.referrerPolicy='no-referrer';frame.srcdoc=c.html;preview.append(frame);
+    const download=(label,content,type,ext)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',()=>{const url=URL.createObjectURL(new Blob([content],{type})),a=document.createElement('a');a.href=url;a.download='THM-report-'+leadId+'-'+c.id+'.'+ext;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);});actions.append(b);};
+    download('Download report',c.html,'text/html;charset=utf-8','html');download('Download text',c.text||'','text/plain;charset=utf-8','txt');
+    if(c.report)download('Download report data',JSON.stringify(c.report,null,2),'application/json','json');
+  }catch(e){if(sequence===loadSequence)status.textContent=e.message;}}
+  select.addEventListener('change',openCopy);await openCopy();container.dataset.loaded='true';
+ }catch(e){body.textContent=e.message;delete container.dataset.loaded;}
+}

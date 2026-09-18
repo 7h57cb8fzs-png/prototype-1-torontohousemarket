@@ -129,7 +129,7 @@ analysisForm.addEventListener("submit", async (event) => {
     : `/api/property?q=${encodeURIComponent(value)}`;
 
   try {
-    const response = await fetch(apiUrl, { headers: { Accept: "application/json" }, cache: "no-store" });
+    const response = await fetch(apiUrl, { headers: { Accept: "application/json" } });
     const result = await response.json().catch(() => null);
     if(sequence!==buyerLookupSequence)return;
     if (!response.ok || !result?.ok || !result?.property) {
@@ -873,7 +873,7 @@ async function loadPriceCheck(listing) {
   priceCheckController = new AbortController();
   const controller = priceCheckController, timer = window.setTimeout(() => controller.abort(), 30000);
   try {
-    const response = await fetch(`/api/price-check?listingKey=${encodeURIComponent(listingKey)}`, { cache: "no-store", headers: { Accept: "application/json" }, signal: controller.signal });
+    const response = await fetch(`/api/price-check?listingKey=${encodeURIComponent(listingKey)}`, { headers: { Accept: "application/json" }, signal: controller.signal });
     const data = await response.json();
     if (sequence !== priceCheckSequence || liveListing?.listingKey !== listingKey) return;
     if (!response.ok || !data.ok || data.listingKey !== listingKey) throw new Error(data.error || "Price Check could not verify the comparison data.");
@@ -933,186 +933,102 @@ for (const button of document.querySelectorAll("[data-home-topic]")) {
   button.addEventListener("click", () => { if (!loading) loadHomeAssistant(button.dataset.homeTopic, button); });
 }
 
-// Discovery only opens public snapshots. It never submits a lead or sends a report.
-const discoveryModes = {
-  all: { title: "Homes for you", description: "Explore matching active listings." },
-  reduced: { title: "Price Reduced", description: "Only reductions reported in the current MLS feed are shown." },
-  new: { title: "Just Listed", description: "A fresh shortlist from the past 7 days. Choose a home for its AI snapshot." },
-  luxury: { title: "Luxury Homes", description: "A selection of homes asking $2 million or more. Refine the city and home type." },
-  budget: { title: "Search by Budget", description: "Homes within your asking-price limit. Adjust the budget to make this shortlist yours." }
-};
-let chatFilters = null;
-let lastChatReply = '';
-function chatMessage(text, role) {
-  const message = document.createElement('div'); message.className = 'chat-message ' + role;
-  message.textContent = text; $('chatMessages').append(message);
-  while ($('chatMessages').children.length > 12) $('chatMessages').firstElementChild.remove();
+// A conversation keeps its own property cards. Only the server creates listing facts.
+let chatState = null;
+let chatController = null;
+let chatBusy = false;
+let chatGeneration = 0;
+const chatRoot = $('chatMessages');
+const chatScroll = $('chatScroll');
+function chatText(tag, className, text) {
+  const el=document.createElement(tag);el.className=className;el.textContent=text;return el;
 }
-function beginChat(query) {
+function chatBottom(){requestAnimationFrame(()=>{chatScroll.scrollTo({top:chatScroll.scrollHeight,behavior:'smooth'});});}
+function chatCards(turn,data){
+  const section=document.createElement('section');section.className='chat-results';section.setAttribute('aria-label','Homes for this search');
+  const top=document.createElement('div');top.className='chat-results-top';
+  const filters=data.filters||{};
+  const label=[filters.cities?.join(' & '),filters.type==='any'?'':filters.type?.replaceAll('_',' '),filters.minBeds?`${filters.minBeds}${filters.maxBeds===filters.minBeds?'':'+'} bed`:'',filters.maxPrice?`under ${money(filters.maxPrice)}`:''].filter(Boolean).join(' · ');
+  top.append(chatText('strong','chat-filter-label',label||'Your homes'));
+  const controls=document.createElement('div');controls.className='chat-carousel-controls';
+  const count=chatText('span','',`${data.listings.length} homes`);
+  const prev=chatText('button','','←'),next=chatText('button','','→');
+  for(const [b,label]of [[prev,'Previous homes'],[next,'Next homes']]){b.type='button';b.setAttribute('aria-label',label);}
+  controls.append(count,prev,next);top.append(controls);section.append(top);
+  const row=document.createElement('div');row.className='chat-property-row';row.tabIndex=0;row.setAttribute('aria-label','Property cards. Scroll for more.');
+  row.innerHTML=data.listings.map((home,i)=>{
+    const key=encodeURIComponent(home.listingKey),facts=[home.bedroomLayout||home.beds?`${home.bedroomLayout||home.beds} bed`:null,home.baths?`${home.baths} bath`:null,home.livingAreaRange?`${home.livingAreaRange} sq ft`:null].filter(Boolean).join(' · ');
+    const photo=home.photoUrl?.startsWith('/api/discovery-photo?listingKey=')?`<img src="${escapeAttr(home.photoUrl)}" alt="${escapeAttr(home.address)}" loading="${i<3?'eager':'lazy'}" decoding="async" width="420" height="280" />`:'';
+    return `<article class="discovery-home"><a class="discovery-photo" href="/?listingKey=${key}#lookup" data-open-listing="${escapeAttr(home.listingKey)}" aria-label="Explore ${escapeAttr(home.address)}"><span class="photo-fallback">THM · Property photo</span>${photo}${home.priceChange?.amount?'<span class="home-badge">Price reduced</span>':''}</a><div class="discovery-home-content"><strong class="home-price">${money(home.listPrice)}</strong><p class="chat-home-facts">${escapeHtml(facts)}</p><h3>${escapeHtml(home.address)}</h3><p class="chat-home-type">${escapeHtml(home.propertySubType||'')}</p><div class="chat-card-actions"><a href="/?listingKey=${key}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">View home ↗</a><button type="button" data-ask-home="${escapeAttr(home.listingKey)}" aria-label="Ask about ${escapeAttr(home.address)}">Ask AI</button><button type="button" data-share-listing="${escapeAttr(home.listingKey)}" data-share-address="${escapeAttr(home.address)}" aria-label="Share ${escapeAttr(home.address)}">↗</button></div><small class="chat-attribution">${escapeHtml(home.listingOffice||'Listing brokerage not reported')} · MLS® ${escapeHtml(home.listingKey)}</small></div></article>`;
+  }).join('');
+  section.append(row);
+  const move=direction=>row.scrollBy({left:direction*(row.clientWidth+16),behavior:'smooth'});
+  prev.addEventListener('click',()=>move(-1));next.addEventListener('click',()=>move(1));
+  const sync=()=>{prev.disabled=row.scrollLeft<5;next.disabled=row.scrollLeft+row.clientWidth>=row.scrollWidth-5;};row.addEventListener('scroll',sync,{passive:true});requestAnimationFrame(sync);
+  if(data.hasMore){const more=chatText('button','chat-more','Find more homes →');more.type='button';more.addEventListener('click',()=>sendHomeChat('Show me more homes like these'));section.append(more);}
+  const details=document.createElement('details');details.className='chat-source-details';details.innerHTML='<summary>About these results</summary>';
+  details.append(chatText('p','',`A selection from public MLS® listings${data.checkedAt?' checked '+formatDate(data.checkedAt):''}. ${data.coverage?.partial?'This search covers a limited inventory window, not the entire market. ':''}Asking prices and availability may change. Open a home to recheck it.`));section.append(details);
+  turn.append(section);
+}
+async function sendHomeChat(message){
+  message=String(message||'').trim();if(!message||chatBusy)return;
+  const generation=chatGeneration;chatBusy=true;chatController=new AbortController();
+  $('homeSearchSubmit').disabled=true;$('homeSearchStatus').textContent='';$('homeSearchQuery').value='';
   $('explore').classList.add('conversing');
-  if(lastChatReply) chatMessage(lastChatReply, 'assistant');
-  lastChatReply=''; chatMessage(query, 'user');
-  $('chatReply').textContent=''; $('chatFollowups').replaceChildren();
-  $('homeSearchQuery').placeholder='Keep going — a different budget, area or home type…';
-}
-let discoveryMode = "new";
-let discoveryController = null;
-let discoverySequence = 0;
-const discoveryForm = $("discoveryForm");
-function resetDiscoveryResults() {
-  discoverySequence++;
-  discoveryController?.abort();
-  $("discoverySubmit").disabled = false;
-  $("discoverySubmit").textContent = "Find my shortlist";
-  $("discoveryResults").innerHTML = "";
-  $("discoveryCoverage").textContent = "";
-  $("discoveryStatus").textContent = "Refine your search or choose a collection above.";
-}
-function openDiscovery(mode, focus = true) {
-  if (!discoveryModes[mode]) return;
-  resetDiscoveryResults();
-  discoveryMode = mode;
-  $("discoveryPanel").classList.remove("hidden");
-  $("discoveryTitle").textContent = discoveryModes[mode].title;
-  $("discoveryDescription").textContent = discoveryModes[mode].description;
-  $("discoveryBudget").required = mode === "budget";
-  $("discoveryBudget").min = mode === "luxury" ? "2000000" : "100000";
-  if (mode === "luxury" && $("discoveryBudget").value && Number($("discoveryBudget").value) < 2000000) $("discoveryBudget").value = "";
-  for (const tile of document.querySelectorAll("[data-discovery]")) {
-    if (tile.dataset.discovery === mode && (tile.dataset.type || 'any') === $("discoveryType").value && Number(tile.dataset.beds || 0) === Number($("discoveryBeds").value)) tile.setAttribute("aria-current", "true");
-    else tile.removeAttribute("aria-current");
+  for(const group of chatRoot.querySelectorAll('.chat-followups'))group.remove();
+  const turn=document.createElement('div');turn.className='chat-turn';
+  turn.append(chatText('p','chat-message user',message));
+  const status=chatText('p','chat-thinking','Understanding your search…');status.setAttribute('role','status');turn.append(status);chatRoot.append(turn);chatBottom();
+  const timeout=setTimeout(()=>chatController?.abort(),45000);let received=false,gotAnswer=false;
+  try{
+    const response=await fetch('/api/home-chat',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/x-ndjson'},body:JSON.stringify({message,state:chatState}),signal:chatController.signal});
+    if(!response.ok){const d=await response.json().catch(()=>({}));throw Error(d.error||'The search is busy. Please try again.');}
+    const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
+    const event=data=>{
+      if(generation!==chatGeneration)return;
+      if(data.type==='status')status.textContent=data.message;
+      if(data.type==='error')throw Error(data.error);
+      if(data.type==='results'){
+        received=true;status.remove();
+        if(data.listings.length)chatCards(turn,data);
+        else turn.append(chatText('p','chat-empty','No matching homes in this selection. Let’s adjust the search.'));
+        status.textContent='Reading the details for you…';turn.append(status);chatBottom();
+      }
+      if(data.type==='answer'){
+        gotAnswer=true;status.remove();chatState=data.state;turn.append(chatText('p','chat-reply',data.reply));
+        const chips=document.createElement('div');chips.className='chat-followups';
+        for(const label of data.followups||[]){const b=chatText('button','',label);b.type='button';b.addEventListener('click',()=>sendHomeChat(label));chips.append(b);}turn.append(chips);
+        $('homeSearchQuery').placeholder='Ask about a home, change the area, or keep looking…';
+        if(!received)chatBottom();
+      }
+    };
+    while(true){const {done,value}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});let i;while((i=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(line.trim())event(JSON.parse(line));}if(done)break;}
+    if(!gotAnswer)throw Error('The reply was interrupted. Please try again.');
+  }catch(error){
+    if(generation!==chatGeneration)return;
+    status.className='chat-error';status.textContent=error.name==='AbortError'?'That took longer than expected. Your earlier homes are still here. Try again.':error.message;turn.append(status);
+    const retry=chatText('button','chat-retry','Try again');retry.type='button';retry.addEventListener('click',()=>{turn.remove();sendHomeChat(message);});turn.append(retry);chatBottom();
+  }finally{
+    clearTimeout(timeout);if(generation===chatGeneration){chatBusy=false;$('homeSearchSubmit').disabled=false;$('homeSearchQuery').focus({preventScroll:true});}
   }
-  if (focus) { $("discoveryPanel").scrollIntoView({ behavior: "smooth", block: "start" }); $("discoveryTitle").focus({ preventScroll: true }); }
 }
-for (const tile of document.querySelectorAll("[data-discovery]")) {
-  tile.addEventListener("click", (event) => {
-    event.preventDefault();
-    history.pushState(null, "", tile.getAttribute("href"));
-    chatFilters = null;
-    beginChat(tile.textContent.trim()+" in "+$("discoveryCity").value);
-    $("homeSearchQuery").value = "";
-    $("homeSearchStatus").textContent = "";
-    $("discoveryType").value = tile.dataset.type || "any";
-    $("discoveryBudget").value = tile.dataset.budget || "";
-    $("discoveryBeds").value = tile.dataset.beds || "0";
-    for (const id of ['discoveryType','discoveryBeds']) $(id).dispatchEvent(new Event('thm:sync'));
-    openDiscovery(tile.dataset.discovery);
-    if (tile.dataset.discovery === "budget" && !$("discoveryBudget").value) $("discoveryBudget").value = "1500000";
-    discoveryForm.requestSubmit();
-  });
-}
-discoveryForm.addEventListener("input", () => {$("homeSearchQuery").value=""; resetDiscoveryResults();});
-discoveryForm.addEventListener("change", () => {$("homeSearchQuery").value=""; resetDiscoveryResults();});
-discoveryForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!discoveryForm.reportValidity()) return;
-  resetDiscoveryResults();
-  const sequence = discoverySequence;
-  discoveryController = new AbortController();
-  const controller = discoveryController;
-  const timer = window.setTimeout(() => controller.abort(), 30000);
-  const params = new URLSearchParams({ mode: discoveryMode, city: $("discoveryCity").value, type: $("discoveryType").value });
-  if ($("discoveryBudget").value) params.set("maxPrice", $("discoveryBudget").value);
-  params.set("minBeds", $("discoveryBeds").value);
-  const naturalQuery = $("homeSearchQuery").value.trim();
-  if (naturalQuery) { params.set("q", naturalQuery); if(chatFilters) params.set('context', JSON.stringify(chatFilters)); }
-  $('homeSearchSubmit').disabled=true;
-  $("discoverySubmit").disabled = true;
-  $("discoverySubmit").textContent = "Checking…";
-  $("discoveryStatus").textContent = "Checking public listings…";
-  try {
-    const response = await fetch(`/api/home-search?${params}`, { headers: { Accept: "application/json" }, signal: controller.signal });
-    const data = await response.json();
-    if (sequence !== discoverySequence) return;
-    if (!response.ok || !data.ok || !Array.isArray(data.listings)) throw new Error(data.error || "Listing search is temporarily unavailable.");
-    if (data.filters) {
-      $("discoveryCity").value = data.filters.city;
-      $("discoveryType").value = data.filters.type;
-      $("discoveryBudget").value = data.filters.maxPrice || "";
-      $("discoveryBeds").value = String(data.filters.minBeds || 0);
-      for (const id of ['discoveryCity','discoveryType','discoveryBeds']) $(id).dispatchEvent(new Event('thm:sync'));
-      chatFilters = data.filters;
-      discoveryMode = data.filters.mode;
-      $("homeSearchStatus").textContent = data.interpretation || "";
-    }
-    $('discoveryTitle').textContent = data.filters?.city ? 'Homes in ' + data.filters.city : 'Your matches';
-    if (data.listings.length) {
-      const prices=data.listings.map(h=>Number(h.listPrice)).filter(n=>n>0);
-      const priceNote=prices.length ? ` Asking prices in this selection range from ${money(Math.min(...prices))} to ${money(Math.max(...prices))}.` : '';
-      lastChatReply=`Here are ${data.listings.length} matching homes to explore.${priceNote} ${data.filters?.checks?.length ? 'We still need to verify '+data.filters.checks.join('; ')+'. ' : ''}Would you like to change the budget, bedrooms or area?`;
-    } else lastChatReply='I couldn’t find a match in the listings checked. Try a higher budget or a nearby area. I’ll keep your other preferences.';
-    $('chatReply').textContent=lastChatReply;
-    const suggestions=['Just listed', 'Price reduced', ...(data.filters?.maxPrice ? [`Under $${Math.max(100000,data.filters.maxPrice-100000).toLocaleString('en-CA')}`] : ['Under $800K']), data.filters?.minBeds===3?'2 bedrooms':'3 bedrooms'];
-    $('chatFollowups').replaceChildren(...suggestions.map(label=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',()=>{$('homeSearchQuery').value=label;$('homeSearchForm').requestSubmit();});return b;}));
-    $('homeSearchQuery').value='';
-    $("discoveryStatus").textContent = data.listings.length ? `${data.selectionMode === "ai" ? "AI shortlist" : "Matched shortlist"} · ${data.listings.length} home${data.listings.length === 1 ? "" : "s"}. Open a home to explore.` : "No matches in the listings checked. This is not a full-market search. Try another type or budget, or check an address directly.";
-    $("discoveryResults").innerHTML = data.listings.map((home) => {
-      const badge = discoveryMode === "luxury" ? "Asking $2M+" : home.daysLive != null ? `${home.daysLive} days on this listing` : "Active listing";
-      const facts = [home.propertySubType, home.beds != null ? `${home.bedroomLayout || home.beds} bed` : null, home.baths != null ? `${home.baths} bath` : null].filter(Boolean).join(" · ");
-      const photo = typeof home.photoUrl === 'string' && home.photoUrl.startsWith('/api/discovery-photo?listingKey=') ? `<img src="${escapeAttr(home.photoUrl)}" alt="${escapeAttr(home.address)}" loading="lazy" decoding="async" />` : '';
-      return `<article class="discovery-home"><a class="discovery-photo" href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}" aria-label="Explore ${escapeAttr(home.address)}"><span class="photo-fallback">Photo unavailable · explore the home</span>${photo}<span class="home-badge">${escapeHtml(badge)}</span></a><div class="discovery-home-content"><strong class="home-price">${money(home.listPrice)}</strong><h4>${escapeHtml(home.address)}</h4><p>${escapeHtml(facts)}</p>${home.selectionReason ? `<p class="selection-reason"><span aria-hidden="true">✦</span> ${escapeHtml(home.selectionReason)}</p>` : ''}<small>${escapeHtml(home.listingOffice || "Listing office not reported")} · MLS ${escapeHtml(home.listingKey)}</small><a class="discovery-open" href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">Explore this home →</a><button type="button" class="listing-share-button card-share" data-share-listing="${escapeAttr(home.listingKey)}" data-share-address="${escapeAttr(home.address)}" aria-label="Share ${escapeAttr(home.address)}">↗ Share</button></div></article>`;
-    }).join("");
-    $("discoveryCoverage").textContent = `${data.note || "Results are a selection, not the full market."} ${data.coverage?.partial ? "The search reached its scan limit. " : ""}${data.coverage?.moreMatches ? "Refine your filters to explore another shortlist. " : ""}${data.checkedAt ? `Checked ${formatDate(data.checkedAt)}; results may be cached for up to 5 minutes.` : ""}`;
-  } catch (error) {
-    if (sequence !== discoverySequence) return;
-    $("discoveryStatus").textContent = error.name === "AbortError" ? "The search took too long. Try again, or check an address directly." : error.message || "Unable to check listings. Please try again.";
-  } finally {
-    window.clearTimeout(timer);
-    if (sequence === discoverySequence) { $("homeSearchSubmit").disabled=false; $("discoverySubmit").disabled = false; $("discoverySubmit").textContent = "Find my shortlist"; }
-  }
-});
-$("discoveryResults").addEventListener("click", (event) => {
-  const link = event.target.closest("[data-open-listing]");
-  if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-  event.preventDefault();
-  if (loading) return;
-  history.pushState(null, "", `/?listingKey=${encodeURIComponent(link.dataset.openListing)}#lookup`);
-  propertyInput.value = link.dataset.openListing;
-  analysisForm.requestSubmit();
-});
-function restoreDiscoveryHash() {
-  const mode = window.location.hash.replace(/^#browse-/, "");
-  if (discoveryModes[mode]) openDiscovery(mode, false);
-}
-window.addEventListener("hashchange", restoreDiscoveryHash);
-window.addEventListener("popstate", restoreDiscoveryHash);
-restoreDiscoveryHash();
-const linkedMls = new URLSearchParams(window.location.search).get("listingKey");
-if (linkedMls && /^[A-Z]\d{7,9}$/.test(linkedMls)) { propertyInput.value = linkedMls; analysisForm.requestSubmit(); }
-else {
-  const linkedQuery = new URLSearchParams(window.location.search).get("q");
-  if (linkedQuery && linkedQuery.length <= 500) { propertyInput.value = linkedQuery; analysisForm.requestSubmit(); }
-}
-
-$("discoveryResults").addEventListener("error", event => {if(event.target?.tagName==='IMG'){event.target.style.display='none';}},true);
-$("homeSearchForm").addEventListener("submit", event => {
-  event.preventDefault();
-  if (!$("homeSearchForm").reportValidity()) return;
-  beginChat($("homeSearchQuery").value.trim());
-  openDiscovery("all", false);
-  $("discoveryBudget").value = "";
-  $("discoveryTitle").textContent = "Your matches";
-  discoveryForm.requestSubmit();
-});
-
+$('homeSearchForm').addEventListener('submit',event=>{event.preventDefault();if($('homeSearchForm').reportValidity())sendHomeChat($('homeSearchQuery').value);});
+for(const tile of document.querySelectorAll('[data-discovery]'))tile.addEventListener('click',event=>{event.preventDefault();const label=tile.textContent.trim();sendHomeChat(`${label} in Toronto`);});
 $('chatNew').addEventListener('click',()=>{
-  chatFilters=null;lastChatReply='';resetDiscoveryResults();$('chatMessages').replaceChildren();
-  $('discoveryPanel').classList.add('hidden');$('explore').classList.remove('conversing');
-  $('homeSearchQuery').value='';$('homeSearchStatus').textContent='';$('homeSearchSubmit').disabled=false;
-  $('homeSearchQuery').placeholder='Try: family home in Richmond Hill under $1.5M';
-  history.replaceState(null,'',location.pathname);$('explore').scrollIntoView({behavior:'smooth'});$('homeSearchQuery').focus({preventScroll:true});
+  chatGeneration++;chatController?.abort();chatBusy=false;chatState=null;chatRoot.replaceChildren();$('explore').classList.remove('conversing');$('homeSearchQuery').value='';$('homeSearchStatus').textContent='';$('homeSearchSubmit').disabled=false;$('homeSearchQuery').placeholder='Try: 3-bed townhouse in Vaughan under $1M';chatScroll.scrollTop=0;$('homeSearchQuery').focus({preventScroll:true});
+});
+chatRoot.addEventListener('error',event=>{if(event.target?.tagName==='IMG')event.target.style.display='none';},true);
+chatRoot.addEventListener('click',event=>{
+  const ask=event.target.closest('[data-ask-home]');if(ask){sendHomeChat(`Tell me about MLS ${ask.dataset.askHome}. What should I check before viewing?`);return;}
+  const share=event.target.closest('[data-share-listing]');if(share){openListingShare({listingKey:share.dataset.shareListing,address:share.dataset.shareAddress,forSale:true});return;}
+  const link=event.target.closest('[data-open-listing]');if(!link||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+  event.preventDefault();if(loading)return;history.pushState(null,'',`/?listingKey=${encodeURIComponent(link.dataset.openListing)}#lookup`);propertyInput.value=link.dataset.openListing;analysisForm.requestSubmit();
 });
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-if(SpeechRecognition){
-  $('chatVoice').hidden=false;
-  $('chatVoice').addEventListener('click',()=>{
-    const recognition=new SpeechRecognition();recognition.lang='en-CA';recognition.interimResults=false;
-    recognition.onstart=()=>{$('homeSearchStatus').textContent='Listening…';};
-    recognition.onresult=event=>{$('homeSearchQuery').value=event.results[0][0].transcript;$('homeSearchStatus').textContent='Review your words, then send your search.';};
-    recognition.onerror=()=>{$('homeSearchStatus').textContent='Voice input is unavailable. Type your search below.';};
-    recognition.start();
-  });
-}
+if(SpeechRecognition){$('chatVoice').hidden=false;$('chatVoice').addEventListener('click',()=>{const recognition=new SpeechRecognition();recognition.lang='en-CA';recognition.interimResults=false;recognition.onstart=()=>{$('homeSearchStatus').textContent='Listening…';};recognition.onresult=event=>{$('homeSearchQuery').value=event.results[0][0].transcript;$('homeSearchStatus').textContent='Review your message, then send.';};recognition.onerror=()=>{$('homeSearchStatus').textContent='Voice input is unavailable. Please type your message.';};recognition.start();});}
+const linkedMls=new URLSearchParams(window.location.search).get('listingKey');
+if(linkedMls&&/^[A-Z]\d{7,9}$/.test(linkedMls)){propertyInput.value=linkedMls;analysisForm.requestSubmit();}
+else{const linkedQuery=new URLSearchParams(window.location.search).get('q');if(linkedQuery&&linkedQuery.length<=500){propertyInput.value=linkedQuery;analysisForm.requestSubmit();}}
 
 // PUBLIC LISTING SHARING START
 function listingShareData(listing) {
@@ -1164,10 +1080,6 @@ async function shareListingNative() {
 }
 // PUBLIC LISTING SHARING END
 $('shareListing').addEventListener('click', () => openListingShare(liveListing));
-$('discoveryResults').addEventListener('click', event => {
-  const button = event.target.closest('[data-share-listing]');
-  if (button) openListingShare({ listingKey: button.dataset.shareListing, address: button.dataset.shareAddress, forSale: true });
-});
 $('copyListingLink').addEventListener('click', copyListingShare);
 $('shareNative').addEventListener('click', shareListingNative);
 $('closeListingShare').addEventListener('click', () => $('listingShareDialog').close());

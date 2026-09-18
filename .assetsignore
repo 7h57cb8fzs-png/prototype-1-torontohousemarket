@@ -17,3 +17,5 @@ discovery-search.js
 wrangler*.json
 
 seller-archive.js
+
+home-chat.js

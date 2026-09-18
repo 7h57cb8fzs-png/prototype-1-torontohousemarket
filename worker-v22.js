@@ -1,3 +1,4 @@
+import { homeChat } from './home-chat.js';
 import { homeSearch } from './discovery-search.js';
 import legacyApp, { deliverEmailJob } from './worker-v11.js';
 import reportCore, { processV7ReportJobs } from './worker-v12.js';
@@ -12,6 +13,7 @@ const AUTOMATION_ROUTES=new Set(['/api/lead','/api/vow/accept-terms','/api/vow/a
 export default {
   async fetch(request,env,ctx){
     const url=new URL(request.url);
+    if(url.pathname==='/api/home-chat' && request.method==='POST') return homeChat(request,env,ctx,legacyApp);
     if(url.pathname==='/api/home-search' && request.method==='GET') return homeSearch(request,env,ctx,legacyApp);
     if(url.pathname==='/api/version') return json({
       ok:true,version:VERSION,release:'7.4',
