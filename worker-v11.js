@@ -5660,12 +5660,15 @@ function reportWithoutUnsupportedRating(input) {
     const id = String(c.listingKey || c.address || "").trim().toLowerCase();
     const addressKey = String(c.address || id).toLowerCase().replace(/[^a-z0-9]/g, "");
     const sold = Date.parse(c.soldDate || "");
-    if (!reportCondoMatch(facts, c)) return false;
+    const expertVerified = report.expert_comp_mode?.used === true && policy.expertMode === true &&
+      c.evidenceSource === "ampre_vow" && c.expertSelectionReason && c.expertAdjustmentReason && Number(c.adjustedIndication) > 0 &&
+      isCondominiumProperty({PropertySubType:facts.property_type}) === isCondominiumProperty({PropertySubType:c.propertySubType});
+    if (!expertVerified && !reportCondoMatch(facts, c)) return false;
     if (!id || seen.has(addressKey) || !(Number(c.soldPrice) > 0) || !Number.isFinite(sold) || sold > asOf + 864e5) return false;
     if ((asOf - sold) / 864e5 > Number(policy.windowDays || 600) + 1) return false;
     seen.add(addressKey);
     return true;
-  }).slice(0, 5);
+  });
   report.comparables = comparables;
   const v = report.valuation;
   const validRange = [v.low, v.midpoint, v.high].every((n) => Number(n) > 0 && Number.isFinite(Number(n))) && Number(v.low) <= Number(v.midpoint) && Number(v.midpoint) <= Number(v.high);
@@ -5675,7 +5678,7 @@ function reportWithoutUnsupportedRating(input) {
     report.valuation = { ...v, available: false, low: null, midpoint: null, high: null, evidence_basis: basis, basis: reason };
     report.value_rating = { available: false, score: null, label: "Value rating unavailable", reason };
   } else {
-    report.value_rating = buildValueRating(facts, v, policy, comparables.length);
+    report.value_rating = report.expert_comp_mode?.used ? {available:false,score:null,label:"Expert comp review",reason:"Broader sold evidence was reconciled with explicit judgment adjustments."} : buildValueRating(facts, v, policy, comparables.length);
   }
   if (facts.for_sale === false || !(Number(facts.list_price) > 0)) {
     facts.list_price = null;
@@ -5723,7 +5726,7 @@ function propertyReportEmail(address, agentData, input, options = {}) {
   const generated = report.generated_at ? formatToronto(report.generated_at) + " Toronto time" : "See your request date";
   const confidence = reportPriceGraphic(report).confidence;
   const range = v.available ? `${cad(v.low)} \u2013 ${cad(v.high)}` : "Needs Realtor review";
-  const lowConfidence = /low|unavailable/i.test(confidence) || policy.expandedWindow || policy.sizeFallbackUsed;
+  const lowConfidence = /low|limited|unavailable/i.test(confidence) || policy.expandedWindow || policy.sizeFallbackUsed;
   let verdict = "Price needs a local evidence check";
   let reason = v.basis || "The supplied sales do not support a responsible automated value range.";
   if (v.available) {

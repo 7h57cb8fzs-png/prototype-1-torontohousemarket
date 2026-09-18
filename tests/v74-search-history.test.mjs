@@ -5,7 +5,7 @@ import {basicSearch,homeSearch} from '../discovery-search.js';
 import {resolveSellerSubject,discoverySelection,buildSellerEvidence} from '../worker-v11.js';
 import {reportFetch,createReportRuntime} from '../report-runtime.js';
 import {validatedArchive,sellerArchiveKey} from '../seller-archive.js';
-import {reportPriceGraphic,sellerReportEmail} from '../worker-v11.js';
+import {reportPriceGraphic,sellerReportEmail,propertyReportEmail} from '../worker-v11.js';
 const originalFetch=globalThis.fetch;
 const json=d=>new Response(JSON.stringify(d),{headers:{'Content-Type':'application/json'}});
 test('reviewed archives preserve exact identity and never import historical prices',()=>{
@@ -85,4 +85,11 @@ test('seller tail-page sales remain available to subsequent expert recovery',asy
   return json({value:Array.from({length:100},(_,i)=>sale('OLD-'+(skip+i),'2024-01-01')),'@odata.nextLink':'https://query.ampre.ca/odata/Property?$skip='+(skip+100)});
  };
  try{await buildSellerEvidence(subject,{AMPRE_TOKEN:'fixture',THM_REPORT_RUNTIME:runtime});assert.ok(runtime.rawRows.has('TAIL-RECENT'),'recent tail must be available to Luna alongside first pages');}finally{globalThis.fetch=originalFetch;}
+});
+
+test('email preserves the verified expert condo evidence and its final range',()=>{
+ const comps=Array.from({length:6},(_,i)=>({listingKey:'N'+i,address:'Suite '+i+' Fixture',propertySubType:'Condo Apartment',cityRegion:'Langstaff',livingAreaRange:i<2?'800-899':'700-799',soldDate:'2026-09-01',soldPrice:600000,evidenceSource:'ampre_vow',adjustedIndication:610000,expertSelectionReason:'Nearby apartment with similar utility',expertAdjustmentReason:'Size difference reconciled with supplied evidence'}));
+ const report={generated_at:'2026-09-18',facts:{property_type:'Condo Apartment',neighbourhood:'Langstaff',living_area:'800-899',for_sale:true,list_price:599000},valuation:{available:true,low:570000,midpoint:610000,high:650000,confidence:'Limited'},comparables:comps,comparable_policy:{windowDays:900,expertMode:true},expert_comp_mode:{used:true},narrative:{}};
+ const email=propertyReportEmail('Fixture',{},report);assert.match(email.text,/Estimated sale range: \$570,000 to \$650,000/);assert.match(email.text,/6 selected sold homes/);assert.doesNotMatch(email.text,/Price window: needs review/);
+ const strict=propertyReportEmail('Fixture',{}, {...report,expert_comp_mode:{used:false}});assert.match(strict.text,/Price window: needs review/);
 });
