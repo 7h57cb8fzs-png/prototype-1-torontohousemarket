@@ -4010,36 +4010,31 @@ async function publicDiscovery(request, env, ctx) {
   const edgeCache = typeof caches !== "undefined" ? caches.default : null;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
   if (cached) return cached;
-  const params = new URLSearchParams({ "$filter": `contains(UnparsedAddress,'${options.city}')`, "$top": "100", "$orderby": "OriginalEntryTimestamp desc" });
-  let next = `${AMPRE_BASE}/Property?${params}`;
+  // AMPRE does not reliably support sorting on this feed. Query the city directly,
+  // locate the tail with $count, then inspect only the newest bounded window.
+  const countUrl = new URL(`${AMPRE_BASE}/Property`);
+  countUrl.search = new URLSearchParams({ "$filter": `contains(City,'${options.city}')`, "$count": "true", "$top": "1" }).toString();
   const visited = /* @__PURE__ */ new Set();
   const rows = [];
   const started = Date.now();
   let pages = 0;
   let skipped = 0;
   try {
+    const countResponse = await amplifyFetch(countUrl.href.replace(/\+/g, "%20"), { AMPRE_TOKEN: env.AMPRE_TOKEN });
+    if (!countResponse.ok) throw new Error("IDX count unavailable");
+    const countBody = await countResponse.json();
+    const total = Number(countBody["@odata.count"]);
+    if (!Number.isSafeInteger(total) || total < 0) throw new Error("Cannot locate a bounded inventory window");
+    skipped = Math.max(0, total - 500);
+    countUrl.searchParams.delete("$count");
+    countUrl.searchParams.set("$top", "100");
+    if (skipped) countUrl.searchParams.set("$skip", String(skipped));
+    let next = countUrl.href;
     while (next && pages < 5 && Date.now() - started < 12e3) {
       const u = new URL(next, AMPRE_BASE);
       if (u.origin !== new URL(AMPRE_BASE).origin || u.pathname !== "/odata/Property" || u.username || u.password || u.hash || visited.has(u.href)) throw new Error("Invalid pagination");
       visited.add(u.href);
       const response = await amplifyFetch(u.href.replace(/\+/g, "%20"), { AMPRE_TOKEN: env.AMPRE_TOKEN });
-      if (response.status === 400 && pages === 0 && u.searchParams.has("$orderby")) {
-        const countUrl = new URL(u);
-        countUrl.searchParams.delete("$orderby");
-        countUrl.searchParams.set("$count", "true");
-        countUrl.searchParams.set("$top", "1");
-        const countResponse = await amplifyFetch(countUrl.href.replace(/\+/g, "%20"), { AMPRE_TOKEN: env.AMPRE_TOKEN });
-        if (!countResponse.ok) throw new Error("IDX count unavailable");
-        const countBody = await countResponse.json();
-        const total = countBody["@odata.count"];
-        if (!Number.isSafeInteger(total) || total < 0 || total > 100500) throw new Error("Cannot locate a bounded inventory window");
-        skipped = Math.max(0, total - 500);
-        countUrl.searchParams.delete("$count");
-        countUrl.searchParams.set("$top", "100");
-        if (skipped) countUrl.searchParams.set("$skip", String(skipped));
-        next = countUrl.href;
-        continue;
-      }
       if (!response.ok) throw new Error("IDX request failed");
       const body = await response.json();
       if (!Array.isArray(body.value)) throw new Error("Invalid IDX response");
