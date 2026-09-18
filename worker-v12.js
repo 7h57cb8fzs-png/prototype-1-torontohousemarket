@@ -233,11 +233,11 @@ async function buildVersion7Report(env, lead, property, requestId) {
   };
 }
 
-function shouldUseExpertComp(report) {
+export function shouldUseExpertComp(report) {
   const count = Array.isArray(report?.comparables) ? report.comparables.length : 0;
   const policy = report?.comparable_policy || {};
   const confidence = String(report?.valuation?.confidence || "").toLowerCase();
-  return report?.valuation?.available !== true || count < 3 || (confidence === "low" && (policy.sizeFallbackUsed || Number(policy.windowDays || 0) > 300));
+  return report?.valuation?.available !== true || count < 3 || (/^(low|limited)$/.test(confidence) && (policy.sizeFallbackUsed || policy.missingSizeFallback || report.seller?.evidence?.archiveSubject || Number(policy.windowDays || 0) > 300));
 }
 
 async function recoverExpertComparables(env, lead, property, report, requestId) {
@@ -503,7 +503,7 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
     activeCompetition: report.active_comparables,
     sellerExpectation: expectation ? { low: expectation.low, high: expectation.high } : null,
   };
-  const system = `Act as an experienced GTA listing Realtor. Produce seller-specific pricing and positioning reasoning. The renovation percentage is the owner's broad subjective description, not a mechanical price adjustment. Use it only as qualitative context when interpreting the sold evidence and current competition. Do not output or apply a percentage adjustment to the valuation. Decide whether condition is materially value-driving for this particular property and market. Never let the seller's expected minimum/maximum set or bias the independent valuation; compare expectations only after forming your view. Use sold evidence first and active listings only as competition/context. Distinguish market value, likely sale range and listing strategy. Do not promise a sale price. Return JSON only.`;
+  const system = `Act as an experienced GTA listing Realtor. Produce seller-specific pricing and positioning reasoning. The renovation percentage is the owner's broad subjective description, not a mechanical price adjustment. Use it only as qualitative context when interpreting the sold evidence and current competition. Do not output or apply a percentage adjustment to the valuation. Decide whether condition is materially value-driving for this particular property and market. Never let the seller's expected minimum/maximum set or bias the independent valuation; compare expectations only after forming your view. Use sold evidence first and active listings only as competition/context. Use the supplied final valuation midpoint, low, high and confidence exactly; do not calculate a different likely sale range. Distinguish a suggested asking price from the likely sale range. Treat archived home specifications as historical, never as current verified condition. Do not promise a sale price. Keep market read and listing strategy each under 110 words; at most four concise bullets per list. Return JSON only.`;
   const result = await openAiJson(env, "thm_seller_strategy", schema, [
     { role: "system", content: system },
     { role: "user", content: JSON.stringify(payload) },
@@ -525,7 +525,7 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
       },
       strategy: {
         independent_market_read: clean(result?.independent_market_read),
-        likely_sale_range: clean(result?.likely_sale_range),
+        likely_sale_range: valuation.available ? `Preliminary likely sale range: $${Number(valuation.low).toLocaleString("en-CA")}–$${Number(valuation.high).toLocaleString("en-CA")}. ${valuation.confidence} confidence; current home specifications and condition require confirmation.` : null,
         listing_strategy: clean(result?.listing_strategy),
         value_drivers: Array.isArray(result?.value_drivers) ? result.value_drivers.map(clean).filter(Boolean).slice(0,5) : [],
         preparation_priorities: Array.isArray(result?.preparation_priorities) ? result.preparation_priorities.map(clean).filter(Boolean).slice(0,5) : [],

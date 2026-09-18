@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {shouldUseExpertComp} from '../worker-v12.js';
 import assert from 'node:assert/strict';
 import {basicSearch,homeSearch} from '../discovery-search.js';
 import {resolveSellerSubject,discoverySelection} from '../worker-v11.js';
@@ -56,4 +57,9 @@ test('conversational refinements preserve prior city, type and beds and reset ar
  assert.equal(third.city,'Vaughan');assert.equal(third.area,'');assert.equal(third.type,'condo');assert.equal(third.maxPrice,700000);
  const reset=basicSearch('Any home type, any price, any bedrooms','Toronto',third);
  assert.equal(reset.type,'any');assert.equal(reset.maxPrice,null);assert.equal(reset.minBeds,0);
+});
+
+test('archived seller facts with missing interior size receive the broader Luna review',()=>{
+ assert.equal(shouldUseExpertComp({valuation:{available:true,confidence:'Low'},comparables:Array(8).fill({}),comparable_policy:{missingSizeFallback:true,windowDays:100}}),true);
+ assert.equal(shouldUseExpertComp({valuation:{available:true,confidence:'Medium'},comparables:Array(5).fill({}),comparable_policy:{windowDays:100}}),false);
 });
