@@ -14,8 +14,7 @@ jobs:
       - name: Verify live Google-backed address suggestions
         run: |
           set -euo pipefail
-          token="abcdefghijklmnop123456"
-          curl -fsS --max-time 20 'https://torontohousemarket.com/api/address-suggestions'             -H 'Origin: https://torontohousemarket.com'             -H 'Content-Type: application/json'             --data "{"q":"38 oak","sessionToken":"$token"}"             -o /tmp/address.json
+          curl -fsS --max-time 20 'https://torontohousemarket.com/api/address-suggestions' -H 'Origin: https://torontohousemarket.com' -H 'Content-Type: application/json' --data-binary '{"q":"38 oak","sessionToken":"abcdefghijklmnop123456"}' -o /tmp/address.json
           cat /tmp/address.json
           node <<'NODE'
           const fs=require('fs');
