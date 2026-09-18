@@ -3855,7 +3855,8 @@ var DISCOVERY_TYPES = {
   freehold_town: ["Att/Row/Townhouse"],
   condo: ["Condo Apartment", "Condo Apt"],
   condo_town: ["Condo Townhouse"],
-  duplex: ["Duplex"]
+  duplex: ["Duplex"],
+  townhouse: ["Att/Row/Townhouse", "Condo Townhouse"]
 };
 function displayDenied(value) {
   return value === false || /^(false|no|n|0)$/i.test(String(value ?? ""));
@@ -3885,11 +3886,13 @@ function discoveryOptions(url) {
   const type = p.get("type") || "any";
   const rawBudget = p.get("maxPrice");
   const maxPrice = rawBudget == null || rawBudget === "" ? null : Number(rawBudget);
-  if (!DISCOVERY_CITIES.includes(city) || !["new", "luxury", "budget"].includes(mode) || !Object.hasOwn(DISCOVERY_TYPES, type)) throw new Error("Choose a supported city, property type and search.");
+  if (!DISCOVERY_CITIES.includes(city) || !["new", "luxury", "budget", "all", "reduced"].includes(mode) || !Object.hasOwn(DISCOVERY_TYPES, type)) throw new Error("Choose a supported city, property type and search.");
   if (maxPrice !== null && (!Number.isSafeInteger(maxPrice) || maxPrice < 1e5 || maxPrice > 2e7)) throw new Error("Enter a maximum asking price between $100,000 and $20,000,000.");
   if (mode === "luxury" && maxPrice !== null && maxPrice < 2e6) throw new Error("Luxury search starts at $2,000,000. Increase or clear the maximum price.");
   if (mode === "budget" && maxPrice === null) throw new Error("Enter your maximum asking price.");
-  return { city, mode, type, maxPrice };
+  const minBeds=Number(p.get("minBeds")||0), minBaths=Number(p.get("minBaths")||0), minParking=Number(p.get("minParking")||0), area=String(p.get("area")||"").trim();
+  if ([minBeds,minBaths,minParking].some(v=>!Number.isInteger(v)||v<0||v>9)||area.length>80) throw new Error("Check your bedroom, bathroom, parking or area filters.");
+  return { city, mode, type, maxPrice, minBeds, minBaths, minParking, area };
 }
 __name(discoveryOptions, "discoveryOptions");
 function discoverySelection(records, options, now = Date.now()) {
@@ -3906,6 +3909,11 @@ function discoverySelection(records, options, now = Date.now()) {
     if (displayDenied(p.InternetEntireListingDisplayYN) || displayDenied(p.InternetAddressDisplayYN)) continue;
     if (allowedTypes && !allowedTypes.includes(subtype)) continue;
     const facts = publicListingFacts(p);
+    if (options.minBeds && Number(p.BedroomsAboveGrade ?? p.BedroomsTotal ?? -1) < options.minBeds) continue;
+    if (options.minBaths && Number(p.BathroomsTotalInteger ?? -1) < options.minBaths) continue;
+    if (options.minParking && Number(p.ParkingTotal ?? -1) < options.minParking) continue;
+    if (options.area && ![p.City,p.CityRegion,p.UnparsedAddress].some(v=>String(v||'').toLowerCase().includes(options.area.toLowerCase()))) continue;
+    if (options.mode === "reduced" && !facts.priceChange) continue;
     const price = numberOrNull(p.ListPrice);
     if (!(price > 0) || options.maxPrice !== null && price > options.maxPrice) continue;
     const listedMs = facts.listedAt ? Date.parse(facts.listedAt) : NaN;
@@ -4007,7 +4015,7 @@ async function publicDiscovery(request, env, ctx) {
   }
   if (!env.AMPRE_TOKEN) return json7({ ok: false, error: "Listing search is temporarily unavailable. Check a known address or MLS number above." }, 503);
   const canonical = new URL("/api/discovery", request.url);
-  canonical.search = new URLSearchParams({ version: "1", ...options, maxPrice: options.maxPrice ?? "" }).toString();
+  canonical.search = new URLSearchParams({ version: "7.4", ...options, maxPrice: options.maxPrice ?? "" }).toString();
   const cacheKey = new Request(canonical);
   const edgeCache = typeof caches !== "undefined" ? caches.default : null;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
@@ -5517,11 +5525,19 @@ async function deliverEmailJob(env, job) {
     const report = firstRelation(lead.property_reports);
     if (report?.status !== "ready") throw new Error("Buyer report held until report generation is complete.");
   }
-  const appointmentToken = await issueAppointmentToken(lead.id, env);
-  if (appointmentToken) lead.appointment_url = `https://torontohousemarket.com/showing.html#token=${encodeURIComponent(appointmentToken)}`;
-  const message = buildEmail(job, lead);
-  const sendPayload = { from: env.RESEND_FROM_EMAIL || "Alireza Golestan | Toronto House Market <notifications@updates.torontohousemarket.com>", to: [job.recipient], reply_to: "alireza.golestan@century21.ca", subject: message.subject, html: message.html, text: message.text };
-  if (Array.isArray(message.attachments) && message.attachments.length) sendPayload.attachments = message.attachments;
+  let sendPayload = job.payload?.frozen_email;
+  if (!sendPayload) {
+    if (lead.lead_mode !== "seller" && job.job_type === "email_buyer") {
+      const appointmentToken = await issueAppointmentToken(lead.id, env);
+      if (appointmentToken) lead.appointment_url = `https://torontohousemarket.com/showing.html#token=${encodeURIComponent(appointmentToken)}`;
+    }
+    const message = buildEmail(job, lead);
+    sendPayload = { from: env.RESEND_FROM_EMAIL || "Alireza Golestan | Toronto House Market <notifications@updates.torontohousemarket.com>", to: [job.recipient], reply_to: "alireza.golestan@century21.ca", subject: message.subject, html: message.html, text: message.text };
+    if (Array.isArray(message.attachments) && message.attachments.length) sendPayload.attachments = message.attachments;
+    const saved=await supabase(env, `/rest/v1/automation_jobs?id=eq.${job.id}&status=eq.processing&attempts=eq.${job.attempts}`, {method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify({payload:{...job.payload,frozen_email:sendPayload}})});
+    const rows=await saved.json().catch(()=>null);
+    if (!saved.ok || !Array.isArray(rows) || rows.length!==1) throw new Error("Email attempt no longer owns the job; send cancelled.");
+  }
   const response = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": `thm-job-${job.id}-v1` }, body: JSON.stringify(sendPayload), signal: AbortSignal.timeout(1e4) });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`Resend ${response.status}: ${clean5(result?.message || result?.name || "delivery rejected", 300)}`);
@@ -6098,7 +6114,7 @@ function validateSellerProfile(value) {
 }
 __name(validateSellerProfile, "validateSellerProfile");
 function sellerCityMatches(a, b) {
-  const city = /* @__PURE__ */ __name((v) => normalizeText(v || "").replace(/^toronto\s+[cew]\d{2}$/, "toronto"), "city");
+  const city = /* @__PURE__ */ __name((v) => normalizeText(v || "").replace(/^toronto\s+[cew]\d{2}$/, "toronto").replace(/\s+/g, ""), "city");
   return !!city(a) && city(a) === city(b);
 }
 __name(sellerCityMatches, "sellerCityMatches");
@@ -6171,6 +6187,7 @@ async function sellerQueryRows(filters, env, limit = 1e3) {
     if (result.meta.status !== 200) break;
     if (page === 0 && result.meta.retried) sorted = false;
     rows.push(...result.rows);
+    retainReportRows(env, result.rows);
     next = result.nextLink;
     if (!next) {
       complete = true;
@@ -6193,13 +6210,18 @@ async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
   const exactAddressToken = escapeOData2([parsed.number, parsed.name].filter(Boolean).map(displayToken2).join(" "));
   const token = parsed.name.split(" ").sort((a, b) => b.length - a.length)[0];
   const cityToken = escapeOData2(city);
-  const exactQueries = [.../* @__PURE__ */ new Set([
-    `StreetNumber eq '${number}' and contains(StreetName,'${street}')`,
-    cityToken ? `contains(City,'${cityToken}') and StreetNumber eq '${number}'` : null,
-    `contains(UnparsedAddress,'${exactAddressToken}')`,
-    `contains(UnparsedAddress,'${exactAddressToken.toUpperCase()}')`
+  // Query every listing status and age. The feed rejects some equality and
+  // multiword-address filters; narrow with individual tokens before pagination.
+  const cityWord = escapeOData2(city.split(/[\s-]+/).sort((a,b)=>b.length-a.length)[0] || "");
+  const streetFilter = `contains(StreetName,'${street}')`;
+  const exactQueries = [...new Set([
+    cityWord ? `${streetFilter} and contains(City,'${cityWord}') and contains(StreetNumber,'${number}')` : null,
+    `${streetFilter} and contains(StreetNumber,'${number}')`,
+    cityWord ? `${streetFilter} and contains(City,'${cityWord}')` : null,
+    `StreetName eq '${street}'`,
+    `contains(UnparsedAddress,'${exactAddressToken}')`
   ].filter(Boolean))];
-  const fallbackQueries = [.../* @__PURE__ */ new Set([displayToken2(token), token.toUpperCase()])].map((t) => `contains(StreetName,'${escapeOData2(t)}')`);
+  const fallbackQueries = [streetFilter];
   const candidates = /* @__PURE__ */ new Map(), streetRecords = /* @__PURE__ */ new Map(), audit = [];
   let complete = true;
   const runFilters = async (queries, limit) => {
@@ -6217,8 +6239,18 @@ async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
   };
   await runFilters(exactQueries, 300);
   if (!candidates.size) await runFilters(fallbackQueries, 500);
-  const exactChecksCompleted = diagnostics.queries.slice(0, exactQueries.length).some((q) => q.complete === true);
-  if (!complete && !candidates.size && !exactChecksCompleted && audit.some((a) => a.status === 200)) throw new Error("The exact-address MLS history search is incomplete; retry required.");
+  if (!candidates.size && diagnostics.queries.some(q=>q.filter===streetFilter && !q.complete)) {
+    const counted=await queryPropertyCount([streetFilter],env);
+    diagnostics.totalStreetRecords=counted.count;
+    if (counted.count>500) {
+      const tail=await queryPropertiesDetailed([streetFilter],env,100,"",Math.max(500,counted.count-100));
+      audit.push({...tail.meta,scope:streetFilter,position:"tail"});
+      for(const row of tail.rows) if(sellerExactHistoryMatch(parsed,row,city)&&row.ListingKey)candidates.set(row.ListingKey,row);
+      complete=false;
+    }
+  }
+  const exactChecksCompleted = diagnostics.queries.some(q => q.complete && q.filter.includes("StreetName") && !q.filter.includes("UnparsedAddress"));
+  if (!complete && !candidates.size && audit.some((a) => a.status === 200)) throw new Error("The exact-address MLS history search is incomplete; retry required.");
   if (!audit.some((a) => a.status === 200)) throw new Error("Historical MLS lookup could not be completed.");
   const rows = [...candidates.values()];
   if (!city && new Set(rows.map((r) => normalizeText(r.City).replace(/^toronto\s+[cew]\d{2}$/, "toronto"))).size !== 1) return null;
@@ -6511,7 +6543,7 @@ async function loadSellerPropertyForReport(env, lead, requestId) {
   const community = verifiedCommunity || profile.community || null;
   const parsed = sellerParsedAddress(address);
   const homeType = String(raw?.PropertySubType || (profile.homeType !== "unknown" ? profile.homeType : "unknown")).trim();
-  const city = raw?.City || profile.city || "";
+  const city = raw?.City || profile.city || parsed.city || "";
   const size = raw?.LivingAreaRange || (profile.sizeBand !== "unknown" ? profile.sizeBand : null);
   const beds = profile.beds ?? raw?.BedroomsAboveGrade ?? raw?.BedroomsTotal ?? null;
   const subject = { ...raw, ListingKey: raw?.ListingKey || "owner-subject", UnparsedAddress: address, StreetNumber: parsed.number, StreetName: parsed.name, StreetSuffix: parsed.suffix, StreetDirSuffix: parsed.direction, UnitNumber: parsed.unit, City: city, CityRegion: community, PostalCode: raw?.PostalCode || profile.postal, PropertySubType: homeType, PropertyType: /condo/i.test(homeType) ? "Residential Condo & Other" : "Residential Freehold", LivingAreaRange: size, BuildingAreaTotal: size ? null : raw?.BuildingAreaTotal ?? null, BedroomsTotal: beds, BedroomsAboveGrade: beds, BedroomsBelowGrade: profile.belowBeds, ListPrice: null, ClosePrice: null, SoldPrice: null, SalePrice: null, _sellerReport: true };

@@ -215,22 +215,35 @@
   <section class="discovery-section" id="explore" aria-labelledby="exploreTitle">
     <div class="wrap">
       <div class="section-head discovery-heading">
-        <span class="section-label">BROWSE THE MARKET</span>
-        <h2 id="exploreTitle">A few homes worth opening.</h2>
-        <p>Live listings, selected around your search. Open a home for its AI snapshot.</p>
+        <span class="section-label">FIND YOUR NEXT HOME</span>
+        <h2 id="exploreTitle">Where would you like to live?</h2>
+        <p>Tell us your area, budget and must-haves. Explore homes that fit.</p>
       </div>
+      <form id="homeSearchForm" class="home-search-form">
+        <label class="sr-only" for="homeSearchQuery">Describe the home you want</label>
+        <input id="homeSearchQuery" type="search" maxlength="300" placeholder="Try: 3-bedroom townhouse in Vaughan under $1M" required />
+        <button class="primary-btn" id="homeSearchSubmit" type="submit">Find homes <span aria-hidden="true">→</span></button>
+      </form>
+      <p id="homeSearchStatus" class="home-search-status" role="status" aria-live="polite"></p>
       <nav class="discovery-shortcuts" aria-label="Ways to explore homes">
-        <a class="discovery-tile" href="#browse-new" data-discovery="new"><span class="tile-icon" aria-hidden="true">✦</span><strong>Just Listed</strong><span>Listed in the past 7 days</span></a>
-        <a class="discovery-tile" href="#browse-luxury" data-discovery="luxury"><span class="tile-icon" aria-hidden="true">◇</span><strong>Luxury Homes</strong><span>Explore homes asking $2M+</span></a>
-        <a class="discovery-tile" href="#browse-budget" data-discovery="budget"><span class="tile-icon" aria-hidden="true">$</span><strong>Search by Budget</strong><span>Your price cap. Your home type.</span></a>
+        <a class="discovery-tile" href="#browse-new" data-discovery="new" data-type="any" data-budget="" data-beds=""><span class="tile-icon" aria-hidden="true">◷</span><strong>Just Listed</strong></a>
+        <a class="discovery-tile" href="#browse-reduced" data-discovery="reduced" data-type="any" data-budget="" data-beds=""><span class="tile-icon" aria-hidden="true">↘</span><strong>Price Reduced</strong></a>
+        <a class="discovery-tile" href="#browse-all" data-discovery="all" data-type="detached" data-budget="" data-beds=""><span class="tile-icon" aria-hidden="true">⌂</span><strong>Detached Homes</strong></a>
+        <a class="discovery-tile" href="#browse-luxury" data-discovery="luxury" data-type="any" data-budget="" data-beds=""><span class="tile-icon" aria-hidden="true">☆</span><strong>Luxury $2M+</strong></a>
+        <a class="discovery-tile" href="#browse-budget" data-discovery="budget" data-type="any" data-budget="800000" data-beds=""><span class="tile-icon" aria-hidden="true">$</span><strong>Under $800K</strong></a>
+        <a class="discovery-tile" href="#browse-all" data-discovery="all" data-type="condo" data-budget="" data-beds=""><span class="tile-icon" aria-hidden="true">▥</span><strong>Condos</strong></a>
+        <a class="discovery-tile" href="#browse-all" data-discovery="all" data-type="any" data-budget="" data-beds="4"><span class="tile-icon" aria-hidden="true">⌂</span><strong>4-Bed Homes</strong></a>
+        <a class="discovery-tile" href="#browse-all" data-discovery="all" data-type="townhouse" data-budget="" data-beds=""><span class="tile-icon" aria-hidden="true">▤</span><strong>Townhouses</strong></a>
       </nav>
+      <a class="discovery-seller" href="/seller.html"><span><strong>What’s your home worth?</strong><small>Explore your selling price with recent MLS evidence.</small></span><b>Get my estimate →</b></a>
       <section id="discoveryPanel" class="discovery-panel" aria-labelledby="discoveryTitle">
         <h3 id="discoveryTitle" tabindex="-1">Just Listed</h3>
         <p id="discoveryDescription"></p>
         <form id="discoveryForm" class="discovery-form">
           <label>City<select id="discoveryCity" name="city"><option>Toronto</option><option>Vaughan</option><option>Richmond Hill</option><option>Markham</option><option>Aurora</option><option>Newmarket</option><option>King</option><option>Whitchurch-Stouffville</option><option>Mississauga</option><option>Brampton</option><option>Caledon</option><option>Oakville</option><option>Burlington</option><option>Milton</option><option>Pickering</option><option>Ajax</option><option>Whitby</option><option>Oshawa</option></select></label>
-          <label>Home type<select id="discoveryType" name="type"><option value="any">Any supported type</option><option value="detached">Detached</option><option value="semi">Semi-detached</option><option value="freehold_town">Freehold townhouse</option><option value="condo">Condo apartment</option><option value="condo_town">Condo townhouse</option><option value="duplex">Duplex</option></select></label>
+          <label>Home type<select id="discoveryType" name="type"><option value="any">Any supported type</option><option value="detached">Detached</option><option value="semi">Semi-detached</option><option value="freehold_town">Freehold townhouse</option><option value="condo">Condo apartment</option><option value="condo_town">Condo townhouse</option><option value="duplex">Duplex</option><option value="townhouse">Any townhouse</option></select></label>
           <label>Maximum asking price<input id="discoveryBudget" name="maxPrice" type="number" min="100000" max="20000000" step="1" inputmode="numeric" placeholder="e.g. 1,200,000" /></label>
+          <label>Bedrooms<select id="discoveryBeds" name="minBeds"><option value="0">Any bedrooms</option><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option><option value="5">5+</option></select></label>
           <button id="discoverySubmit" class="primary-btn" type="submit">Find my shortlist</button>
         </form>
         <p id="discoveryStatus" class="discovery-status" role="status" aria-live="polite">Choosing homes to explore…</p>

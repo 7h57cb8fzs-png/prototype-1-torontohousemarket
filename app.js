@@ -935,6 +935,8 @@ for (const button of document.querySelectorAll("[data-home-topic]")) {
 
 // Discovery only opens public snapshots. It never submits a lead or sends a report.
 const discoveryModes = {
+  all: { title: "Homes for you", description: "Explore matching active listings." },
+  reduced: { title: "Price Reduced", description: "Only reductions reported in the current MLS feed are shown." },
   new: { title: "Just Listed", description: "A fresh shortlist from the past 7 days. Choose a home for its AI snapshot." },
   luxury: { title: "Luxury Homes", description: "A selection of homes asking $2 million or more. Refine the city and home type." },
   budget: { title: "Search by Budget", description: "Homes within your asking-price limit. Adjust the budget to make this shortlist yours." }
@@ -972,13 +974,17 @@ for (const tile of document.querySelectorAll("[data-discovery]")) {
   tile.addEventListener("click", (event) => {
     event.preventDefault();
     history.pushState(null, "", tile.getAttribute("href"));
+    $("homeSearchQuery").value = "";
+    $("discoveryType").value = tile.dataset.type || "any";
+    $("discoveryBudget").value = tile.dataset.budget || "";
+    $("discoveryBeds").value = tile.dataset.beds || "0";
     openDiscovery(tile.dataset.discovery);
     if (tile.dataset.discovery === "budget" && !$("discoveryBudget").value) $("discoveryBudget").value = "1500000";
     discoveryForm.requestSubmit();
   });
 }
-discoveryForm.addEventListener("input", resetDiscoveryResults);
-discoveryForm.addEventListener("change", resetDiscoveryResults);
+discoveryForm.addEventListener("input", () => {$("homeSearchQuery").value=""; resetDiscoveryResults();});
+discoveryForm.addEventListener("change", () => {$("homeSearchQuery").value=""; resetDiscoveryResults();});
 discoveryForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!discoveryForm.reportValidity()) return;
@@ -989,14 +995,24 @@ discoveryForm.addEventListener("submit", async (event) => {
   const timer = window.setTimeout(() => controller.abort(), 30000);
   const params = new URLSearchParams({ mode: discoveryMode, city: $("discoveryCity").value, type: $("discoveryType").value });
   if ($("discoveryBudget").value) params.set("maxPrice", $("discoveryBudget").value);
+  params.set("minBeds", $("discoveryBeds").value);
+  const naturalQuery = $("homeSearchQuery").value.trim();
+  if (naturalQuery) params.set("q", naturalQuery);
   $("discoverySubmit").disabled = true;
   $("discoverySubmit").textContent = "Checking…";
   $("discoveryStatus").textContent = "Checking public listings…";
   try {
-    const response = await fetch(`/api/recommendations?${params}`, { headers: { Accept: "application/json" }, signal: controller.signal });
+    const response = await fetch(`/api/home-search?${params}`, { headers: { Accept: "application/json" }, signal: controller.signal });
     const data = await response.json();
     if (sequence !== discoverySequence) return;
     if (!response.ok || !data.ok || !Array.isArray(data.listings)) throw new Error(data.error || "Listing search is temporarily unavailable.");
+    if (data.filters) {
+      $("discoveryCity").value = data.filters.city;
+      $("discoveryType").value = data.filters.type;
+      $("discoveryBudget").value = data.filters.maxPrice || "";
+      $("discoveryBeds").value = String(data.filters.minBeds || 0);
+      $("homeSearchStatus").textContent = data.interpretation || "";
+    }
     $("discoveryStatus").textContent = data.listings.length ? `${data.selectionMode === "ai" ? "AI shortlist" : "Matched shortlist"} · ${data.listings.length} home${data.listings.length === 1 ? "" : "s"}. Open a home to explore.` : "No matches in the listings checked. This is not a full-market search. Try another type or budget, or check an address directly.";
     $("discoveryResults").innerHTML = data.listings.map((home) => {
       const badge = discoveryMode === "luxury" ? "Asking $2M+" : home.daysLive != null ? `${home.daysLive} days on this listing` : "Active listing";
@@ -1037,10 +1053,13 @@ else {
 }
 
 $("discoveryResults").addEventListener("error", event => {if(event.target?.tagName==='IMG'){event.target.style.display='none';}},true);
-if(typeof IntersectionObserver!=='undefined'){
-  const shortlistObserver=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){shortlistObserver.disconnect();if(!$("discoveryResults").innerHTML && !$("discoverySubmit").disabled){openDiscovery(discoveryMode,false);discoveryForm.requestSubmit();}}},{rootMargin:'250px'});
-  shortlistObserver.observe($("explore"));
-}
+$("homeSearchForm").addEventListener("submit", event => {
+  event.preventDefault();
+  if (!$("homeSearchForm").reportValidity()) return;
+  openDiscovery("all", false);
+  $("discoveryTitle").textContent = "Your matches";
+  discoveryForm.requestSubmit();
+});
 
 // PUBLIC LISTING SHARING START
 function listingShareData(listing) {

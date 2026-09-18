@@ -71,7 +71,7 @@ test('production scheduler finalizes a weak-evidence condo, saves once, and neve
   try{
     const env={SUPABASE_SERVICE_ROLE_KEY:'test-only',AMPRE_TOKEN:'test-only',AMPRE_VOW_TOKEN:'test-only',OPENAI_API_KEY:'test-only',GEMINI_API_KEY:'test-only',OPENROUTER_API_KEY:'test-only',AI:{run:async()=>({response:JSON.stringify(narrative)})}};
     const pending=[];await app.scheduled({},env,{waitUntil:p=>pending.push(p)});await Promise.all(pending);
-    assert.equal(saveCount,1);assert.equal(saved.version_label,'Toronto House Market Version 7.3');
+    assert.equal(saveCount,1);assert.equal(saved.version_label,'Toronto House Market Version 7.4');
     assert.equal(saved.comparables.length,4);assert.ok(saved.valuation.estimated_market_value>0);
     assert.equal(saved.model_policy.terra_review,false);assert.ok(saved.execution_telemetry.request_count<34);
     assert.equal(openaiCalls,2);assert.equal(saved.execution_telemetry.ai_usage.length,2);

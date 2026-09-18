@@ -11,3 +11,7 @@ audit-output/**
 README.md
 wrangler.jsonc
 worker*.js
+
+report-runtime.js
+discovery-search.js
+wrangler*.json

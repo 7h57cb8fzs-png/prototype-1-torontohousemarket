@@ -1,8 +1,9 @@
+import { homeSearch } from './discovery-search.js';
 import legacyApp, { deliverEmailJob } from './worker-v11.js';
 import reportCore from './worker-v12.js';
 import { reportFetch } from './report-runtime.js';
 
-const VERSION='version-7.3-request-budget-20260917';
+const VERSION='version-7.4-history-search-20260918';
 const LUNA='gpt-5.6-luna';
 const TERRA='gpt-5.6-terra';
 const OPENAI='https://api.openai.com/v1/responses';
@@ -11,8 +12,9 @@ const AUTOMATION_ROUTES=new Set(['/api/lead','/api/vow/accept-terms','/api/vow/a
 export default {
   async fetch(request,env,ctx){
     const url=new URL(request.url);
+    if(url.pathname==='/api/home-search' && request.method==='GET') return homeSearch(request,env,ctx,legacyApp);
     if(url.pathname==='/api/version') return json({
-      ok:true,version:VERSION,release:'7.3',
+      ok:true,version:VERSION,release:'7.4',
       valuation:'Estimated Market Value + Likely Market Range',
       candidate_policy:'broad VOW evidence when strict evidence is insufficient; structural attributes are relevance signals',
       openai_policy:'Luna first; Terra only for compound severe complexity',
@@ -32,8 +34,8 @@ export default {
     const response=await reportCore.fetch(request,coreEnv(env),proxy);
     if(response.ok) ctx?.waitUntil?.((async()=>{
       await drain(pending);
-      await enhanceRecent(env,30);
-      await emails(env,20);
+      // Reports are finalized atomically before save; no second AI pass.
+      await emails(env,1);
     })());
     return response;
   },
@@ -45,20 +47,20 @@ export default {
       await rpc(env, 'recover_stale_report_jobs', {});
       await reportCore.scheduled(controller,coreEnv(env),proxy);
       await drain(pending);
-      await enhanceRecent(env,30);
-      await emails(env,20);
+      // Reports are finalized atomically before save; no second AI pass.
+      await emails(env,1);
     })());
   }
 };
 
-function coreEnv(env){return {...env,OPENAI_MODEL:LUNA,OPENAI_EXTERNAL_COMP_SEARCH:'false',RESEND_API_KEY:null,THM_REPORT_SCHEDULED_ONLY:true,THM_FINALIZE_REPORT: finalizePayload};}
+function coreEnv(env){return {...env,GEMINI_API_KEY:null,OPENROUTER_API_KEY:null,AI:null,OPENAI_MODEL:LUNA,OPENAI_EXTERNAL_COMP_SEARCH:'false',RESEND_API_KEY:null,THM_REPORT_SCHEDULED_ONLY:true,THM_FINALIZE_REPORT: finalizePayload};}
 
 async function finalizePayload(report,env){
   let p=decorate(report),cx=complexity(p);
   p.model_policy={primary:LUNA,terra_review:false,terra_threshold:'compound severe complexity only',complexity_score:cx.score,complexity_flags:cx.flags};
-  if(cx.escalate && env.OPENAI_API_KEY){try{p=applyTerra(p,await terra(env,p),cx);}catch(e){p.model_policy.terra_error=String(e?.message||e).slice(0,200);}}
-  p.version=7.3;p.version_label='Toronto House Market Version 7.3';
-  p.ai_note=p.model_policy.terra_review?'Version 7.3 · exceptional-complexity Terra review':'Version 7.3 · primary path; Terra not used';
+  if(cx.escalate && p.comparables?.length>=3 && env.OPENAI_API_KEY){try{p=applyTerra(p,await terra(env,p),cx);}catch(e){p.model_policy.terra_error=String(e?.message||e).slice(0,200);}}
+  p.version=7.4;p.version_label='Toronto House Market Version 7.4';
+  p.ai_note=p.model_policy.terra_review?'Version 7.4 · exceptional-complexity Terra review':'Version 7.4 · primary path; Terra not used';
   return p;
 }
 
@@ -73,26 +75,10 @@ async function drain(pending){
   if(pending.length) console.error(JSON.stringify({event:'v73_waituntil_drain_limit',remaining:pending.length,rounds}));
 }
 
-async function enhanceRecent(env,limit){
-  if(!env.SUPABASE_SERVICE_ROLE_KEY) return;
-  const cutoff=new Date(Date.now()-6*60*60*1000).toISOString();
-  const r=await db(env,`/rest/v1/property_reports?status=eq.ready&updated_at=gte.${encodeURIComponent(cutoff)}&select=id,report_payload,updated_at&order=updated_at.desc&limit=${limit}`);
-  const rows=await r.json().catch(()=>[]);
-  for(const row of Array.isArray(rows)?rows:[]){
-    if(!row?.report_payload||String(row.report_payload.version_label||'').includes('Version 7.3')) continue;
-    let p=decorate(row.report_payload),cx=complexity(p);
-    p.model_policy={primary:LUNA,terra_review:false,terra_threshold:'compound severe complexity only',complexity_score:cx.score,complexity_flags:cx.flags};
-    if(cx.escalate&&env.OPENAI_API_KEY){const t=await terra(env,p).catch(()=>null);if(t)p=applyTerra(p,t,cx);}
-    p.version=7.3;p.version_label='Toronto House Market Version 7.3';
-    p.ai_note=p.model_policy.terra_review?'Version 7.3 · Luna first · exceptional-complexity Terra adjudication':'Version 7.3 · Luna first · Terra not required';
-    await db(env,`/rest/v1/property_reports?id=eq.${encodeURIComponent(row.id)}`,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({report_payload:p,updated_at:new Date().toISOString()})}).catch(()=>null);
-  }
-}
-
 function decorate(src){
   const p=JSON.parse(JSON.stringify(src||{})),f=p.facts||{},cs=Array.isArray(p.comparables)?p.comparables:[],st=normType(f.property_type||f.propertyType),sa=String(f.address||'').toLowerCase();
   const vs=cs.map(c=>{const v=num(c.adjustedIndication,c.adjustedPrice,c.adjusted_indication,c.soldPrice);if(!v)return null;let w=1;if(st&&normType(c.propertySubType||c.type)===st)w+=.65;if(sameBuilding(sa,String(c.address||'').toLowerCase()))w+=1.15;if((f.neighbourhood||f.cityRegion)&&c.cityRegion&&norm(f.neighbourhood||f.cityRegion)===norm(c.cityRegion))w+=.35;return{v,w};}).filter(Boolean);
-  if(vs.length>=2){
+  if(vs.length>=3 && (p.report_type!=="THM Seller Price Perspective" || p.seller?.evidence?.listingMatched)){
     const mv=round(weightedMedian(vs)),disp=vs.reduce((s,x)=>s+x.w*Math.abs(x.v-mv)/mv,0)/vs.reduce((s,x)=>s+x.w,0),old=String(p.valuation?.confidence||'').toLowerCase(),base=old==='moderate'?.04:old==='strong'||old==='high'?.025:.065,pct=Math.max(base,Math.min(.10,disp*1.35)),low=round(mv*(1-pct)),high=round(mv*(1+pct));
     p.valuation={...(p.valuation||{}),available:true,estimated_market_value:mv,market_value:mv,midpoint:mv,low,high,likely_market_range:{low,high},range_basis:'Evidence dispersion + confidence; not a fixed percentage.'};
   }
@@ -125,7 +111,7 @@ async function terra(env,p){
   const r=await reportFetch(env,OPENAI,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${env.OPENAI_API_KEY}`},signal:AbortSignal.timeout(22000),body:JSON.stringify({model:TERRA,reasoning:{effort:'medium'},input:[{role:'system',content:'Final adjudication only for an exceptionally complex residential valuation. Use only supplied genuine MLS evidence. Never invent sales. Determine Estimated Market Value first, then uncertainty range. Return JSON only.'},{role:'user',content:JSON.stringify({subject:p.facts,evidence_quality:p.evidence_quality,comparables:(p.comparables||[]).slice(0,8)})}],text:{format:{type:'json_schema',name:'thm_v73_terra',strict:true,schema}}})});
   const d=await r.json();if(!r.ok)throw new Error(`Terra ${r.status}`);const text=d.output_text||(d.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('');return JSON.parse(text);
 }
-function applyTerra(p,t,c){const mv=round(Number(t.estimated_market_value)),low=round(Number(t.range_low)),high=round(Number(t.range_high));p.valuation={...(p.valuation||{}),available:true,estimated_market_value:mv,market_value:mv,midpoint:mv,low,high,likely_market_range:{low,high},confidence:t.confidence};p.decision_summary={...(p.decision_summary||{}),estimated_market_value:mv,likely_market_range:{low,high},evidence_confidence:t.confidence,market_read:t.market_read,strategy:t.strategy};p.model_policy={primary:LUNA,terra_review:true,terra_model:TERRA,terra_reason:c.flags,complexity_score:c.score};return p;}
+function applyTerra(p,t,c){const mv=round(Number(t.estimated_market_value)),low=round(Number(t.range_low)),high=round(Number(t.range_high));if(!(low>0&&mv>=low&&high>=mv&&p.comparables?.length>=3))return p;p.valuation={...(p.valuation||{}),available:true,estimated_market_value:mv,market_value:mv,midpoint:mv,low,high,likely_market_range:{low,high},confidence:t.confidence};p.decision_summary={...(p.decision_summary||{}),estimated_market_value:mv,likely_market_range:{low,high},evidence_confidence:t.confidence,market_read:t.market_read,strategy:t.strategy};p.model_policy={primary:LUNA,terra_review:true,terra_model:TERRA,terra_reason:c.flags,complexity_score:c.score};return p;}
 
 async function emails(env,limit){if(!env.RESEND_API_KEY)return;const jobs=await rpc(env,'claim_email_jobs',{p_limit:limit}).catch(()=>[]);for(const j of Array.isArray(jobs)?jobs:[]){try{await deliverEmailJob(env,j);}catch(e){await rpc(env,'fail_email_job',{p_job_id:j.id,p_error:String(e?.message||e).slice(0,300)}).catch(()=>null);}}}
 async function rpc(env,name,body){const r=await db(env,`/rest/v1/rpc/${name}`,{method:'POST',body:JSON.stringify(body)}),d=await r.json().catch(()=>null);if(!r.ok)throw new Error(d?.message||name);return d;}

@@ -190,7 +190,8 @@ async function processV7ReportJobs(env, limit = 1) {
 
 async function buildVersion7Report(env, lead, property, requestId) {
   let report = await buildPhase6Report(env, lead, property, requestId);
-  const needsExpert = shouldUseExpertComp(report);
+  const sellerVerified = lead.lead_mode !== "seller" || report.seller?.evidence?.listingMatched === true;
+  const needsExpert = sellerVerified && shouldUseExpertComp(report);
 
   if (needsExpert && env.OPENAI_API_KEY && env.AMPRE_VOW_TOKEN) {
     try {
@@ -201,12 +202,12 @@ async function buildVersion7Report(env, lead, property, requestId) {
     }
   }
 
-  if (lead.lead_mode === "seller") {
+  if (lead.lead_mode === "seller" && sellerVerified && report.comparables?.length >= 3) {
     report = await enhanceSellerReport(env, lead, property, report, requestId).catch(error => {
       console.warn(JSON.stringify({ event: "v7_seller_ai_failed", request_id: requestId, error: String(error?.message || error).slice(0, 240) }));
       return report;
     });
-  } else if (report.expert_comp_mode?.used || report.ai_generation?.provider === "deterministic_fallback") {
+  } else if (lead.lead_mode !== "seller" && (report.expert_comp_mode?.used || report.ai_generation?.provider === "deterministic_fallback")) {
     const narrative = await openAiBuyerNarrative(env, report, property).catch(() => null);
     if (narrative) {
       report = {

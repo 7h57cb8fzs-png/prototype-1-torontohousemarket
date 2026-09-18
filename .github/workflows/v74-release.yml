@@ -1,0 +1,32 @@
+name: Preview and publish THM 7.4
+on:
+  push:
+    branches: [phase-6]
+permissions:
+  contents: read
+concurrency:
+  group: thm-guarded-production
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: contains(github.event.head_commit.message, '[v74-preview]') || contains(github.event.head_commit.message, '[v74-release]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Focused acceptance
+        run: |
+          node --check worker-v11.js
+          node --check worker-v12.js
+          node --check worker-v22.js
+          node --check app.js
+          node --test tests/v74-search-history.test.mjs tests/report-runtime.test.mjs
+      - name: Guarded preview or promotion
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          PUBLISH: ${{ contains(github.event.head_commit.message, '[v74-release]') && 'true' || 'false' }}
+        run: node scripts/v74-release.mjs

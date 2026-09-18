@@ -3,7 +3,7 @@
   "name":"prototype-1-torontohousemarket",
   "compatibility_date":"2026-08-25",
   "preview_urls":true,
-  "vars":{"PUBLIC_DISCOVERY_ENABLED":"true","THM_RELEASE":"7.3"},
+  "vars":{"PUBLIC_DISCOVERY_ENABLED":"true","THM_RELEASE":"7.4"},
   "main":"worker-v22.js",
   "ai":{"binding":"AI"},
   "secrets":{"required":["AMPRE_TOKEN","AMPRE_VOW_TOKEN","SUPABASE_SERVICE_ROLE_KEY","ADMIN_API_KEY","RESEND_API_KEY","OPENAI_API_KEY"]},
