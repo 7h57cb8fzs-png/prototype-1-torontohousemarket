@@ -1,3 +1,4 @@
+import {queryListingInventory,brokerageMatches,canonicalArea} from './listing-query.js';
 import {sellerArchiveKey,validatedArchive} from './seller-archive.js';
 // Keep the historical standalone bundle compatible with existing consumers.
 // The report owner supplies scoped operations; public requests use native fetch.
@@ -3896,11 +3897,12 @@ function discoveryOptions(url) {
   if (maxPrice !== null && (!Number.isSafeInteger(maxPrice) || maxPrice < 1e5 || maxPrice > 2e7)) throw new Error("Enter a maximum asking price between $100,000 and $20,000,000.");
   if (mode === "luxury" && maxPrice !== null && maxPrice < 2e6) throw new Error("Luxury search starts at $2,000,000. Increase or clear the maximum price.");
   if (mode === "budget" && maxPrice === null) throw new Error("Enter your maximum asking price.");
+  const brokerage=String(p.get("brokerage")||"").trim();if(brokerage.length>100)throw new Error("Check the brokerage name.");
   const minBeds=Number(p.get("minBeds")||0), minBaths=Number(p.get("minBaths")||0), minParking=Number(p.get("minParking")||0), area=String(p.get("area")||"").trim();
   if ([minBeds,minBaths,minParking].some(v=>!Number.isInteger(v)||v<0||v>9)||area.length>80) throw new Error("Check your bedroom, bathroom, parking or area filters.");
   const minPrice=Number(p.get("minPrice")||0), maxBeds=Number(p.get("maxBeds")||0), minSqft=Number(p.get("minSqft")||0), limit=Number(p.get("limit")||12), sort=p.get("sort")||"newest";
   if(!Number.isInteger(minPrice)||minPrice<0||minPrice>20000000||maxPrice!==null&&minPrice>maxPrice||!Number.isInteger(maxBeds)||maxBeds<0||maxBeds>9||maxBeds&&maxBeds<minBeds||!Number.isInteger(minSqft)||minSqft<0||minSqft>20000||!Number.isInteger(limit)||limit<1||limit>60||!["newest","price_asc","price_desc","beds_desc"].includes(sort))throw new Error("Check your price, bedrooms and size preferences.");
-  return { city, mode, type, maxPrice, minBeds, minBaths, minParking, area, minPrice, maxBeds, minSqft, limit, sort };
+  return { city, mode, type, maxPrice, minBeds, minBaths, minParking, area:canonicalArea(area), brokerage, minPrice, maxBeds, minSqft, limit, sort, query:p.get("query")==="true" };
 }
 __name(discoveryOptions, "discoveryOptions");
 function discoverySelection(records, options, now = Date.now()) {
@@ -3923,6 +3925,7 @@ function discoverySelection(records, options, now = Date.now()) {
     if (options.minBaths && Number(p.BathroomsTotalInteger ?? -1) < options.minBaths) continue;
     if (options.minParking && Number(p.ParkingTotal ?? -1) < options.minParking) continue;
     if (options.area && ![p.City,p.CityRegion,p.UnparsedAddress].some(v=>String(v||'').toLowerCase().includes(options.area.toLowerCase()))) continue;
+    if (options.brokerage && !brokerageMatches(p.ListOfficeName,options.brokerage)) continue;
     if (options.mode === "reduced" && !facts.priceChange) continue;
     const price = numberOrNull(p.ListPrice);
     if (!(price > 0) || options.maxPrice !== null && price > options.maxPrice || options.minPrice && price < options.minPrice) continue;
@@ -4061,7 +4064,7 @@ async function publicDiscovery(request, env, ctx) {
   }
   if (!env.AMPRE_TOKEN) return json7({ ok: false, error: "Listing search is temporarily unavailable. Check a known address or MLS number above." }, 503);
   const canonical = new URL("/api/discovery", request.url);
-  canonical.search = new URLSearchParams({ version: "7.4-chat2", ...options, maxPrice: options.maxPrice ?? "" }).toString();
+  canonical.search = new URLSearchParams({ version: "7.4-query3", ...options, maxPrice: options.maxPrice ?? "" }).toString();
   const cacheKey = new Request(canonical);
   const edgeCache = typeof caches !== "undefined" ? caches.default : null;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
@@ -4070,7 +4073,7 @@ async function publicDiscovery(request, env, ctx) {
   try {
     // Share the bounded, private IDX inventory between filter refinements. Never
     // serve raw rows: display permissions and active status are checked below.
-    const inventory=await discoveryInventory(options.city,request.url,env,ctx);
+    const inventory=options.query ? await queryListingInventory(options,DISCOVERY_TYPES[options.type],request.url,env,ctx,amplifyFetch) : await discoveryInventory(options.city,request.url,env,ctx);
     const {rows,skipped,partial}=inventory;
 
     const matches = discoverySelection(rows, options);
@@ -4078,7 +4081,7 @@ async function publicDiscovery(request, env, ctx) {
       ok: true,
       listings: matches.slice(0, options.limit),
       checkedAt: inventory.checkedAt,
-      coverage: { scanned: rows.length, matched: matches.length, partial: partial || skipped > 0, moreMatches: matches.length > options.limit },
+      coverage: { scanned: rows.length, matched: matches.length, partial: partial || skipped > 0, moreMatches: matches.length > options.limit, retrieval:inventory.method||"city-window" },
       note: "A selection from public IDX listings, not the entire market. Availability and asking prices can change. Open a home to recheck its listing."
     }, 200, { "Cache-Control": "public, max-age=60, s-maxage=300" });
     if (edgeCache && ctx?.waitUntil) ctx.waitUntil(edgeCache.put(cacheKey, result.clone()));
