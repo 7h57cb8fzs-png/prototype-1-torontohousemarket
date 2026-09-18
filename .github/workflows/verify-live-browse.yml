@@ -1,0 +1,34 @@
+name: Verify live browse and mobile snapshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/verify-live-browse.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify live production browse and mobile assets
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 25 'https://torontohousemarket.com/api/recommendations?mode=budget&city=Toronto&type=any&maxPrice=1500000' -o /tmp/listings.json
+          node <<'NODE'
+          const fs=require('fs');
+          const d=JSON.parse(fs.readFileSync('/tmp/listings.json','utf8'));
+          if(!d.ok || !Array.isArray(d.listings) || d.listings.length<1) throw new Error('Live browse returned no usable listings: '+JSON.stringify(d));
+          const h=d.listings[0];
+          if(!h.listingKey || !h.photoUrl) throw new Error('First listing is missing listing/photo routing');
+          console.log(JSON.stringify({count:d.listings.length,first:h.listingKey,address:h.address,photoUrl:h.photoUrl,coverage:d.coverage}));
+          fs.writeFileSync('/tmp/photo-path',h.photoUrl);
+          NODE
+          photo=$(cat /tmp/photo-path)
+          code=$(curl -sSL -o /tmp/photo.bin -w '%{http_code}' --max-time 25 "https://torontohousemarket.com$photo")
+          test "$code" = "200"
+          test -s /tmp/photo.bin
+          curl -fsSL --max-time 20 'https://torontohousemarket.com/' | grep -F 'id="snapshotThumb"' >/dev/null
+          curl -fsSL --max-time 20 'https://torontohousemarket.com/app.js' | grep -F 'const snapshotThumb = $("snapshotThumb")' >/dev/null
+          curl -fsSL --max-time 20 'https://torontohousemarket.com/styles.css' | grep -F 'Mobile snapshot photo: keep the first MLS image visible' >/dev/null
+          echo 'LIVE_BROWSE_AND_MOBILE_PHOTO_VERIFIED'
