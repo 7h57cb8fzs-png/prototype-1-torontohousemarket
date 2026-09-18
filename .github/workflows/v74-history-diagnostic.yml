@@ -1,0 +1,43 @@
+name: V7.4 historical feed diagnostic
+on:
+  push:
+    branches: [phase-6]
+    paths: ['.github/workflows/v74-history-diagnostic.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check supported historical search
+        env:
+          AMPRE_VOW_TOKEN: ${{ secrets.AMPRE_VOW_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          const base='https://query.ampre.ca/odata/';
+          const headers={Authorization:'Bearer '+process.env.AMPRE_VOW_TOKEN,Accept:'application/json'};
+          const filters=[
+            "StreetName eq 'Oak'",
+            "StreetNumber eq 38",
+            "StreetNumber eq '38'",
+            "contains(StreetName,'Oak') and contains(City,'Richmond')",
+            "contains(StreetName,'Oak') and contains(StreetNumber,'38')",
+            "contains(UnparsedAddress,'Oak') and contains(UnparsedAddress,'38')",
+            "contains(StreetName,'Oak') and ContractStatus eq 'Unavailable'",
+            "ListingKey eq 'N3691640'",
+            "contains(ListingKey,'N3691640')",
+            "contains(StreetName,'Oak')"
+          ];
+          for(const f of filters){
+            const u=new URL('Property',base);u.search=new URLSearchParams({'$filter':f,'$top':'100','$count':'true'});
+            try {const r=await fetch(u,{headers,signal:AbortSignal.timeout(15000)});const d=await r.json();const rows=d.value||[];
+            const matches=rows.filter(x=>String(x.StreetNumber)==='38'&&String(x.StreetName).toLowerCase()==='oak'&&/richmond/i.test(x.City||''));
+            console.log(JSON.stringify({filter:f,status:r.status,count:d['@odata.count'],rows:rows.length,next:!!d['@odata.nextLink'],exact:matches.map(x=>({key:x.ListingKey,address:x.UnparsedAddress,date:x.ListingContractDate||x.OriginalEntryTimestamp})),error:r.ok?undefined:JSON.stringify(d).slice(0,350)}));
+            }catch(e){console.log(JSON.stringify({filter:f,error:e.message}))}
+          }
+          for(const path of ["Property('N3691640')",'Property/N3691640']){
+            const r=await fetch(new URL(path,base),{headers,signal:AbortSignal.timeout(15000)});const d=await r.json();
+            console.log(JSON.stringify({path,status:r.status,key:d.ListingKey,address:d.UnparsedAddress,error:r.ok?undefined:JSON.stringify(d).slice(0,350)}));
+          }
+          NODE
