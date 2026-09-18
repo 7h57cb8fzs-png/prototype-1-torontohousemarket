@@ -5768,8 +5768,8 @@ function reportPriceSuggestion(report) {
 }
 __name(reportPriceSuggestion, "reportPriceSuggestion");
 function reportBrief(value){
-  const sentences=String(value||'').trim().match(/[^.!?]+(?:[.!?]+(?:\s|$)|$)/g)||[];
-  let result='';for(const sentence of sentences){if(result&&result.length+sentence.length>430)break;result+=sentence;if(result.length>=260)break;}
+  const sentences=String(value||'').trim().split(/(?<=[.!?])\s+/);
+  let result='';for(const sentence of sentences){if(result&&result.length+sentence.length>430)break;result+=(result?' ':'')+sentence;if(result.length>=260)break;}
   return result.trim()||String(value||'').trim().slice(0,430);
 }
 function reportBriefCard(value){return value?`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eaf1e8;border:1px solid #d3dfcf;border-radius:14px;margin:0 0 18px"><tr><td style="padding:20px 22px"><p style="font:700 11px Arial,sans-serif;letter-spacing:1px;color:#38704f;margin:0 0 10px">YOUR 30-SECOND READ · AI-ASSISTED PERSPECTIVE</p><p style="font:16px/1.65 Arial,sans-serif;color:#294c38;margin:0">${html(value)}</p></td></tr></table>`:'';}

@@ -134,3 +134,15 @@ test('an implicit comparison sees only the latest displayed search, not older ho
  t.mock.method(globalThis,'fetch',async(_url,options)=>{const body=JSON.parse(options.body),input=JSON.parse(body.input[1].content);assert.deepEqual(input.previousHomes.map(h=>h.listingKey),[current.listingKey]);return body.text.format.name==='thm_conversation_plan'?llm({action:'answer',filters,propertyQuery:'',clarification:''}):llm({reply:'The current home has two bathrooms.',followups:[],referencedListingKeys:[current.listingKey]});});
  const out=await events(await homeChat(request('Which has the most bathrooms?',state),env,null,{fetch:()=>{throw Error('No repeat MLS fetch expected');}}));assert.match(out.at(-1).reply,/two bathrooms/);
 });
+
+test('short report and chat copy preserves decimal prices and complete sentences',async()=>{
+ const {conciseReply}=await import('../home-chat.js');const sentence='Your home looks close to $1.08 million based on these sales.';
+ const report={version:7.4,generated_at:'2026-09-18',facts:{property_type:'Detached'},valuation:{available:true,low:945000,midpoint:1080000,high:1220000},comparables:[1,2,3].map(i=>({address:'Home '+i,soldPrice:1000000,soldDate:'2026-09-01'})),seller:{strategy:{independent_market_read:sentence},evidence:{}},narrative:{executive_summary:sentence}};
+ assert.ok(sellerReportEmail('Home',report).html.includes(sentence));assert.ok(propertyReportEmail('Home',{},report).html.includes(sentence));
+ const reply=conciseReply(sentence+' '+Array(12).fill('Here is one useful sentence for your search.').join(' '));assert.ok(reply.startsWith(sentence));assert.ok(reply.split(/\s+/).length<=75);assert.ok(reply.endsWith('.'));
+});
+
+test('unsupported city clarification permits an empty planner city list without failing',async t=>{
+ t.mock.method(globalThis,'fetch',async()=>llm({action:'clarify',filters:{...filters,cities:[]},propertyQuery:'',clarification:'This finder covers the GTA. Which GTA city would you like?'}));
+ const out=await events(await homeChat(request('Find a condo in Montreal'),env,null,{fetch:()=>{throw Error('No MLS search');}}));assert.equal(out.at(-1).type,'answer');assert.match(out.at(-1).reply,/covers the GTA/);
+});
