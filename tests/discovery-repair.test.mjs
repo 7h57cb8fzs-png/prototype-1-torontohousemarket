@@ -19,9 +19,9 @@ test("discovery uses city count-tail retrieval without unsupported sorting", asy
       assert.equal(url.searchParams.has("$orderby"),false);
       return Response.json({"@odata.count":650,value:[]});
     }
-    assert.equal(url.searchParams.get("$skip"),"150");
+    assert.ok([150,250,350,450,550].includes(Number(url.searchParams.get("$skip"))));
     assert.equal(url.searchParams.has("$orderby"),false);
-    return Response.json({value:[home("C1000001")]});
+    return Response.json({value:[home(`C1000${url.searchParams.get("$skip")}`)]});
   });
   const response=await worker.fetch(
     new Request("https://example.com/api/discovery?city=Toronto&mode=budget&maxPrice=1200000"),
@@ -29,8 +29,8 @@ test("discovery uses city count-tail retrieval without unsupported sorting", asy
   );
   const data=await response.json();
   assert.equal(response.status,200);
-  assert.equal(data.listings.length,1);
-  assert.equal(calls.length,2);
+  assert.equal(data.listings.length,5);
+  assert.equal(calls.length,6);
 });
 
 test("mobile snapshot thumbnail is wired only from verified listing photos", async () => {

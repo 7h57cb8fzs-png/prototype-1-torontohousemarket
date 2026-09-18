@@ -979,7 +979,7 @@ async function sendHomeChat(message){
   const turn=document.createElement('div');turn.className='chat-turn';
   turn.append(chatText('p','chat-message user',message));
   const status=chatText('p','chat-thinking','Understanding your search…');status.setAttribute('role','status');turn.append(status);chatRoot.append(turn);chatBottom();
-  const timeout=setTimeout(()=>chatController?.abort(),45000);let received=false,gotAnswer=false;
+  const controller=chatController,timeout=setTimeout(()=>controller.abort(),45000);let received=false,gotAnswer=false;
   try{
     const response=await fetch('/api/home-chat',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/x-ndjson'},body:JSON.stringify({message,state:chatState}),signal:chatController.signal});
     if(!response.ok){const d=await response.json().catch(()=>({}));throw Error(d.error||'The search is busy. Please try again.');}
@@ -995,11 +995,12 @@ async function sendHomeChat(message){
         status.textContent='Reading the details for you…';turn.append(status);chatBottom();
       }
       if(data.type==='answer'){
+        const nearBottom=chatScroll.scrollHeight-chatScroll.scrollTop-chatScroll.clientHeight<120;
         gotAnswer=true;status.remove();chatState=data.state;turn.append(chatText('p','chat-reply',data.reply));
         const chips=document.createElement('div');chips.className='chat-followups';
         for(const label of data.followups||[]){const b=chatText('button','',label);b.type='button';b.addEventListener('click',()=>sendHomeChat(label));chips.append(b);}turn.append(chips);
         $('homeSearchQuery').placeholder='Ask about a home, change the area, or keep looking…';
-        if(!received)chatBottom();
+        if(!received||nearBottom)chatBottom();
       }
     };
     while(true){const {done,value}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});let i;while((i=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(line.trim())event(JSON.parse(line));}if(done)break;}
