@@ -6085,7 +6085,14 @@ function validateSellerProfile(value) {
   if (postal && !/^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]\d[ABCEGHJ-NPRSTV-Z]\d$/.test(postal)) throw new Error("Enter a complete Canadian postal code or leave it blank.");
   const targetMin = value.targetMin ?? null, targetMax = value.targetMax ?? null;
   if (targetMin === null !== (targetMax === null) || [targetMin, targetMax].some((n) => n !== null && (typeof n !== "number" || !Number.isFinite(n) || n < 5e4 || n > 1e8)) || targetMin !== null && targetMin > targetMax) throw new Error("Enter a valid minimum and maximum, or leave both blank.");
-  return { version: 2, homeType, city: pick("city", ["", ...SELLER_CITIES]), community: clean5(value.community, 100), sizeBand, beds: integer("beds", 20, true), belowBeds: integer("belowBeds", 20, true), basement: pick("basement", ["unknown", "none", "unfinished", "part_finished", "finished", "apartment"]), entrance: pick("entrance", ["unknown", "yes", "no"]), kitchens: integer("kitchens", 10, true), postal, condition: pick("condition", ["unknown", "original", "maintained", "renovated"]), upgrades, targetPrice: target, targetMin, targetMax, timing: pick("timing", ["exploring", "0_3", "3_6", "6_12"]), notes: clean5(value.notes, 900), ownerConsent: true, contactConsent: true, consentAt: (/* @__PURE__ */ new Date()).toISOString(), source: "owner_reported" };
+  const condition = pick("condition", ["unknown", "original", "maintained", "renovated", "owner_reported"]);
+  const renovationPct = condition === "owner_reported"
+    ? Number(value.renovationPct)
+    : null;
+  if (condition === "owner_reported" && (!Number.isFinite(renovationPct) || renovationPct < 0 || renovationPct > 100)) {
+    throw new Error("Choose a renovation level from 0 to 100.");
+  }
+  return { version: condition === "owner_reported" ? 3 : 2, homeType, city: pick("city", ["", ...SELLER_CITIES]), community: clean5(value.community, 100), sizeBand, beds: integer("beds", 20, true), belowBeds: integer("belowBeds", 20, true), basement: pick("basement", ["unknown", "none", "unfinished", "part_finished", "finished", "apartment"]), entrance: pick("entrance", ["unknown", "yes", "no"]), kitchens: integer("kitchens", 10, true), postal, condition, renovationPct, upgrades, targetPrice: target, targetMin, targetMax, timing: pick("timing", ["exploring", "0_3", "3_6", "6_12"]), notes: clean5(value.notes, 900), ownerConsent: true, contactConsent: true, consentAt: (/* @__PURE__ */ new Date()).toISOString(), source: "owner_reported" };
 }
 __name(validateSellerProfile, "validateSellerProfile");
 function sellerCityMatches(a, b) {
