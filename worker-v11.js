@@ -6190,23 +6190,31 @@ async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
   const city = profile.city || parsed.city || "";
   const street = escapeOData2(parsed.name.split(" ").map(displayToken2).join(" "));
   const number = escapeOData2(parsed.number);
-  const scope = `contains(StreetName,'${street}')`;
-  const exactScope = `${scope} and StreetNumber eq '${number}'`;
+  const exactAddressToken = escapeOData2([parsed.number, parsed.name].filter(Boolean).map(displayToken2).join(" "));
   const token = parsed.name.split(" ").sort((a, b) => b.length - a.length)[0];
-  const queries = [.../* @__PURE__ */ new Set([displayToken2(token), token.toUpperCase()])].map((t) => `contains(StreetName,'${escapeOData2(t)}')`);
+  const exactQueries = [.../* @__PURE__ */ new Set([
+    `contains(UnparsedAddress,'${exactAddressToken}')`,
+    `contains(UnparsedAddress,'${exactAddressToken.toUpperCase()}')`
+  ])];
+  const fallbackQueries = [.../* @__PURE__ */ new Set([displayToken2(token), token.toUpperCase()])].map((t) => `contains(StreetName,'${escapeOData2(t)}')`);
   const candidates = /* @__PURE__ */ new Map(), streetRecords = /* @__PURE__ */ new Map(), audit = [];
   let complete = true;
-  for (const filter of queries) {
-    const result2 = await sellerQueryRows([filter], env, 2e3);
+  const runFilters = async (queries, limit) => {
+    for (const filter of queries) {
+      const result2 = await sellerQueryRows([filter], env, limit);
     audit.push(...result2.audit);
     diagnostics.queries.push({ filter, complete: result2.complete, rows: result2.rows.length, audit: result2.audit, exactMatches: result2.rows.filter((r) => sellerExactHistoryMatch(parsed, r, city)).length, sample: result2.rows.slice(0, 2).map((r) => ({ address: r.UnparsedAddress, number: r.StreetNumber, street: r.StreetName, suffix: r.StreetSuffix, unit: r.UnitNumber, city: r.City, status: r.StandardStatus, recordedAt: r.OriginalEntryTimestamp })) });
-    for (const row of result2.rows) {
-      if (row.ListingKey) streetRecords.set(row.ListingKey, row);
-      if (sellerExactHistoryMatch(parsed, row, city) && row.ListingKey) candidates.set(row.ListingKey, row);
+      for (const row of result2.rows) {
+        if (row.ListingKey) streetRecords.set(row.ListingKey, row);
+        if (sellerExactHistoryMatch(parsed, row, city) && row.ListingKey) candidates.set(row.ListingKey, row);
+      }
+      complete &&= result2.complete;
+      if (candidates.size) break;
     }
-    complete &&= result2.complete;
-  }
-  if (!complete && audit.some((a) => a.status === 200)) throw new Error("The exact-address MLS history search is incomplete; retry required.");
+  };
+  await runFilters(exactQueries, 300);
+  if (!candidates.size) await runFilters(fallbackQueries, 500);
+  if (!complete && !candidates.size && audit.some((a) => a.status === 200)) throw new Error("The exact-address MLS history search is incomplete; retry required.");
   if (!audit.some((a) => a.status === 200)) throw new Error("Historical MLS lookup could not be completed.");
   const rows = [...candidates.values()];
   if (!city && new Set(rows.map((r) => normalizeText(r.City).replace(/^toronto\s+[cew]\d{2}$/, "toronto"))).size !== 1) return null;
@@ -6531,7 +6539,7 @@ function estimateSellerUpgrades(profile, valuation, homeType) {
 }
 __name(estimateSellerUpgrades, "estimateSellerUpgrades");
 async function buildSellerReport(env, lead, property2, requestId) {
-  const profile = { ...property2.sellerProfile, upgrades: [], condition: "unknown" }, comp = property2.comparableContext || {}, comparables = (comp.comparables || []).slice(0, 8);
+  const profile = { ...property2.sellerProfile, upgrades: [] }, comp = property2.comparableContext || {}, comparables = (comp.comparables || []).slice(0, 8);
   const valid = comp.available === true && comparables.length >= 3 && Number.isFinite(comp.rangeLow) && comp.rangeLow > 0 && Number.isFinite(comp.rangeHigh) && comp.rangeHigh >= comp.rangeLow;
   const evidence = property2.sellerEvidence || {};
   const confidence = valid ? evidence.listingFactsAgree && comp.confidence === "High" ? "Medium" : comp.confidence === "Medium" && evidence.listingFactsAgree ? "Medium" : "Low" : "Unavailable";
@@ -6618,7 +6626,9 @@ function sellerReportEmail(address, report) {
   const checks = (report.narrative?.preparation_checks || []).slice(0, 3);
   const nextText = available ? "Reply with your selling timeline. We can review these sales, your home\u2019s condition and your next move together." : "Reply to this email and we can help complete your home\u2019s review.";
   const cta = available ? "Discuss my selling plan" : "Let\u2019s discuss my home";
-  const nextHtml = section(available ? "03 / Your next move" : "Next / Complete your review", available ? "Turn a price into a plan." : "A conversation is the next step.", paragraph(nextText) + (profile.notes ? `<p style="${label}">Your note</p>${paragraph(profile.notes)}` : "") + (available && checks.length ? `<p style="${label}">For your review</p>${checks.map((check) => `<p style="${small}margin-bottom:7px">${html(check)}</p>`).join("")}` : "") + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px"><tr><td align="center" bgcolor="#123f39" style="border-radius:7px"><a href="tel:${TEAM_PHONE}" style="display:block;padding:17px 12px;border:1px solid #123f39;border-radius:7px;color:#ffffff!important;font-size:15px;font-weight:700;line-height:1.4;text-decoration:none">${html(cta)}</a></td></tr></table><p style="${small}margin-top:12px;text-align:center">Reply to this email or call <a href="tel:${TEAM_PHONE}" style="color:#236b5e;text-decoration:underline">647-890-4704</a>.</p>`);
+  const cleanOwnerNote = String(profile.notes || "").replace(/\\[THM_RENOVATION_PCT:\\d{1,3}\\]/g, "").trim();
+  const renovationContext = Number.isFinite(Number(profile.renovationPct)) ? `Owner-reported renovation context: ${Math.round(Number(profile.renovationPct))}%.` : "";
+  const nextHtml = section(available ? "03 / Your next move" : "Next / Complete your review", available ? "Turn a price into a plan." : "A conversation is the next step.", paragraph(nextText) + (renovationContext ? `<p style="${label}">Current condition</p>${paragraph(renovationContext)}` : "") + (cleanOwnerNote ? `<p style="${label}">Your note</p>${paragraph(cleanOwnerNote)}` : "") + (available && checks.length ? `<p style="${label}">For your review</p>${checks.map((check) => `<p style="${small}margin-bottom:7px">${html(check)}</p>`).join("")}` : "") + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:20px"><tr><td align="center" bgcolor="#123f39" style="border-radius:7px"><a href="tel:${TEAM_PHONE}" style="display:block;padding:17px 12px;border:1px solid #123f39;border-radius:7px;color:#ffffff!important;font-size:15px;font-weight:700;line-height:1.4;text-decoration:none">${html(cta)}</a></td></tr></table><p style="${small}margin-top:12px;text-align:center">Reply to this email or call <a href="tel:${TEAM_PHONE}" style="color:#236b5e;text-decoration:underline">647-890-4704</a>.</p>`);
   const method = available ? v.methodology : null;
   const disclaimer = "Calculated from recovered MLS evidence. Listing facts and present condition need confirmation. The range is preliminary, not a statistical confidence interval, appraisal or guarantee.";
   const footer = `<tr><td class="pad" style="padding:25px 30px;border-top:1px solid #dedfd5;background:#eceee6">${historyHtml}${method ? `<p style="${small}margin-top:15px">${html(method)}</p>` : ""}<p style="${small}margin-top:12px">${html(disclaimer)}</p><p style="margin:22px 0 5px;font-size:13px;font-weight:700;line-height:1.6;color:#123f39">${html(TEAM_NAMES)}</p><p style="${small}">Sales Representatives<br>${html(TEAM_BROKERAGE)}</p><p style="${small}margin-top:14px">Toronto House Market \xB7 Seller Price Perspective</p></td></tr>`;
@@ -6629,7 +6639,7 @@ ${compDetails(c)}
 ${cad(c.soldPrice) || "Price not recorded"} \xB7 Sold ${shortDate(c.soldDate) || "date unconfirmed"}${c.timeAdjustmentPct ? `
 Time-adjusted indication: ${cad(c.adjustedPrice)} (${c.timeAdjustmentPct}%). Actual sale price shown above.` : ""}${c.geographyNote ? "\n" + c.geographyNote : ""}`), available || active2.length ? "CURRENT COMPETITION \u2014 " + competitionNote : null, ...active2.map((c) => `${c.address || "Address unavailable"}
 ${compDetails(c)}
-Asking ${cad(c.askingPrice) || "price not recorded"}${shortDate(c.listedDate) ? " \xB7 Listed " + shortDate(c.listedDate) : ""}`), nextText, profile.notes ? `Your note: ${profile.notes}` : null, ...available ? checks : [], `${cta}: tel:${TEAM_PHONE}
+Asking ${cad(c.askingPrice) || "price not recorded"}${shortDate(c.listedDate) ? " \xB7 Listed " + shortDate(c.listedDate) : ""}`), nextText, renovationContext || null, cleanOwnerNote ? `Your note: ${cleanOwnerNote}` : null, ...available ? checks : [], `${cta}: tel:${TEAM_PHONE}
 Reply to this email or call 647-890-4704.`, latestText ? `Latest matched MLS listing: ${latestText}` : null, historyNote, communityNote, method, disclaimer, `${TEAM_NAMES} \xB7 Sales Representatives`, TEAM_BROKERAGE].filter(Boolean).join("\n\n");
   return { subject: available ? `Your Seller Price Perspective: ${address}` : `Your seller estimate \u2014 next step: ${address}`, html: htmlBody, text };
 }
