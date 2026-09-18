@@ -35,6 +35,7 @@ console.log(JSON.stringify({stage:'candidate',candidate,preview,prior,priorHash,
 if(process.env.PUBLISH!=='true')process.exit(0);
 try{
  await cf(`/workers/scripts/${worker}/deployments`,'POST',{strategy:'percentage',versions:[{version_id:candidate,percentage:100}]});
+ let propagated=false;for(let attempt=0;attempt<15;attempt++){const v=await fetch('https://torontohousemarket.com/api/version?deployment='+candidate,{cache:'no-store'}).then(r=>r.json());if(v.version==='version-7.4-history-search-20260918'){propagated=true;break;}await new Promise(resolve=>setTimeout(resolve,2000));}assert(propagated,'Worker deployment did not propagate');
  await verify('https://torontohousemarket.com');assert.equal(await active(),candidate);assert.deepEqual(await cf(`/workers/scripts/${worker}/schedules`),schedule,'Cron changed');
  console.log(JSON.stringify({stage:'published',version:candidate,rollback:prior,source:source(after)}));
 }catch(e){await cf(`/workers/scripts/${worker}/deployments`,'POST',{strategy:'percentage',versions:[{version_id:prior,percentage:100}]});throw e;}
