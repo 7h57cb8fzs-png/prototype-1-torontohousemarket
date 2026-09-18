@@ -264,7 +264,7 @@ async function collectBroadSoldPool(env, property, seller = false) {
   const postal = String(property.postalCode || "").replace(/\s/g, "").slice(0, 3).toUpperCase();
   if (community && !/^(toronto )?[cew]\d{2}$/i.test(community)) searches.push(`contains(CityRegion,'${odata(community)}')`);
   if (/^[A-Z]\d[A-Z]$/.test(postal)) searches.push(`startswith(PostalCode,'${postal}')`);
-  if (city) searches.push(`contains(UnparsedAddress,'${odata(city)}')`);
+  if (city) searches.push(`contains(City,'${odata(city)}')`);
 
   const rows = [...(env.THM_REPORT_RUNTIME?.rawRows?.values() || [])];
   if (soldCandidates(property, rows).length >= 12) return soldCandidates(property, rows).slice(0, 60);
