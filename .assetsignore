@@ -15,3 +15,5 @@ worker*.js
 report-runtime.js
 discovery-search.js
 wrangler*.json
+
+seller-archive.js

@@ -162,7 +162,6 @@ async function processV7ReportJobs(env, limit = 1) {
       const property = await reportStage(scoped, 'mls_evidence', 50000, e => loadPropertyForReport(e, lead, requestId));
       await checkpoint('analysis');
       let report = await reportStage(scoped, 'analysis', 55000, e => buildVersion7Report(e, lead, property, requestId));
-      if (typeof env.THM_FINALIZE_REPORT === 'function') report = await reportStage(scoped, 'decision_summary', 24000, e => env.THM_FINALIZE_REPORT(report, e));
       report.execution_telemetry = runtimeSummary(runtime);
       const saved = await rpc(scoped, 'complete_report_attempt', {
         p_job_id: job.id, p_report_id: job.report_id, p_attempt: job.attempts, p_report_payload: report
@@ -190,7 +189,7 @@ async function processV7ReportJobs(env, limit = 1) {
 
 async function buildVersion7Report(env, lead, property, requestId) {
   let report = await buildPhase6Report(env, lead, property, requestId);
-  const sellerVerified = lead.lead_mode !== "seller" || report.seller?.evidence?.listingMatched === true;
+  const sellerVerified = lead.lead_mode !== "seller" || (report.seller?.evidence?.subjectMatched ?? report.seller?.evidence?.listingMatched) === true;
   const needsExpert = sellerVerified && shouldUseExpertComp(report);
 
   if (needsExpert && env.OPENAI_API_KEY && env.AMPRE_VOW_TOKEN) {
@@ -202,6 +201,8 @@ async function buildVersion7Report(env, lead, property, requestId) {
     }
   }
 
+  // Establish one final numeric result before asking a model to explain it.
+  if (typeof env.THM_FINALIZE_REPORT === 'function') report = await reportStage(env, 'decision_summary', 24000, e => env.THM_FINALIZE_REPORT(report, e));
   if (lead.lead_mode === "seller" && sellerVerified && report.comparables?.length >= 3) {
     report = await enhanceSellerReport(env, lead, property, report, requestId).catch(error => {
       console.warn(JSON.stringify({ event: "v7_seller_ai_failed", request_id: requestId, error: String(error?.message || error).slice(0, 240) }));
@@ -225,8 +226,9 @@ async function buildVersion7Report(env, lead, property, requestId) {
 
   return {
     ...report,
-    version: 7,
-    version_label: "Toronto House Market Version 7",
+    version: report.version || 7,
+    version_label: report.version_label || "Toronto House Market Version 7",
+    ...(report.decision_summary ? {decision_summary:{...report.decision_summary,market_read:report.narrative?.market_read || report.seller?.strategy?.independent_market_read || report.decision_summary.market_read,strategy:report.narrative?.buyer_strategy || report.seller?.strategy?.listing_strategy || report.decision_summary.strategy}} : {}),
     generated_by: "phase-6 base + OpenAI expert recovery",
   };
 }
@@ -494,6 +496,7 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
   const schema = sellerStrategySchema();
   const payload = {
     subject: report.facts,
+    historicalSubjectSource: report.seller?.evidence?.archiveSubject || null,
     renovationPct: pct,
     valuation: report.valuation,
     soldComparables: report.comparables,
@@ -541,7 +544,7 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
 
 async function openAiBuyerNarrative(env, report, property) {
   const schema = buyerNarrativeSchema();
-  const system = `Write a concise GTA buyer decision narrative grounded only in the supplied property facts and real sold evidence. If Expert Comp Mode was used, explain that the normal strict engine was insufficient and that broader real sales were professionally reconciled. Never invent a sale or property fact. Do not call this an appraisal. Return JSON only.`;
+  const system = `Write a concise GTA buyer decision narrative grounded only in the supplied property facts and real sold evidence. If Expert Comp Mode was used, explain that the normal strict engine was insufficient and that broader real sales were professionally reconciled. Never invent a sale or property fact. Use the final valuation numbers and confidence exactly as supplied; do not recompute them. Distinguish above-grade and basement bedrooms. Executive summary at most 55 words; market read and strategy at most 80 words each; bullets at most 22 words. Do not call this an appraisal. Return JSON only.`;
   return openAiJson(env, "thm_buyer_narrative", schema, [
     { role: "system", content: system },
     { role: "user", content: JSON.stringify({ facts: report.facts, valuation: report.valuation, comparables: report.comparables, expert: report.expert_comp_mode, remarks: property?.remarks }) },
@@ -665,6 +668,7 @@ function subjectForAi(property) {
     parking: property.parkingTotal ?? null,
     basement: property.basement || null,
     garage: property.garageType || null,
+    historicalSubjectSource: property.sellerEvidence?.archiveSubject || null,
     remarks: clean(property.remarks)?.slice(0, 1200) || null,
   };
 }

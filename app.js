@@ -975,6 +975,7 @@ for (const tile of document.querySelectorAll("[data-discovery]")) {
     event.preventDefault();
     history.pushState(null, "", tile.getAttribute("href"));
     $("homeSearchQuery").value = "";
+    $("homeSearchStatus").textContent = "";
     $("discoveryType").value = tile.dataset.type || "any";
     $("discoveryBudget").value = tile.dataset.budget || "";
     $("discoveryBeds").value = tile.dataset.beds || "0";

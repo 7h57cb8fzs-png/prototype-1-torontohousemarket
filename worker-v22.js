@@ -78,12 +78,13 @@ async function drain(pending){
 function decorate(src){
   const p=JSON.parse(JSON.stringify(src||{})),f=p.facts||{},cs=Array.isArray(p.comparables)?p.comparables:[],st=normType(f.property_type||f.propertyType),sa=String(f.address||'').toLowerCase();
   const vs=cs.map(c=>{const v=num(c.adjustedIndication,c.adjustedPrice,c.adjusted_indication,c.soldPrice);if(!v)return null;let w=1;if(st&&normType(c.propertySubType||c.type)===st)w+=.65;if(sameBuilding(sa,String(c.address||'').toLowerCase()))w+=1.15;if((f.neighbourhood||f.cityRegion)&&c.cityRegion&&norm(f.neighbourhood||f.cityRegion)===norm(c.cityRegion))w+=.35;return{v,w};}).filter(Boolean);
-  if(vs.length>=3 && (p.report_type!=="THM Seller Price Perspective" || p.seller?.evidence?.listingMatched)){
+  if(vs.length>=3 && (p.report_type!=="THM Seller Price Perspective" || (p.seller?.evidence?.subjectMatched ?? p.seller?.evidence?.listingMatched))){
     const mv=round(weightedMedian(vs)),disp=vs.reduce((s,x)=>s+x.w*Math.abs(x.v-mv)/mv,0)/vs.reduce((s,x)=>s+x.w,0),old=String(p.valuation?.confidence||'').toLowerCase(),base=old==='moderate'?.04:old==='strong'||old==='high'?.025:.065,pct=Math.max(base,Math.min(.10,disp*1.35)),low=round(mv*(1-pct)),high=round(mv*(1+pct));
     p.valuation={...(p.valuation||{}),available:true,estimated_market_value:mv,market_value:mv,midpoint:mv,low,high,likely_market_range:{low,high},range_basis:'Evidence dispersion + confidence; not a fixed percentage.'};
   }
   const sameType=cs.filter(c=>normType(c.propertySubType||c.type)===st).length,sameB=cs.filter(c=>sameBuilding(sa,String(c.address||'').toLowerCase())).length,large=cs.filter(c=>{const s=num(c.soldPrice),a=num(c.adjustedIndication,c.adjustedPrice,c.adjusted_indication);return s&&a&&Math.abs(a-s)/s>=.15;}).length;
   let q='Limited';if(cs.length>=4&&large<=1&&(sameType>=3||sameB>=2))q='Strong';else if(cs.length>=3&&large<=2)q='Moderate';
+  if (/^(low|limited)$/i.test(p.valuation?.confidence||'') || p.comparable_policy?.retrievalCapped || p.comparable_policy?.expandedWindow || p.comparable_policy?.sizeFallbackUsed || p.seller?.evidence?.archiveSubject) q='Limited';
   p.evidence_quality={label:q,candidate_count:num(p.comparable_policy?.candidateCount,p.expert_comp_mode?.candidateCount),selected_count:cs.length,same_subtype_selected:sameType,same_building_selected:sameB,large_adjustment_count:large};
   if(p.valuation)p.valuation.confidence=q;
   const value=num(p.valuation?.estimated_market_value,p.valuation?.midpoint),ask=num(f.list_price,f.listPrice);

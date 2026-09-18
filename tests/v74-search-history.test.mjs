@@ -3,8 +3,22 @@ import assert from 'node:assert/strict';
 import {basicSearch,homeSearch} from '../discovery-search.js';
 import {resolveSellerSubject,discoverySelection} from '../worker-v11.js';
 import {reportFetch} from '../report-runtime.js';
+import {validatedArchive,sellerArchiveKey} from '../seller-archive.js';
+import {reportPriceGraphic,sellerReportEmail} from '../worker-v11.js';
 const originalFetch=globalThis.fetch;
 const json=d=>new Response(JSON.stringify(d),{headers:{'Content-Type':'application/json'}});
+test('reviewed archives preserve exact identity and never import historical prices',()=>{
+  const parsed={number:'38',name:'oak',suffix:'avenue',city:'Richmond Hill'};
+  assert.equal(sellerArchiveKey(parsed),'38|oak|avenue|||richmondhill');
+  const row={id:'fixture',verified_at:'2026-09-18',source_date:'2017-01-27',source_url:'https://example.com/archive',facts:{UnparsedAddress:'38 Oak Avenue, Richmond Hill',City:'Richmond Hill',PropertySubType:'Detached',BedroomsAboveGrade:4,ClosePrice:6500,ListPrice:6500}};
+  const r=validatedArchive(row,parsed,'Richmond Hill',()=>true);assert.ok(r._sellerArchive);assert.equal(r.ClosePrice,undefined);assert.equal(r.ListPrice,undefined);assert.equal(r.StandardStatus,'Unknown');
+  assert.equal(validatedArchive(row,parsed,'Toronto',()=>false),null);
+  assert.equal(validatedArchive({...row,verified_at:null},parsed,'Richmond Hill',()=>true),null);
+});
+test('new confidence labels remain visible and an empty seller report makes no calculation claim',()=>{
+  for(const confidence of ['Moderate','Strong','Limited'])assert.equal(reportPriceGraphic({valuation:{available:true,low:800000,high:900000,confidence},comparables:[{},{},{}]}).confidence,confidence);
+  const email=sellerReportEmail('Fixture',{valuation:{available:false},seller:{evidence:{}}});assert.ok(!email.text.includes('Calculated from recovered MLS evidence'));assert.match(email.text,/No price has been calculated/);
+});
 test('AMPRE query URLs encode OData operators and multiword literals with percent spaces',async()=>{
   let url;globalThis.fetch=async input=>{url=String(input);return json({value:[]});};
   try{await reportFetch({},'https://query.ampre.ca/odata/Property?'+new URLSearchParams({'$filter':"StreetNumber eq '38' and City eq 'Richmond Hill'",'$top':'1'}));assert.ok(!url.includes('+'));assert.ok(url.includes('Richmond%20Hill'));assert.equal(new URL(url).searchParams.get('$filter'),"StreetNumber eq '38' and City eq 'Richmond Hill'");}finally{globalThis.fetch=originalFetch;}

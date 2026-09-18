@@ -35,7 +35,7 @@ test('expert fallback reuses verified raw MLS evidence with zero repeat fetches'
 test('production scheduler finalizes a weak-evidence condo, saves once, and never exposes raw pool',async()=>{
   const subject={ListingKey:'N89999999',UnparsedAddress:'99 Test Boulevard 720, Markham, ON L3R 0A1',StreetNumber:'99',StreetName:'Test',StreetSuffix:'Boulevard',UnitNumber:'720',City:'Markham',CityRegion:'Unionville',PostalCode:'L3R 0A1',PropertyType:'Residential Condo & Other',PropertySubType:'Condo Apartment',StandardStatus:'Active',TransactionType:'For Sale',ListPrice:588000,BedroomsTotal:2,BedroomsAboveGrade:2,BathroomsTotalInteger:2,LivingAreaRange:'700-799',ParkingTotal:1,PublicRemarks:'Test fixture only.',InternetAddressDisplayYN:true,InternetEntireListingDisplayYN:true};
   const rows=Array.from({length:16},(_,i)=>({...subject,ListingKey:`N${80000000+i}`,UnparsedAddress:`100 Test Boulevard ${i}, Markham, ON L3R 0A1`,StreetNumber:'100',UnitNumber:String(i),StandardStatus:'Closed',ClosePrice:550000+i*1000,PurchaseContractDate:'2026-09-01',LivingAreaRange:i===0?'700-799':'800-899'}));
-  let claimed=false,saved=null,saveCount=0,requestCount=0,openaiCalls=0;
+  let claimed=false,saved=null,saveCount=0,requestCount=0,openaiCalls=0,narrativeValuation=null;
   const narrative={executive_summary:'Test fixture summary.',market_read:'Test fixture evidence.',buyer_strategy:'Review the supplied sales.',strengths:['Two bedrooms.'],risks:['Inspect condition.'],inspection_priorities:['Check finishes.'],questions_for_realtor:['Confirm parking.']};
   globalThis.fetch=async (input,init={})=>{
     requestCount++;assert.ok(requestCount<48,'Platform request headroom must be retained');
@@ -63,6 +63,7 @@ test('production scheduler finalizes a weak-evidence condo, saves once, and neve
     if(u.hostname==='api.openai.com'){
       openaiCalls++;
       const name=body.text.format.name;
+      if(name==='thm_buyer_narrative') narrativeValuation=JSON.parse(body.input[1].content).valuation;
       const out=name==='thm_expert_comps'?{confidence:'Moderate',market_read:'Fixture sold evidence reviewed.',comparables:rows.slice(0,4).map(r=>({id:r.ListingKey,weight:0.5,adjusted_indication:560000,selection_reason:'Same local market.',adjustment_reason:'Fixture adjustment.',adjustment_basis:'professional_judgment'}))}:narrative;
       return json({output_text:JSON.stringify(out),usage:{input_tokens:100,output_tokens:100}});
     }
@@ -74,6 +75,7 @@ test('production scheduler finalizes a weak-evidence condo, saves once, and neve
     assert.equal(saveCount,1);assert.equal(saved.version_label,'Toronto House Market Version 7.4');
     assert.equal(saved.comparables.length,4);assert.ok(saved.valuation.estimated_market_value>0);
     assert.equal(saved.model_policy.terra_review,false);assert.ok(saved.execution_telemetry.request_count<34);
+    assert.deepEqual(narrativeValuation,saved.valuation,'Narrative must see the final published numbers and confidence');
     assert.equal(openaiCalls,2);assert.equal(saved.execution_telemetry.ai_usage.length,2);
     for(const c of saved.comparables)assert.equal(c.soldPrice,rows.find(r=>r.ListingKey===c.listingKey).ClosePrice);
     assert.equal('rawRows' in saved,false);assert.ok(!JSON.stringify(saved).includes('test-only'));
