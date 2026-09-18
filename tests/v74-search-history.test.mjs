@@ -63,3 +63,9 @@ test('archived seller facts with missing interior size receive the broader Luna 
  assert.equal(shouldUseExpertComp({valuation:{available:true,confidence:'Low'},comparables:Array(8).fill({}),comparable_policy:{missingSizeFallback:true,windowDays:100}}),true);
  assert.equal(shouldUseExpertComp({valuation:{available:true,confidence:'Medium'},comparables:Array(5).fill({}),comparable_policy:{windowDays:100}}),false);
 });
+
+test('seller email includes pricing reasoning and does not turn missing condition into zero percent',()=>{
+ const report={valuation:{available:true,low:800000,high:1000000,midpoint:900000},comparables:[{},{},{}],seller:{profile:{renovationPct:null},strategy:{independent_market_read:'The deep lot is a key comparison.',listing_strategy:'Confirm condition before pricing.'}}};
+ const message=sellerReportEmail('Fixture',report);
+ assert.match(message.text,/The deep lot is a key comparison/);assert.match(message.html,/Confirm condition before pricing/);assert.doesNotMatch(message.text,/renovation context: 0%/);
+});
