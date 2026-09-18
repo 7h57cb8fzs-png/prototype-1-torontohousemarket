@@ -45,6 +45,8 @@ const photoMainButton = $("photoMainButton");
 const mainPhoto = $("mainPhoto");
 const photoThumbs = $("photoThumbs");
 const photoCountBadge = $("photoCountBadge");
+const snapshotThumb = $("snapshotThumb");
+const snapshotThumbImg = $("snapshotThumbImg");
 
 const leadModal = $("leadModal");
 const closeModal = $("closeModal");
@@ -293,6 +295,8 @@ function renderPhotos(items, listing) {
   photoThumbs.innerHTML = "";
 
   if (!photos.length) {
+    snapshotThumb.classList.add("hidden");
+    snapshotThumbImg.removeAttribute("src");
     photoPlaceholder.classList.remove("hidden");
     photoMainButton.classList.add("hidden");
     photoThumbs.classList.add("hidden");
@@ -316,6 +320,21 @@ function renderPhotos(items, listing) {
   photoPlaceholder.classList.add("hidden");
   photoMainButton.classList.remove("hidden");
   photoThumbs.classList.remove("hidden");
+
+  snapshotThumb.classList.remove("hidden");
+  snapshotThumbImg.dataset.fallbackUsed = "";
+  snapshotThumbImg.src = photos[0].url;
+  snapshotThumbImg.alt = photos[0].description || `Photo of ${listing.address || "property"}`;
+  snapshotThumbImg.onerror = () => {
+    const photo = photos[0];
+    if (photo?.fallbackUrl && !snapshotThumbImg.dataset.fallbackUsed) {
+      snapshotThumbImg.dataset.fallbackUsed = "true";
+      snapshotThumbImg.src = photo.fallbackUrl;
+    } else {
+      snapshotThumb.classList.add("hidden");
+      snapshotThumbImg.removeAttribute("src");
+    }
+  };
 
   mainPhoto.src = photos[0].url;
   mainPhoto.alt = photos[0].description || `Photo of ${listing.address || "property"}`;
@@ -359,6 +378,7 @@ function usePhotoFallback(image,index) {
 }
 
 photoMainButton.addEventListener("click", () => openGallery(0));
+snapshotThumb.addEventListener("click", () => openGallery(0));
 
 function bedroomLabel(listing) {
   const primary = listing.publicListing?.bedroomsAboveGrade;
