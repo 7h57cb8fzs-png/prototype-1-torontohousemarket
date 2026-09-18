@@ -6494,6 +6494,19 @@ async function loadSellerPropertyForReport(env, lead, requestId) {
     lookupError = "Historical MLS lookup could not be completed.";
     lookupDiagnostics.error = clean5(e.message, 180);
   }
+  const previousMls = clean5(lead.metadata?.previous_mls_number || lead.metadata?.previousMlsNumber || "", 40).toUpperCase();
+  if (!raw && /^[A-Z]\d{7,9}$/.test(previousMls) && env.AMPRE_VOW_TOKEN) {
+    const byKey = await fetchPropertyByKey(previousMls, protectedEnv, false).catch(() => null);
+    const parsedAddress = sellerParsedAddress(address);
+    const requestedCity = profile.city || parsedAddress.city || "";
+    if (byKey && sellerExactHistoryMatch(parsedAddress, byKey, requestedCity)) {
+      raw = { ...byKey, _sellerHistory: [{ listingKey: byKey.ListingKey, status: byKey.StandardStatus || byKey.MlsStatus || byKey.ContractStatus || "Recorded listing", recordedAt: new Date(sellerListingTime(byKey)).toISOString() }], _sellerFactSources: {}, _sellerLookupAudit: lookupDiagnostics.queries || [], _sellerHistoryComplete: true };
+      lookupDiagnostics.previousMlsMatch = previousMls;
+      lookupError = null;
+    } else {
+      lookupDiagnostics.previousMlsMiss = previousMls;
+    }
+  }
   const verifiedCommunity = raw && hasExactCommunity(raw.CityRegion) ? raw.CityRegion : null;
   const community = verifiedCommunity || profile.community || null;
   const parsed = sellerParsedAddress(address);
