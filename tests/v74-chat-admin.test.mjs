@@ -27,7 +27,7 @@ test('AI chat searches, retains context, pages distinct homes, and answers witho
  let out=await events(await homeChat(request('2 bed condos in Richmond Hill under800k'),env,null,app));
  assert.deepEqual(out.find(x=>x.type==='results').listings.map(x=>x.listingKey),homes.slice(0,6).map(x=>x.listingKey));assert.equal(out.at(-1).ai,true);let state=out.at(-1).state;
  action='more';out=await events(await homeChat(request('Show more',state),env,null,app));assert.deepEqual(out.find(x=>x.type==='results').listings.map(x=>x.listingKey),homes.slice(6).map(x=>x.listingKey));state=out.at(-1).state;
- action='answer';out=await events(await homeChat(request('Which has most bathrooms?',state),env,null,app));assert.equal(out.some(x=>x.type==='results'),false);assert.equal(calls,1);assert.equal(plans,3);assert.equal(seen[2].previousHomes.length,12);assert.equal(seen[2].conversation.length,4);
+ action='answer';out=await events(await homeChat(request('Which has most bathrooms?',state),env,null,app));assert.equal(out.some(x=>x.type==='results'),false);assert.equal(calls,1);assert.equal(plans,3);assert.equal(seen[2].previousHomes.length,6);assert.equal(seen[2].conversation.length,4);
 });
 test('more choices with a changed budget searches the new filters instead of paging old homes',async t=>{
  const changed={...filters,maxPrice:605000};let calls=0;
@@ -126,4 +126,11 @@ test('combined home types retain houses and townhomes while excluding condos',()
  const raw=(key,type)=>({ListingKey:key,City:'Toronto',CityRegion:'Annex',UnparsedAddress:key,StandardStatus:'Active',TransactionType:'For Sale',PropertySubType:type,ListPrice:900000,BedroomsAboveGrade:3});
  const result=discoverySelection([raw('C9876001','Detached'),raw('C9876002','Att/Row/Townhouse'),raw('C9876003','Condo Apartment')],{city:'Toronto',mode:'all',type:'any',types:['detached','townhouse'],maxPrice:1200000,minBeds:2,area:'Annex'});
  assert.deepEqual(result.map(x=>x.listingKey),['C9876001','C9876002']);
+});
+
+test('an implicit comparison sees only the latest displayed search, not older homes',async t=>{
+ const old={...homes[0],listingKey:'C9876100',address:'Old search home',baths:9},current={...homes[1],listingKey:'C9876101',address:'Current search home',baths:2};
+ const state=await signChatState({filters,pool:[current],offset:1,recent:[old,current],lastShown:[current],searched:true,messages:[{role:'assistant',content:'An earlier home had 9 baths.'}]},env);
+ t.mock.method(globalThis,'fetch',async(_url,options)=>{const body=JSON.parse(options.body),input=JSON.parse(body.input[1].content);assert.deepEqual(input.previousHomes.map(h=>h.listingKey),[current.listingKey]);return body.text.format.name==='thm_conversation_plan'?llm({action:'answer',filters,propertyQuery:'',clarification:''}):llm({reply:'The current home has two bathrooms.',followups:[],referencedListingKeys:[current.listingKey]});});
+ const out=await events(await homeChat(request('Which has the most bathrooms?',state),env,null,{fetch:()=>{throw Error('No repeat MLS fetch expected');}}));assert.match(out.at(-1).reply,/two bathrooms/);
 });
