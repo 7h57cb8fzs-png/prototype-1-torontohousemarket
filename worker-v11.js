@@ -6192,10 +6192,13 @@ async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
   const number = escapeOData2(parsed.number);
   const exactAddressToken = escapeOData2([parsed.number, parsed.name].filter(Boolean).map(displayToken2).join(" "));
   const token = parsed.name.split(" ").sort((a, b) => b.length - a.length)[0];
+  const cityToken = escapeOData2(city);
   const exactQueries = [.../* @__PURE__ */ new Set([
+    `StreetNumber eq '${number}' and contains(StreetName,'${street}')`,
+    cityToken ? `contains(City,'${cityToken}') and StreetNumber eq '${number}'` : null,
     `contains(UnparsedAddress,'${exactAddressToken}')`,
     `contains(UnparsedAddress,'${exactAddressToken.toUpperCase()}')`
-  ])];
+  ].filter(Boolean))];
   const fallbackQueries = [.../* @__PURE__ */ new Set([displayToken2(token), token.toUpperCase()])].map((t) => `contains(StreetName,'${escapeOData2(t)}')`);
   const candidates = /* @__PURE__ */ new Map(), streetRecords = /* @__PURE__ */ new Map(), audit = [];
   let complete = true;
@@ -6214,7 +6217,8 @@ async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
   };
   await runFilters(exactQueries, 300);
   if (!candidates.size) await runFilters(fallbackQueries, 500);
-  if (!complete && !candidates.size && audit.some((a) => a.status === 200)) throw new Error("The exact-address MLS history search is incomplete; retry required.");
+  const exactChecksCompleted = diagnostics.queries.slice(0, exactQueries.length).some((q) => q.complete === true);
+  if (!complete && !candidates.size && !exactChecksCompleted && audit.some((a) => a.status === 200)) throw new Error("The exact-address MLS history search is incomplete; retry required.");
   if (!audit.some((a) => a.status === 200)) throw new Error("Historical MLS lookup could not be completed.");
   const rows = [...candidates.values()];
   if (!city && new Set(rows.map((r) => normalizeText(r.City).replace(/^toronto\s+[cew]\d{2}$/, "toronto"))).size !== 1) return null;
@@ -6479,7 +6483,7 @@ async function buildSellerEvidence(subject, env) {
 }
 __name(buildSellerEvidence, "buildSellerEvidence");
 async function loadSellerPropertyForReport(env, lead, requestId) {
-  const profile = { ...lead.property_snapshot.sellerProfile, upgrades: [], condition: "unknown" };
+  const profile = { ...lead.property_snapshot.sellerProfile, upgrades: [] };
   const address = lead.resolved_address || lead.metadata?.property_input || "";
   const protectedEnv = { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN };
   let raw = null, lookupError = null;
