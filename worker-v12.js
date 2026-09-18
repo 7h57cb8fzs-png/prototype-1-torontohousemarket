@@ -537,7 +537,7 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
       executive_summary: clean(result?.independent_market_read) || report.narrative?.executive_summary,
       preparation_checks: Array.isArray(result?.preparation_priorities) && result.preparation_priorities.length ? result.preparation_priorities.map(clean).filter(Boolean).slice(0,5) : report.narrative?.preparation_checks,
     },
-    ai_note: `OpenAI seller strategy · renovation context ${pct}% · owner expectation excluded from independent valuation`,
+    ai_note: `OpenAI seller strategy · renovation context ${pct == null ? "not provided" : pct + "%"} · owner expectation excluded from independent valuation`,
     analysis_mode: "Version 7: calculated sold evidence + OpenAI listing-Realtor reasoning",
   };
 }
@@ -554,11 +554,12 @@ async function openAiBuyerNarrative(env, report, property) {
 async function openAiJson(env, name, schema, input, webSearch) {
   if (!env.OPENAI_API_KEY) throw new Error("OpenAI is not configured.");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), webSearch ? 28000 : 18000);
+  const timer = setTimeout(() => controller.abort(), webSearch || name === "thm_expert_comps" ? 28000 : 18000);
   try {
     const body = {
       model: String(env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL),
-      reasoning: { effort: "medium" },
+      reasoning: { effort: name === "thm_expert_comps" ? "medium" : "low" },
+      max_output_tokens: name === "thm_expert_comps" ? 2400 : 2000,
       input,
       text: { format: { type: "json_schema", name, strict: true, schema } },
       ...(webSearch ? { tools: [{ type: "web_search" }], tool_choice: "auto" } : {}),
@@ -675,10 +676,11 @@ function subjectForAi(property) {
 
 function sellerRenovationPct(notes) {
   const match = String(notes || "").match(/\[THM_RENOVATION_PCT:(\d{1,3})\]/);
-  return match ? Math.max(0, Math.min(100, Number(match[1]))) : 50;
+  return match ? Math.max(0, Math.min(100, Number(match[1]))) : null;
 }
 
 function renovationLabel(n) {
+  if(n == null) return "Condition not provided";
   return n <= 10 ? "Mostly original / dated" : n <= 35 ? "Some updates" : n <= 60 ? "Partially renovated" : n <= 85 ? "Extensively renovated" : "Fully renovated / recent finish";
 }
 
