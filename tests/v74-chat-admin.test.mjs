@@ -29,6 +29,18 @@ test('AI chat searches, retains context, pages distinct homes, and answers witho
  action='more';out=await events(await homeChat(request('Show more',state),env,null,app));assert.deepEqual(out.find(x=>x.type==='results').listings.map(x=>x.listingKey),homes.slice(6).map(x=>x.listingKey));state=out.at(-1).state;
  action='answer';out=await events(await homeChat(request('Which has most bathrooms?',state),env,null,app));assert.equal(out.some(x=>x.type==='results'),false);assert.equal(calls,1);assert.equal(plans,3);assert.equal(seen[2].previousHomes.length,12);assert.equal(seen[2].conversation.length,4);
 });
+test('more choices with a changed budget searches the new filters instead of paging old homes',async t=>{
+ const changed={...filters,maxPrice:605000};let calls=0;
+ const state=await signChatState({filters,pool:homes,offset:6,recent:homes.slice(0,6)},env);
+ t.mock.method(globalThis,'fetch',async(_url,options)=>{
+  const body=JSON.parse(options.body),input=JSON.parse(body.input[1].content);
+  if(body.text.format.name==='thm_conversation_plan')return llm({action:'more',filters:changed,propertyQuery:'',clarification:''});
+  assert.equal(input.filters.maxPrice,605000);return llm({reply:'Here are the homes within your new budget.',followups:[],referencedListingKeys:[]});
+ });
+ const app={fetch:async r=>{calls++;assert.equal(new URL(r.url).searchParams.get('maxPrice'),'605000');return response({ok:true,listings:homes.filter(h=>h.listPrice<=605000)});}};
+ const out=await events(await homeChat(request('Show more but under $605k',state),env,null,app)),result=out.find(x=>x.type==='results');
+ assert.equal(calls,1);assert.equal(result.filters.maxPrice,605000);assert.ok(result.listings.every(h=>h.listPrice<=605000));assert.equal(result.shown,6);
+});
 test('clarification produces no guessed listings and external origin is rejected',async t=>{
  t.mock.method(globalThis,'fetch',async()=>llm({action:'clarify',filters,propertyQuery:'',clarification:'Which GTA city would you like?'}));
  const out=await events(await homeChat(request('homes in Montreal'),env,null,{fetch:()=>{throw Error('Must not query');}}));assert.equal(out.at(-1).reply,'Which GTA city would you like?');

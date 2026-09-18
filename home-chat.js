@@ -83,6 +83,9 @@ Preserve prior filters unless changed/removed. A new city clears the old area. A
 Schools, transit distance, lifestyle, walkability, condition, pools, yards, investment returns cannot be verified with these fields; preserve those requests in checks, explain that they need verification, and still search the verifiable filters. For rentals, explain this finder currently covers homes for sale; don't return sale results as rentals. With no prior context, do not search a default city without naming it in a clarification. When greeting, ask which city/budget/type. clarification is only a concise user-facing question/message for clarify; otherwise empty.`,
     {message:query,previousFilters:previous?.filters||DEFAULT,hasPreviousSearch:!!previous?.pool?.length,conversation:previous?.messages||[],previousHomes:previous?.recent||[],supportedCities:CITIES},1300);
   if(!['search','more','answer','clarify','property'].includes(plan.action)||!validChatFilters(plan.filters)||typeof plan.propertyQuery!=='string'||plan.propertyQuery.length>300||typeof plan.clarification!=='string')throw Error('Invalid search plan');
+  // A request for "more" can also change a budget or preference. Never page the
+  // old pool when the planner supplied different filters, even if its action errs.
+  if(plan.action==='more'&&(!previous?.pool?.length||Object.keys(DEFAULT).some(k=>JSON.stringify(plan.filters[k])!==JSON.stringify(previous.filters[k]))))plan.action='search';
   let filters=plan.filters,pool=previous?.pool||[],offset=previous?.offset||0,homes=[],coverage=previous?.coverage||{},checkedAt=previous?.checkedAt||null,note='';
   if(plan.action==='clarify'){
     const reply=plan.clarification.slice(0,900)||'Which GTA city would you like to explore?';
