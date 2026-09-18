@@ -1,0 +1,24 @@
+name: Validate seller V7.3 policy
+on:
+  push:
+    branches: [fix-seller-v73-policy-20260917]
+    paths:
+      - worker-v11.js
+      - worker-v12.js
+      - tests/seller-v73-policy.test.mjs
+      - .github/workflows/validate-seller-v73-policy.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate seller policy
+        run: |
+          set -euo pipefail
+          node --check worker-v11.js
+          node --check worker-v12.js
+          node --test tests/seller-v73-policy.test.mjs
