@@ -19,3 +19,6 @@ wrangler*.json
 seller-archive.js
 
 home-chat.js
+
+listing-query.js
+report-graphics.js

@@ -85,3 +85,39 @@ test('property chat canonicalizes the explicit MLS and uses fresh public listing
  const out=await events(await homeChat(request('Tell me about MLS N1000000. What should I check?'),env,null,app));
  assert.equal(out.find(x=>x.type==='results').listings.length,1);assert.equal(out.at(-1).ai,true);
 });
+
+test('neighbourhood and brokerage searches query their MLS scope, then enforce all public filters',async t=>{
+ const calls=[];
+ const records=[{ListingKey:'C9876543',City:'Toronto',CityRegion:'Annex',UnparsedAddress:'12 Annex Street',StandardStatus:'Active',TransactionType:'For Sale',PropertySubType:'Condo Apartment',ListPrice:750000,BedroomsAboveGrade:2,ListOfficeName:'CENTURY 21 LEADING EDGE REALTY INC.'},{ListingKey:'C9876544',City:'Toronto',CityRegion:'Annex',UnparsedAddress:'14 Annex Street',StandardStatus:'Active',TransactionType:'For Sale',PropertySubType:'Condo Apartment',ListPrice:700000,BedroomsAboveGrade:2,ListOfficeName:'Another Brokerage'},{ListingKey:'C9876545',City:'Toronto',CityRegion:'Annex',UnparsedAddress:'Hidden Street',StandardStatus:'Active',TransactionType:'For Sale',PropertySubType:'Condo Apartment',ListPrice:600000,BedroomsAboveGrade:2,ListOfficeName:'CENTURY 21 LEADING EDGE REALTY INC.',InternetAddressDisplayYN:false}];
+ t.mock.method(globalThis,'fetch',async input=>{const u=new URL(input);calls.push(u);assert.equal(u.searchParams.get('$filter'),"contains(CityRegion,'Annex')");return response({'@odata.count':records.length,value:records});});
+ const r=await worker.fetch(new Request('https://example.com/api/discovery?query=true&city=Toronto&mode=all&area=the%20annex&minBeds=2&brokerage=Century%2021%20Leading%20Edge'),env,{}),d=await r.json();
+ assert.equal(d.ok,true);assert.equal(calls.length,1);assert.equal(d.coverage.partial,false);assert.deepEqual(d.listings.map(h=>h.listingKey),['C9876543']);
+});
+
+test('scope inventory is shared across bedroom and brokerage refinements',async t=>{
+ const cache=new Map(),old=globalThis.caches,pending=[];globalThis.caches={default:{match:async k=>cache.get(k.url)?.clone(),put:async(k,r)=>cache.set(k.url,r.clone())}};t.after(()=>{if(old===undefined)delete globalThis.caches;else globalThis.caches=old;});
+ let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;return response({'@odata.count':1,value:[{ListingKey:'C9876543',City:'Toronto',CityRegion:'Annex',UnparsedAddress:'12 Annex Street',StandardStatus:'Active',TransactionType:'For Sale',PropertySubType:'Detached',ListPrice:1500000,BedroomsAboveGrade:3}]});});
+ for(const beds of [2,3]){const r=await worker.fetch(new Request('https://example.com/api/discovery?query=true&city=Toronto&mode=all&area=Annex&minBeds='+beds),env,{waitUntil:p=>pending.push(p)});assert.equal(r.status,200);await Promise.all(pending);}
+ assert.equal(calls,1);
+});
+
+test('listing query literals are escaped and brokerage matching cannot broaden to another office',async()=>{
+ const {listingFilter,brokerageMatches}=await import('../listing-query.js');
+ const filter=listingFilter({city:'Toronto',area:"O'Brien",brokerage:'Century 21 Leading Edge',maxPrice:900000,minBeds:2},['Condo Apartment']);
+ assert.match(filter,/o''brien/);assert.match(filter,/ListPrice le 900000/);assert.match(filter,/BedroomsAboveGrade ge 2/);
+ assert.equal(brokerageMatches('CENTURY 21 LEADING EDGE REALTY INC.','Century 21 Leading Edge'),true);assert.equal(brokerageMatches('CENTURY 21 OTHER REALTY','Century 21 Leading Edge'),false);
+});
+
+test('provider failures produce an error, never an empty-market claim',async t=>{
+ t.mock.method(globalThis,'fetch',async()=>new Response('upstream unavailable',{status:503}));
+ const r=await worker.fetch(new Request('https://example.com/api/discovery?query=true&city=Toronto&mode=all&area=Annex'),env,{});assert.equal(r.status,502);assert.equal((await r.json()).ok,false);
+});
+
+test('email infographics use actual sold prices and omit unsupported value ranges',async()=>{
+ const {valueRangeGraphic,soldComparisonGraphic}=await import('../report-graphics.js');
+ const comps=[{address:'One',soldPrice:800000,adjustedPrice:900000,soldDate:'2026-08-01'},{address:'Two',soldPrice:1000000,soldDate:'2026-08-02'},{address:'Three',soldPrice:900000,soldDate:'2026-08-03'}];
+ const chart=soldComparisonGraphic(comps);assert.match(chart,/width="80.00%"/);assert.match(chart,/Adjusted comparison: \$900,000/);assert.match(chart,/Every bar starts at \$0/);
+ assert.equal(valueRangeGraphic({valuation:{available:false},comparables:comps}),'');
+ assert.equal(valueRangeGraphic({valuation:{available:true,low:800000,midpoint:900000,high:1000000},comparables:comps.slice(0,2)}),'');
+ assert.match(valueRangeGraphic({valuation:{available:true,low:800000,midpoint:900000,high:1000000},comparables:comps}),/YOUR VALUE AT A GLANCE/);
+});

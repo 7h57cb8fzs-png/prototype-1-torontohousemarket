@@ -27,7 +27,9 @@ export function listingFilter(o,types){
 const inflight=new Map();
 export async function queryListingInventory(options,types,origin,env,ctx,read){
   const filter=listingFilter(options,types),order=options.sort==='price_asc'?'ListPrice asc,ListingKey desc':options.sort==='price_desc'?'ListPrice desc,ListingKey desc':options.sort==='beds_desc'?'BedroomsAboveGrade desc,ListingKey desc':'OriginalEntryTimestamp desc,ListingKey desc';
-  const cache=typeof caches!=='undefined'?caches.default:null,key=new Request(new URL('/internal-idx-query/v1?'+new URLSearchParams({filter,order}),origin));
+  const area=canonicalArea(options.area),office=searchText(options.brokerage).split(' ').filter(t=>!['century','realty','brokerage','inc','ltd'].includes(t)).sort((a,b)=>b.length-a.length)[0];
+  const narrowScope=area?`contains(CityRegion,'${quote(area)}')`:office?`contains(ListOfficeName,'${quote(office.toUpperCase())}')`:null;
+  const cache=typeof caches!=='undefined'?caches.default:null,key=new Request(new URL('/internal-idx-query/v2?'+new URLSearchParams({filter:narrowScope||filter,order:narrowScope?'':order}),origin));
   const hit=await cache?.match(key);if(hit)return hit.json();
   if(inflight.has(key.url))return inflight.get(key.url);
   const task=(async()=>{
@@ -37,16 +39,14 @@ export async function queryListingInventory(options,types,origin,env,ctx,read){
       if(!r.ok){const e=Error('MLS query could not be completed');e.status=r.status;throw e;}
       const d=await r.json();if(!Array.isArray(d.value))throw Error('Invalid MLS response');return d;
     }
-    let first,sort=order,scope=filter,method='filtered';
+    let first,sort=narrowScope?'':order,scope=narrowScope||filter,method=narrowScope?'scoped':'filtered';
     try{first=await page(scope,sort,0,true);}catch(e){
       if(![400,422,501].includes(e.status))throw e;
       sort='';try{first=await page(scope,sort,0,true);}catch(inner){if(![400,422,501].includes(inner.status))throw inner;}
     }
     // Some licensed feeds support only simple string scopes. Scope these requests
     // to the named area/office, never the last 500 rows of an entire city.
-    if(!first||(!first.value.length&&(options.area||options.brokerage))){
-      const area=canonicalArea(options.area);
-      const office=searchText(options.brokerage).split(' ').filter(t=>!['century','realty','brokerage','inc','ltd'].includes(t)).sort((a,b)=>b.length-a.length)[0];
+    if(!first||(method==='filtered'&&!first.value.length&&(options.area||options.brokerage))){
       scope=area?`contains(CityRegion,'${quote(area)}')`:office?`contains(ListOfficeName,'${quote(office.toUpperCase())}')`:`contains(City,'${quote(options.city)}')`;
       sort='';method='scoped';first=await page(scope,sort,0,true);
     }

@@ -948,7 +948,7 @@ function chatCards(turn,data){
   const section=document.createElement('section');section.className='chat-results';section.setAttribute('aria-label','Homes for this search');
   const top=document.createElement('div');top.className='chat-results-top';
   const filters=data.filters||{};
-  const label=[filters.cities?.join(' & '),filters.type==='any'?'':filters.type?.replaceAll('_',' '),filters.minBeds?`${filters.minBeds}${filters.maxBeds===filters.minBeds?'':'+'} bed`:'',filters.maxPrice?`under ${money(filters.maxPrice)}`:''].filter(Boolean).join(' · ');
+  const label=[filters.area||filters.cities?.join(' & '),filters.brokerage,filters.type==='any'?'':filters.type?.replaceAll('_',' '),filters.minBeds?`${filters.minBeds}${filters.maxBeds===filters.minBeds?'':'+'} bed`:'',filters.maxPrice?`under ${money(filters.maxPrice)}`:''].filter(Boolean).join(' · ');
   top.append(chatText('strong','chat-filter-label',label||'Your homes'));
   const controls=document.createElement('div');controls.className='chat-carousel-controls';
   const count=chatText('span','',`${data.listings.length} ${data.listings.length===1?'home':'homes'}`);
@@ -975,8 +975,9 @@ async function sendHomeChat(message){
   const generation=chatGeneration;chatBusy=true;chatController=new AbortController();
   $('homeSearchSubmit').disabled=true;$('homeSearchStatus').textContent='';$('homeSearchQuery').value='';
   $('explore').classList.add('conversing');
-  for(const group of chatRoot.querySelectorAll('.chat-followups'))group.remove();
-  for(const previousTurn of chatRoot.querySelectorAll('.chat-turn'))previousTurn.open=false;
+  for(const group of document.querySelectorAll('#explore .chat-followups, #explore .chat-more'))group.remove();
+  for(const previousTurn of chatRoot.querySelectorAll('.chat-turn')){previousTurn.open=false;$('chatHistoryTurns').append(previousTurn);}
+  const previousCount=$('chatHistoryTurns').children.length;$('chatHistory').hidden=!previousCount;$('chatHistory').open=false;$('chatHistoryLabel').textContent=`Earlier messages (${previousCount})`;
   const turn=document.createElement('details');turn.className='chat-turn';turn.open=true;
   turn.append(chatText('summary','chat-turn-title',message));
   const status=chatText('p','chat-thinking','Understanding your search…');status.setAttribute('role','status');turn.append(status);chatRoot.append(turn);chatBottom();
@@ -992,7 +993,7 @@ async function sendHomeChat(message){
       if(data.type==='results'){
         received=true;status.remove();
         if(data.listings.length)chatCards(turn,data);
-        else turn.append(chatText('p','chat-empty',data.note||'No matching homes in this selection. Let’s adjust the search.'));
+        else if(data.note)turn.append(chatText('p','chat-empty',data.note));
         status.textContent='Reading the details for you…';turn.append(status);chatBottom();
       }
       if(data.type==='answer'){
@@ -1015,12 +1016,12 @@ async function sendHomeChat(message){
   }
 }
 $('homeSearchForm').addEventListener('submit',event=>{event.preventDefault();if($('homeSearchForm').reportValidity())sendHomeChat($('homeSearchQuery').value);});
-for(const tile of document.querySelectorAll('[data-discovery]'))tile.addEventListener('click',event=>{event.preventDefault();const label=tile.textContent.trim();sendHomeChat(`${label} in Toronto`);});
+for(const tile of document.querySelectorAll('[data-chat-prompt]'))tile.addEventListener('click',()=>sendHomeChat(tile.dataset.chatPrompt));
 $('chatNew').addEventListener('click',()=>{
-  chatGeneration++;chatController?.abort();chatBusy=false;chatState=null;chatRoot.replaceChildren();$('explore').classList.remove('conversing');$('homeSearchQuery').value='';$('homeSearchStatus').textContent='';$('homeSearchSubmit').disabled=false;$('homeSearchQuery').placeholder='Try: 3-bed townhouse in Vaughan under $1M';chatScroll.scrollTop=0;$('homeSearchQuery').focus({preventScroll:true});
+  chatGeneration++;chatController?.abort();chatBusy=false;chatState=null;chatRoot.replaceChildren();$('chatHistoryTurns').replaceChildren();$('chatHistory').hidden=true;$('chatHistory').open=false;$('explore').classList.remove('conversing');$('homeSearchQuery').value='';$('homeSearchStatus').textContent='';$('homeSearchSubmit').disabled=false;$('homeSearchQuery').placeholder='Where would you love to live?';chatScroll.scrollTop=0;$('homeSearchQuery').focus({preventScroll:true});
 });
-chatRoot.addEventListener('error',event=>{if(event.target?.tagName==='IMG')event.target.style.display='none';},true);
-chatRoot.addEventListener('click',event=>{
+$('explore').addEventListener('error',event=>{if(event.target?.tagName==='IMG')event.target.style.display='none';},true);
+$('explore').addEventListener('click',event=>{
   const ask=event.target.closest('[data-ask-home]');if(ask){sendHomeChat(`Tell me about MLS ${ask.dataset.askHome}. What should I check before viewing?`);return;}
   const share=event.target.closest('[data-share-listing]');if(share){openListingShare({listingKey:share.dataset.shareListing,address:share.dataset.shareAddress,forSale:true});return;}
   const link=event.target.closest('[data-open-listing]');if(!link||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
