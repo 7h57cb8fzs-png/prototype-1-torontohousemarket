@@ -226,6 +226,16 @@
         <div id="chatWelcome" class="chat-welcome">
           <p class="finder-hint">Where would you love to live?</p>
           <p class="finder-examples">Try: homes in Richmond Hill under $700K · luxury homes over $3M · condos in Toronto</p>
+          <nav class="finder-category-grid" aria-label="Home search categories">
+            <button type="button" data-chat-prompt="Show just listed homes in Toronto"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.3"/><path d="M12 7v5l3 2"/></svg></span><span>Just listed</span></button>
+            <button type="button" data-chat-prompt="Show price-reduced homes in Toronto"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 6 6 6 3-3 5 5"/><path d="M14 14h5v-5"/></svg></span><span>Price reduced</span></button>
+            <button type="button" data-chat-prompt="Show detached homes in Toronto"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 11 8-7 8 7v9H4z"/><path d="M9 20v-6h6v6"/></svg></span><span>Detached homes</span></button>
+            <button type="button" data-chat-prompt="Show luxury homes in Toronto over $3 million"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/></svg></span><span>Luxury $3M+</span></button>
+            <button type="button" data-chat-prompt="Show homes in Toronto under $700K"><span class="category-icon" aria-hidden="true"><span>$</span></span><span>Under $700K</span></button>
+            <button type="button" data-chat-prompt="Show condos in Toronto"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 20V5h10v15M15 9h4v11M8 8h3M8 12h3M8 16h3"/></svg></span><span>Condos</span></button>
+            <button type="button" data-chat-prompt="Show homes in Toronto with 4 or more bedrooms"><span class="category-icon category-icon-beds" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 11 8-7 8 7v9H4z"/><path d="M8 20v-5h8v5"/></svg><b>4</b></span><span>4+ bedrooms</span></button>
+            <button type="button" data-chat-prompt="Show townhouses in Toronto"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 11 5-5 5 5v9H3zM11 11l5-5 5 5v9h-9z"/><path d="M6 20v-5h4v5M14 20v-5h4v5"/></svg></span><span>Townhouses</span></button>
+          </nav>
         </div>
         <div class="chat-scroll" id="chatScroll" tabindex="0" aria-label="Home search conversation">
           <details class="chat-history" id="chatHistory" hidden><summary id="chatHistoryLabel">Earlier messages</summary><div id="chatHistoryTurns"></div></details>
