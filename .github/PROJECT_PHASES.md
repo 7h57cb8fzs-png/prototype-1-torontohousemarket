@@ -152,3 +152,14 @@ Superseded valuation policy: Seller Evidence v1 now runs independently of buildC
 - Clipboard denial leaves a selected manually copyable URL; native cancellation is neutral. Four synthetic sharing tests cover these paths. No messages are sent during verification.
 
 Sharing release: published cbaa6728-271f-4695-93d4-8bc2cc68de7c from commit 35f72b1c353ec8738abc4d4c35f6492bea67f34e; rollback 632f2362-ba9e-4f66-8dbe-e1f45c99e329. Successful release run 35013396283. Worker source remains 15af5cc85d4544abd03ea9dbbf1891ef6415cb3e74ac992ce4cba311a42540da. All 50 focused tests and 15 asset checks passed. Existing Lonsdale sample used to verify direct-link landing and Share action in production; preview dialog and clipboard success visually verified. Native device sharing tested synthetically only. No social messages, leads or report emails sent.
+
+
+## Version 7.4 — completed 2026-09-18
+
+- Final scope: compact OpenAI MLS finder below the buyer address/snapshot, collapsed older turns, working reset and follow-ups; faster shared listing retrieval/photos; seller history recovery including 38 Oak Avenue; concise report summaries; saved report/email copies beside each admin lead.
+- Removed the extra seller skip link. Seller form entry now validates the address without waiting for public MLS scanning; Oak advanced in 318ms. Historical recovery occurs during report generation.
+- Release commit `d38023eb35ee87f510a132d1987562b297eb05e5`; successful release run `35345208048`; Worker `63467094-008f-4383-9226-5c60d2c120f2`; server source SHA256 `78343e31c6fed6394a896501bccb9b2a01d50451f13134b4a8026d502b6648fd`. Assets also independently hash-verified. Rollback: `a97d6ef4-0f0b-4dcd-bcfd-11ece2bb6f79`. Main unchanged; existing bindings/settings/cron preserved.
+- 31 focused regression checks passed. Live preview and production conversations, specific MLS query, property snapshot, reset, collapsed history, and responsive layouts reviewed. Full authenticated admin UI unavailable; authorization/scoping tested and actual saved copies verified in the database.
+- Eleven unique report requests completed: initial three buyers/three older sellers, followed by five more including condos. Corrected delivered copies read in Gmail. After final release, reformatted Yonge unit 505 buyer email and a fresh Oak seller request were checked again, including persisted exact email and report data.
+- Fresh Oak report arrived in about 103 seconds including scheduled queue wait; five recent sold comparisons, Limited confidence, dated archive specifications and unknown current condition/size. No universal historical coverage or sub-minute email guarantee.
+- Full evidence and remaining limits: `.github/VERSION_7_4_VERIFICATION.md`.
