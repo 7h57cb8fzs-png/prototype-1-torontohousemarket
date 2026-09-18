@@ -3344,6 +3344,8 @@ var VERIFIED_PROPTX_HISTORY = /* @__PURE__ */ new Map([
 var worker_v11_default = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/api/address-suggestions" && request.method === "POST") return addressSuggestions(request, env);
+    if (url.pathname === "/api/address-selection" && request.method === "POST") return addressSuggestions(request, env, true);
     if (url.hostname.endsWith(".workers.dev") && url.hostname.split(".")[0] !== "prototype-1-torontohousemarket" && !["GET", "HEAD"].includes(request.method) && !(url.pathname === "/api/home-assistant" && request.method === "POST")) return json7({ ok: false, error: "This preview does not accept changes or showing requests." }, 403);
     if (url.pathname === "/api/version") return json7({ ok: true, version: VERSION4, snapshot: "authorized-public-idx-facts", schoolEnrichment: "free-public-nearest-school", schoolAiConfigured: false, comparables: "protected-post-form-sold-evidence", reports: "vow-data-gemini-primary-openrouter-fallback", operations: "admin-and-job-queue", vowAccess: env.VOW_ACCESS_ENABLED === "true" });
     if (url.pathname === "/api/school-enrichment" && request.method === "GET") return schoolEnrichment(request, env);
