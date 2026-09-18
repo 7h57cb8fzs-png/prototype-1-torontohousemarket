@@ -951,7 +951,7 @@ function chatCards(turn,data){
   const label=[filters.cities?.join(' & '),filters.type==='any'?'':filters.type?.replaceAll('_',' '),filters.minBeds?`${filters.minBeds}${filters.maxBeds===filters.minBeds?'':'+'} bed`:'',filters.maxPrice?`under ${money(filters.maxPrice)}`:''].filter(Boolean).join(' · ');
   top.append(chatText('strong','chat-filter-label',label||'Your homes'));
   const controls=document.createElement('div');controls.className='chat-carousel-controls';
-  const count=chatText('span','',`${data.listings.length} homes`);
+  const count=chatText('span','',`${data.listings.length} ${data.listings.length===1?'home':'homes'}`);
   const prev=chatText('button','','←'),next=chatText('button','','→');
   for(const [b,label]of [[prev,'Previous homes'],[next,'Next homes']]){b.type='button';b.setAttribute('aria-label',label);}
   controls.append(count,prev,next);top.append(controls);section.append(top);
