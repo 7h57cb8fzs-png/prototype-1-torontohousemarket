@@ -948,7 +948,7 @@ function chatCards(turn,data){
   const section=document.createElement('section');section.className='chat-results';section.setAttribute('aria-label','Homes for this search');
   const top=document.createElement('div');top.className='chat-results-top';
   const filters=data.filters||{};
-  const label=[filters.area||filters.cities?.join(' & '),filters.brokerage,filters.type==='any'?'':filters.type?.replaceAll('_',' '),filters.minBeds?`${filters.minBeds}${filters.maxBeds===filters.minBeds?'':'+'} bed`:'',filters.maxPrice?`under ${money(filters.maxPrice)}`:''].filter(Boolean).join(' · ');
+  const label=[filters.area||filters.cities?.join(' & '),filters.brokerage,filters.types?.length?filters.types.join(' / ').replaceAll('_',' '):filters.type==='any'?'':filters.type?.replaceAll('_',' '),filters.minBeds?`${filters.minBeds}${filters.maxBeds===filters.minBeds?'':'+'} bed`:'',filters.maxPrice?`under ${money(filters.maxPrice)}`:''].filter(Boolean).join(' · ');
   top.append(chatText('strong','chat-filter-label',label||'Your homes'));
   const controls=document.createElement('div');controls.className='chat-carousel-controls';
   const count=chatText('span','',`${data.listings.length} ${data.listings.length===1?'home':'homes'}`);
@@ -993,7 +993,7 @@ async function sendHomeChat(message){
       if(data.type==='results'){
         received=true;status.remove();
         if(data.listings.length)chatCards(turn,data);
-        else if(data.note)turn.append(chatText('p','chat-empty',data.note));
+        else {const f=data.filters||{};turn.append(chatText('p','chat-filter-label',[f.area||f.cities?.join(' & '),f.brokerage,f.minBeds?`${f.minBeds}+ bed`:'',f.maxPrice?`under ${money(f.maxPrice)}`:''].filter(Boolean).join(' · ')));if(data.note)turn.append(chatText('p','chat-empty',data.note));}
         status.textContent='Reading the details for you…';turn.append(status);chatBottom();
       }
       if(data.type==='answer'){

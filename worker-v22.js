@@ -16,7 +16,7 @@ export default {
     if(url.pathname==='/api/home-chat' && request.method==='POST') return homeChat(request,env,ctx,legacyApp);
     if(url.pathname==='/api/home-search' && request.method==='GET') return homeSearch(request,env,ctx,legacyApp);
     if(url.pathname==='/api/version') return json({
-      ok:true,version:VERSION,release:'7.4',
+      ok:true,version:VERSION,release:'7.4',chat_model:LUNA,chat_search:'neighbourhood and brokerage scoped MLS queries',
       valuation:'Estimated Market Value + Likely Market Range',
       candidate_policy:'broad VOW evidence when strict evidence is insufficient; structural attributes are relevance signals',
       openai_policy:'Luna first; Terra only for compound severe complexity',

@@ -121,3 +121,9 @@ test('email infographics use actual sold prices and omit unsupported value range
  assert.equal(valueRangeGraphic({valuation:{available:true,low:800000,midpoint:900000,high:1000000},comparables:comps.slice(0,2)}),'');
  assert.match(valueRangeGraphic({valuation:{available:true,low:800000,midpoint:900000,high:1000000},comparables:comps}),/YOUR VALUE AT A GLANCE/);
 });
+
+test('combined home types retain houses and townhomes while excluding condos',()=>{
+ const raw=(key,type)=>({ListingKey:key,City:'Toronto',CityRegion:'Annex',UnparsedAddress:key,StandardStatus:'Active',TransactionType:'For Sale',PropertySubType:type,ListPrice:900000,BedroomsAboveGrade:3});
+ const result=discoverySelection([raw('C9876001','Detached'),raw('C9876002','Att/Row/Townhouse'),raw('C9876003','Condo Apartment')],{city:'Toronto',mode:'all',type:'any',types:['detached','townhouse'],maxPrice:1200000,minBeds:2,area:'Annex'});
+ assert.deepEqual(result.map(x=>x.listingKey),['C9876001','C9876002']);
+});
