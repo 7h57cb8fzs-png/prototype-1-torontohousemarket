@@ -499,25 +499,13 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
     activeCompetition: report.active_comparables,
     sellerExpectation: expectation ? { low: expectation.low, high: expectation.high } : null,
   };
-  const system = `Act as an experienced GTA listing Realtor. Produce seller-specific pricing and positioning reasoning. The renovation percentage is the owner's broad subjective description, not a mechanical price adjustment. Decide whether condition is materially value-driving for this particular property and market. Never let the seller's expected minimum/maximum set or bias the independent valuation; compare expectations only after forming your view. Use sold evidence first and active listings only as competition/context. Distinguish market value, likely sale range and listing strategy. Do not promise a sale price. Return JSON only.`;
+  const system = `Act as an experienced GTA listing Realtor. Produce seller-specific pricing and positioning reasoning. The renovation percentage is the owner's broad subjective description, not a mechanical price adjustment. Use it only as qualitative context when interpreting the sold evidence and current competition. Do not output or apply a percentage adjustment to the valuation. Decide whether condition is materially value-driving for this particular property and market. Never let the seller's expected minimum/maximum set or bias the independent valuation; compare expectations only after forming your view. Use sold evidence first and active listings only as competition/context. Distinguish market value, likely sale range and listing strategy. Do not promise a sale price. Return JSON only.`;
   const result = await openAiJson(env, "thm_seller_strategy", schema, [
     { role: "system", content: system },
     { role: "user", content: JSON.stringify(payload) },
   ], false);
 
-  const base = report.valuation || {};
-  let valuation = base;
-  if (base.available && Number.isFinite(Number(result?.condition_adjustment_pct))) {
-    const adjustment = Math.max(-12, Math.min(12, Number(result.condition_adjustment_pct))) / 100;
-    const low = roundMarket(Number(base.low) * (1 + adjustment));
-    const mid = roundMarket(Number(base.midpoint) * (1 + adjustment));
-    const high = roundMarket(Number(base.high) * (1 + adjustment));
-    valuation = {
-      ...base,
-      low, midpoint: mid, high,
-      basis: `${base.basis || "Sold evidence reviewed."} Version 7 condition context: ${pct}% owner-reported renovation level; AI judged a ${Math.round(adjustment*1000)/10}% reconciliation adjustment. This is professional judgment, not a fixed renovation formula.`,
-    };
-  }
+  const valuation = report.valuation || {};
 
   return {
     ...report,
@@ -526,7 +514,11 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
       ...(report.seller || {}),
       renovation_pct: pct,
       renovation_label: renovationLabel(pct),
-      condition_adjustment_pct: Number.isFinite(Number(result?.condition_adjustment_pct)) ? Math.max(-12, Math.min(12, Number(result.condition_adjustment_pct))) : 0,
+      condition_context: {
+        renovation_pct: pct,
+        treatment: "context_only",
+        note: "Owner-reported renovation level informs the Realtor-style interpretation of evidence; it is not applied as a fixed percentage or dollar adjustment."
+      },
       strategy: {
         independent_market_read: clean(result?.independent_market_read),
         likely_sale_range: clean(result?.likely_sale_range),
@@ -633,7 +625,6 @@ function sellerStrategySchema() {
   return {
     type: "object", additionalProperties: false,
     properties: {
-      condition_adjustment_pct: { type: "number", minimum: -12, maximum: 12 },
       independent_market_read: { type: "string" },
       likely_sale_range: { type: "string" },
       listing_strategy: { type: "string" },
@@ -641,7 +632,7 @@ function sellerStrategySchema() {
       value_drivers: { type: "array", minItems: 1, maxItems: 5, items: { type: "string" } },
       preparation_priorities: { type: "array", minItems: 1, maxItems: 5, items: { type: "string" } },
     },
-    required: ["condition_adjustment_pct", "independent_market_read", "likely_sale_range", "listing_strategy", "expectation_comparison", "value_drivers", "preparation_priorities"],
+    required: ["independent_market_read", "likely_sale_range", "listing_strategy", "expectation_comparison", "value_drivers", "preparation_priorities"],
   };
 }
 
