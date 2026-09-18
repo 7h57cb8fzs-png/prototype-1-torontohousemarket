@@ -1,0 +1,37 @@
+name: QA 38 Oak seller report
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/qa-38-oak-seller.yml']
+permissions:
+  contents: read
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check seller evidence and send only if valuation is valid
+        env:
+          THM_ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 90 'https://torontohousemarket.com/api/admin/seller-preview?lead_id=33155d9f-e2e3-4f5c-8ddd-325daa968a83' \
+            -H "Authorization: Bearer $THM_ADMIN_API_KEY" -o /tmp/preview.json
+          node <<'NODE'
+          const fs=require('fs');
+          const d=JSON.parse(fs.readFileSync('/tmp/preview.json','utf8'));
+          const out={
+            ok:d.ok,address:d.address,facts:d.facts,valuation:d.valuation,
+            history:d.history,comparables:(d.comparables||[]).map(c=>({address:c.address,soldPrice:c.soldPrice,soldDate:c.soldDate,propertySubType:c.propertySubType,livingAreaRange:c.livingAreaRange})),
+            diagnostics:d.diagnostics
+          };
+          console.log(JSON.stringify(out,null,2));
+          if(!d.ok) process.exit(2);
+          if(d.valuation?.available!==true || !Array.isArray(d.comparables) || d.comparables.length<3) process.exit(3);
+          NODE
+          curl -fsS --max-time 120 -X POST 'https://torontohousemarket.com/api/admin/reports/33155d9f-e2e3-4f5c-8ddd-325daa968a83/test-email' \
+            -H "Authorization: Bearer $THM_ADMIN_API_KEY" \
+            -H 'Content-Type: application/json' \
+            --data '{}' -o /tmp/send.json
+          cat /tmp/send.json
