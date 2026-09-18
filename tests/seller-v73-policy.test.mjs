@@ -34,6 +34,8 @@ test("seller report preserves renovation slider context", async () => {
 
 test("seller history is exact-address-first and bounded", () => {
   const src=fs.readFileSync("worker-v11.js","utf8");
+  assert.match(src,/StreetNumber eq/);
+  assert.match(src,/contains\(City/);
   assert.match(src,/contains\(UnparsedAddress/);
   assert.match(src,/await runFilters\(exactQueries, 300\)/);
   assert.match(src,/await runFilters\(fallbackQueries, 500\)/);
@@ -45,4 +47,13 @@ test("seller V7 policy has no mechanical condition multiplier", () => {
   assert.doesNotMatch(src,/condition_adjustment_pct/);
   assert.doesNotMatch(src,/Number\(base\.low\) \* \(1 \+ adjustment\)/);
   assert.match(src,/treatment: "context_only"/);
+});
+
+
+test("seller report loader preserves owner-reported slider profile and broad recovery uses City", () => {
+  const v11=fs.readFileSync("worker-v11.js","utf8");
+  const v12=fs.readFileSync("worker-v12.js","utf8");
+  assert.doesNotMatch(v11,/lead\.property_snapshot\.sellerProfile, upgrades: \[\], condition: "unknown"/);
+  assert.match(v12,/searches\.push\(`contains\(City/);
+  assert.doesNotMatch(v12,/searches\.push\(`contains\(UnparsedAddress/);
 });
