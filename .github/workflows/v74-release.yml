@@ -28,7 +28,5 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          CANDIDATE_VERSION_ID: ee4657e2-10f0-4167-9f55-274d4fb0f00a
-          EXPECTED_ACTIVE_SHA: 173fcc71a1ca59d8f8c67cf8e4c9785f1d826d8277a52723afc1336c2728b333
           PUBLISH: ${{ contains(github.event.head_commit.message, '[v74-release]') && 'true' || 'false' }}
         run: node scripts/v74-release.mjs

@@ -24,6 +24,9 @@ export function runtimeSummary(runtime) {
     ai_usage: runtime.aiUsage || [] };
 }
 export async function reportFetch(env, input, init = {}, lifecycle = false) {
+  // AMPRE's OData query parser needs RFC 3986 spaces. Form-style '+' makes
+  // operators invalid and turns multiword address literals into non-matches.
+  if (typeof input === 'string' && input.startsWith('https://query.ampre.ca/')) input = input.replaceAll('+', '%20');
   const r = env?.THM_REPORT_RUNTIME;
   if (!r) return fetch(input, init);
   const url = new URL(typeof input === 'string' ? input : input.url || String(input));

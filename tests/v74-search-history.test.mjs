@@ -2,8 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {basicSearch,homeSearch} from '../discovery-search.js';
 import {resolveSellerSubject,discoverySelection} from '../worker-v11.js';
+import {reportFetch} from '../report-runtime.js';
 const originalFetch=globalThis.fetch;
 const json=d=>new Response(JSON.stringify(d),{headers:{'Content-Type':'application/json'}});
+test('AMPRE query URLs encode OData operators and multiword literals with percent spaces',async()=>{
+  let url;globalThis.fetch=async input=>{url=String(input);return json({value:[]});};
+  try{await reportFetch({},'https://query.ampre.ca/odata/Property?'+new URLSearchParams({'$filter':"StreetNumber eq '38' and City eq 'Richmond Hill'",'$top':'1'}));assert.ok(!url.includes('+'));assert.ok(url.includes('Richmond%20Hill'));assert.equal(new URL(url).searchParams.get('$filter'),"StreetNumber eq '38' and City eq 'Richmond Hill'");}finally{globalThis.fetch=originalFetch;}
+});
 test('plain search parses condo, multiword city, budget and bedrooms without model spend',()=>{
   const f=basicSearch('2 bedroom condo in Richmondhill under $750K');
   assert.equal(f.city,'Richmond Hill');assert.equal(f.type,'condo');assert.equal(f.minBeds,2);assert.equal(f.maxPrice,750000);assert.equal(f.needsModel,false);
