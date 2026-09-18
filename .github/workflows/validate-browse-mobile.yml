@@ -30,4 +30,4 @@ jobs:
           grep -F 'id="snapshotThumb"' index.html >/dev/null
           grep -F 'const snapshotThumb = $("snapshotThumb")' app.js >/dev/null
           grep -F 'Mobile snapshot photo: keep the first MLS image visible' styles.css >/dev/null
-          node --test --test-name-pattern="enabled discovery uses only IDX|pagination refuses foreign hosts and caps scans with honest coverage" tests/public-discovery.test.mjs
+          node --test tests/discovery-repair.test.mjs
