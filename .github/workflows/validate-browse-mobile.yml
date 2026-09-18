@@ -1,0 +1,33 @@
+name: Validate browse and mobile photo repair
+on:
+  push:
+    branches: [fix-browse-mobile-photo-20260917]
+    paths:
+      - worker-v11.js
+      - app.js
+      - index.html
+      - styles.css
+      - .github/workflows/validate-browse-mobile.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate targeted repair
+        run: |
+          set -euo pipefail
+          node --check worker-v11.js
+          node --check app.js
+          grep -F "contains(City" worker-v11.js >/dev/null
+          if grep -F '"$orderby": "OriginalEntryTimestamp desc"' worker-v11.js >/dev/null; then
+            echo "Unsupported discovery ordering is still present"
+            exit 1
+          fi
+          grep -F 'id="snapshotThumb"' index.html >/dev/null
+          grep -F 'const snapshotThumb = $("snapshotThumb")' app.js >/dev/null
+          grep -F 'Mobile snapshot photo: keep the first MLS image visible' styles.css >/dev/null
+          node --test --test-name-pattern="enabled discovery uses only IDX|pagination refuses foreign hosts and caps scans with honest coverage" tests/public-discovery.test.mjs
