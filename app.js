@@ -1018,7 +1018,7 @@ async function sendHomeChat(message){
 $('homeSearchForm').addEventListener('submit',event=>{event.preventDefault();if($('homeSearchForm').reportValidity())sendHomeChat($('homeSearchQuery').value);});
 for(const tile of document.querySelectorAll('[data-chat-prompt]'))tile.addEventListener('click',()=>sendHomeChat(tile.dataset.chatPrompt));
 $('chatNew').addEventListener('click',()=>{
-  chatGeneration++;chatController?.abort();chatBusy=false;chatState=null;chatRoot.replaceChildren();$('chatHistoryTurns').replaceChildren();$('chatHistory').hidden=true;$('chatHistory').open=false;$('explore').classList.remove('conversing');$('homeSearchQuery').value='';$('homeSearchStatus').textContent='';$('homeSearchSubmit').disabled=false;$('homeSearchQuery').placeholder='Where would you love to live?';chatScroll.scrollTop=0;$('homeSearchQuery').focus({preventScroll:true});
+  chatGeneration++;chatController?.abort();chatBusy=false;chatState=null;chatRoot.replaceChildren();$('chatHistoryTurns').replaceChildren();$('chatHistory').hidden=true;$('chatHistory').open=false;$('explore').classList.remove('conversing');$('homeSearchQuery').value='';$('homeSearchStatus').textContent='';$('homeSearchSubmit').disabled=false;$('homeSearchQuery').placeholder='e.g., homes in Richmond Hill under $700K';chatScroll.scrollTop=0;$('homeSearchQuery').focus({preventScroll:true});
 });
 $('explore').addEventListener('error',event=>{if(event.target?.tagName==='IMG')event.target.style.display='none';},true);
 $('explore').addEventListener('click',event=>{
