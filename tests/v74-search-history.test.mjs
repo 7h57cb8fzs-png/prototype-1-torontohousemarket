@@ -47,3 +47,13 @@ test('public bedroom and reduction filters require real reported evidence',()=>{
   const f={city:'Vaughan',mode:'all',type:'any',maxPrice:null,minBeds:4};assert.equal(discoverySelection([common],f).length,0);
   f.minBeds=3;f.mode='reduced';assert.equal(discoverySelection([common],f).length,0);assert.equal(discoverySelection([{...common,OriginalListPrice:950000}],f).length,1);
 });
+
+test('conversational refinements preserve prior city, type and beds and reset area on a city change',()=>{
+ const first=basicSearch('2 bedroom condos in Richmond Hill under $800K');
+ const next=basicSearch('Under $700K','Toronto',first);
+ assert.equal(next.city,'Richmond Hill');assert.equal(next.type,'condo');assert.equal(next.minBeds,2);assert.equal(next.maxPrice,700000);assert.equal(next.needsModel,false);
+ const third=basicSearch('How about Vaughan?','Toronto',{...next,area:'Langstaff'});
+ assert.equal(third.city,'Vaughan');assert.equal(third.area,'');assert.equal(third.type,'condo');assert.equal(third.maxPrice,700000);
+ const reset=basicSearch('Any home type, any price, any bedrooms','Toronto',third);
+ assert.equal(reset.type,'any');assert.equal(reset.maxPrice,null);assert.equal(reset.minBeds,0);
+});

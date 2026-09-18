@@ -941,6 +941,20 @@ const discoveryModes = {
   luxury: { title: "Luxury Homes", description: "A selection of homes asking $2 million or more. Refine the city and home type." },
   budget: { title: "Search by Budget", description: "Homes within your asking-price limit. Adjust the budget to make this shortlist yours." }
 };
+let chatFilters = null;
+let lastChatReply = '';
+function chatMessage(text, role) {
+  const message = document.createElement('div'); message.className = 'chat-message ' + role;
+  message.textContent = text; $('chatMessages').append(message);
+  while ($('chatMessages').children.length > 12) $('chatMessages').firstElementChild.remove();
+}
+function beginChat(query) {
+  $('explore').classList.add('conversing');
+  if(lastChatReply) chatMessage(lastChatReply, 'assistant');
+  lastChatReply=''; chatMessage(query, 'user');
+  $('chatReply').textContent=''; $('chatFollowups').replaceChildren();
+  $('homeSearchQuery').placeholder='Keep going — a different budget, area or home type…';
+}
 let discoveryMode = "new";
 let discoveryController = null;
 let discoverySequence = 0;
@@ -974,6 +988,8 @@ for (const tile of document.querySelectorAll("[data-discovery]")) {
   tile.addEventListener("click", (event) => {
     event.preventDefault();
     history.pushState(null, "", tile.getAttribute("href"));
+    chatFilters = null;
+    beginChat(tile.textContent.trim()+" in "+$("discoveryCity").value);
     $("homeSearchQuery").value = "";
     $("homeSearchStatus").textContent = "";
     $("discoveryType").value = tile.dataset.type || "any";
@@ -999,7 +1015,8 @@ discoveryForm.addEventListener("submit", async (event) => {
   if ($("discoveryBudget").value) params.set("maxPrice", $("discoveryBudget").value);
   params.set("minBeds", $("discoveryBeds").value);
   const naturalQuery = $("homeSearchQuery").value.trim();
-  if (naturalQuery) params.set("q", naturalQuery);
+  if (naturalQuery) { params.set("q", naturalQuery); if(chatFilters) params.set('context', JSON.stringify(chatFilters)); }
+  $('homeSearchSubmit').disabled=true;
   $("discoverySubmit").disabled = true;
   $("discoverySubmit").textContent = "Checking…";
   $("discoveryStatus").textContent = "Checking public listings…";
@@ -1014,8 +1031,20 @@ discoveryForm.addEventListener("submit", async (event) => {
       $("discoveryBudget").value = data.filters.maxPrice || "";
       $("discoveryBeds").value = String(data.filters.minBeds || 0);
       for (const id of ['discoveryCity','discoveryType','discoveryBeds']) $(id).dispatchEvent(new Event('thm:sync'));
+      chatFilters = data.filters;
+      discoveryMode = data.filters.mode;
       $("homeSearchStatus").textContent = data.interpretation || "";
     }
+    $('discoveryTitle').textContent = data.filters?.city ? 'Homes in ' + data.filters.city : 'Your matches';
+    if (data.listings.length) {
+      const prices=data.listings.map(h=>Number(h.listPrice)).filter(n=>n>0);
+      const priceNote=prices.length ? ` Asking prices in this selection range from ${money(Math.min(...prices))} to ${money(Math.max(...prices))}.` : '';
+      lastChatReply=`Here are ${data.listings.length} matching homes to explore.${priceNote} ${data.filters?.checks?.length ? 'We still need to verify '+data.filters.checks.join('; ')+'. ' : ''}Would you like to change the budget, bedrooms or area?`;
+    } else lastChatReply='I couldn’t find a match in the listings checked. Try a higher budget or a nearby area. I’ll keep your other preferences.';
+    $('chatReply').textContent=lastChatReply;
+    const suggestions=['Just listed', 'Price reduced', ...(data.filters?.maxPrice ? [`Under $${Math.max(100000,data.filters.maxPrice-100000).toLocaleString('en-CA')}`] : ['Under $800K']), data.filters?.minBeds===3?'2 bedrooms':'3 bedrooms'];
+    $('chatFollowups').replaceChildren(...suggestions.map(label=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.addEventListener('click',()=>{$('homeSearchQuery').value=label;$('homeSearchForm').requestSubmit();});return b;}));
+    $('homeSearchQuery').value='';
     $("discoveryStatus").textContent = data.listings.length ? `${data.selectionMode === "ai" ? "AI shortlist" : "Matched shortlist"} · ${data.listings.length} home${data.listings.length === 1 ? "" : "s"}. Open a home to explore.` : "No matches in the listings checked. This is not a full-market search. Try another type or budget, or check an address directly.";
     $("discoveryResults").innerHTML = data.listings.map((home) => {
       const badge = discoveryMode === "luxury" ? "Asking $2M+" : home.daysLive != null ? `${home.daysLive} days on this listing` : "Active listing";
@@ -1029,7 +1058,7 @@ discoveryForm.addEventListener("submit", async (event) => {
     $("discoveryStatus").textContent = error.name === "AbortError" ? "The search took too long. Try again, or check an address directly." : error.message || "Unable to check listings. Please try again.";
   } finally {
     window.clearTimeout(timer);
-    if (sequence === discoverySequence) { $("discoverySubmit").disabled = false; $("discoverySubmit").textContent = "Find my shortlist"; }
+    if (sequence === discoverySequence) { $("homeSearchSubmit").disabled=false; $("discoverySubmit").disabled = false; $("discoverySubmit").textContent = "Find my shortlist"; }
   }
 });
 $("discoveryResults").addEventListener("click", (event) => {
@@ -1059,11 +1088,31 @@ $("discoveryResults").addEventListener("error", event => {if(event.target?.tagNa
 $("homeSearchForm").addEventListener("submit", event => {
   event.preventDefault();
   if (!$("homeSearchForm").reportValidity()) return;
+  beginChat($("homeSearchQuery").value.trim());
   openDiscovery("all", false);
   $("discoveryBudget").value = "";
   $("discoveryTitle").textContent = "Your matches";
   discoveryForm.requestSubmit();
 });
+
+$('chatNew').addEventListener('click',()=>{
+  chatFilters=null;lastChatReply='';resetDiscoveryResults();$('chatMessages').replaceChildren();
+  $('discoveryPanel').classList.add('hidden');$('explore').classList.remove('conversing');
+  $('homeSearchQuery').value='';$('homeSearchStatus').textContent='';$('homeSearchSubmit').disabled=false;
+  $('homeSearchQuery').placeholder='Try: family home in Richmond Hill under $1.5M';
+  history.replaceState(null,'',location.pathname);$('explore').scrollIntoView({behavior:'smooth'});$('homeSearchQuery').focus({preventScroll:true});
+});
+const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SpeechRecognition){
+  $('chatVoice').hidden=false;
+  $('chatVoice').addEventListener('click',()=>{
+    const recognition=new SpeechRecognition();recognition.lang='en-CA';recognition.interimResults=false;
+    recognition.onstart=()=>{$('homeSearchStatus').textContent='Listening…';};
+    recognition.onresult=event=>{$('homeSearchQuery').value=event.results[0][0].transcript;$('homeSearchStatus').textContent='Review your words, then send your search.';};
+    recognition.onerror=()=>{$('homeSearchStatus').textContent='Voice input is unavailable. Type your search below.';};
+    recognition.start();
+  });
+}
 
 // PUBLIC LISTING SHARING START
 function listingShareData(listing) {

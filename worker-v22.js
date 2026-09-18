@@ -1,6 +1,6 @@
 import { homeSearch } from './discovery-search.js';
 import legacyApp, { deliverEmailJob } from './worker-v11.js';
-import reportCore from './worker-v12.js';
+import reportCore, { processV7ReportJobs } from './worker-v12.js';
 import { reportFetch } from './report-runtime.js';
 
 const VERSION='version-7.4-history-search-20260918';
@@ -42,13 +42,16 @@ export default {
 
   async scheduled(controller,env,ctx){
     ctx.waitUntil((async()=>{
-      const pending=[];
-      const proxy={waitUntil(p){pending.push(Promise.resolve(p));}};
       await rpc(env, 'recover_stale_report_jobs', {});
-      await reportCore.scheduled(controller,coreEnv(env),proxy);
-      await drain(pending);
-      // Reports are finalized atomically before save; no second AI pass.
+      await rpc(env, 'queue_overdue_sla_notifications', {}).catch(()=>null);
       await emails(env,20);
+      // Drain short bursts on Workers Paid, releasing each email as soon as its
+      // atomically claimed report is ready. A new cron may safely claim other jobs.
+      for(let i=0;i<3;i++){
+        const result=await processV7ReportJobs(coreEnv(env),1);
+        await emails(env,20);
+        if(!result.claimed)break;
+      }
     })());
   }
 };
