@@ -35,7 +35,7 @@ export default {
     if(response.ok) ctx?.waitUntil?.((async()=>{
       await drain(pending);
       // Reports are finalized atomically before save; no second AI pass.
-      await emails(env,1);
+      await emails(env,10);
     })());
     return response;
   },
@@ -48,7 +48,7 @@ export default {
       await reportCore.scheduled(controller,coreEnv(env),proxy);
       await drain(pending);
       // Reports are finalized atomically before save; no second AI pass.
-      await emails(env,1);
+      await emails(env,20);
     })());
   }
 };

@@ -26,9 +26,9 @@ const after=await version(candidate);assert.deepEqual(names(after),names(before)
 for(const b of before.bindings.filter(b=>b.type==='plain_text'&&!['THM_RELEASE','PUBLIC_DISCOVERY_ENABLED'].includes(b.name)))assert(after.bindings.some(n=>n.name===b.name&&n.text===b.text),'Existing setting changed');
 async function verify(base){
  const ver=await fetch(base+'/api/version').then(r=>r.json());assert.equal(ver.version,'version-7.4-history-search-20260918');
- for(const file of ['index.html','app.js','styles.css','seller.html','seller.js','seller.css','address-input.js','admin.js']){const r=await fetch(base+'/'+(file==='index.html'?'':file)+'?v74='+process.env.GITHUB_SHA);assert(r.ok&&hash(Buffer.from(await r.arrayBuffer()))===hash(readFileSync(file)),'Asset mismatch: '+file);}
+ for(const file of ['index.html','app.js','styles.css','seller.html','seller.js','seller.css','address-input.js','admin.js','select-controls.js']){const r=await fetch(base+'/'+(file==='index.html'?'':file)+'?v74='+process.env.GITHUB_SHA);assert(r.ok&&hash(Buffer.from(await r.arrayBuffer()))===hash(readFileSync(file)),'Asset mismatch: '+file);}
  const r=await fetch(base+'/api/home-search?city=Toronto&type=condo&mode=all&maxPrice=800000&minBeds=1',{signal:AbortSignal.timeout(45000)});const d=await r.json();assert(r.ok&&d.ok&&Array.isArray(d.listings),'Public search failed');assert(d.listings.every(x=>x.listPrice<=800000&&/Condo/.test(x.propertySubType)),'Search filter mismatch');
- console.log(JSON.stringify({stage:'verified',url:base,assets:8,searchResults:d.listings.length}));
+ console.log(JSON.stringify({stage:'verified',url:base,assets:9,searchResults:d.listings.length}));
 }
 await verify(preview);assert.equal(await active(),prior,'Production changed while preparing preview');
 console.log(JSON.stringify({stage:'candidate',candidate,preview,prior,priorHash,candidateHash:source(after)}));

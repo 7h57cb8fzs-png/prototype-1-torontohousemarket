@@ -40,7 +40,7 @@
       else if(e.key.length===1){typed+=e.key.toLowerCase();clearTimeout(timer);timer=setTimeout(()=>typed='',600);options.find(x=>x.textContent.toLowerCase().startsWith(typed))?.focus();}
     });
     document.addEventListener('pointerdown',e=>{if(!wrap.contains(e.target))close();});
-    select.addEventListener('change',sync);select.addEventListener('focus',()=>trigger.focus());
+    select.addEventListener('change',sync);select.addEventListener('thm:sync',sync);select.addEventListener('focus',()=>trigger.focus());
     select.addEventListener('invalid',()=>{trigger.focus();trigger.setAttribute('aria-invalid','true');});
     select.form?.addEventListener('reset',()=>setTimeout(sync,0));
     new MutationObserver(sync).observe(select,{childList:true,subtree:true,attributes:true});sync();

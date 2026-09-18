@@ -965,7 +965,7 @@ function openDiscovery(mode, focus = true) {
   $("discoveryBudget").min = mode === "luxury" ? "2000000" : "100000";
   if (mode === "luxury" && $("discoveryBudget").value && Number($("discoveryBudget").value) < 2000000) $("discoveryBudget").value = "";
   for (const tile of document.querySelectorAll("[data-discovery]")) {
-    if (tile.dataset.discovery === mode) tile.setAttribute("aria-current", "true");
+    if (tile.dataset.discovery === mode && (tile.dataset.type || 'any') === $("discoveryType").value && Number(tile.dataset.beds || 0) === Number($("discoveryBeds").value)) tile.setAttribute("aria-current", "true");
     else tile.removeAttribute("aria-current");
   }
   if (focus) { $("discoveryPanel").scrollIntoView({ behavior: "smooth", block: "start" }); $("discoveryTitle").focus({ preventScroll: true }); }
@@ -978,6 +978,7 @@ for (const tile of document.querySelectorAll("[data-discovery]")) {
     $("discoveryType").value = tile.dataset.type || "any";
     $("discoveryBudget").value = tile.dataset.budget || "";
     $("discoveryBeds").value = tile.dataset.beds || "0";
+    for (const id of ['discoveryType','discoveryBeds']) $(id).dispatchEvent(new Event('thm:sync'));
     openDiscovery(tile.dataset.discovery);
     if (tile.dataset.discovery === "budget" && !$("discoveryBudget").value) $("discoveryBudget").value = "1500000";
     discoveryForm.requestSubmit();
@@ -1011,6 +1012,7 @@ discoveryForm.addEventListener("submit", async (event) => {
       $("discoveryType").value = data.filters.type;
       $("discoveryBudget").value = data.filters.maxPrice || "";
       $("discoveryBeds").value = String(data.filters.minBeds || 0);
+      for (const id of ['discoveryCity','discoveryType','discoveryBeds']) $(id).dispatchEvent(new Event('thm:sync'));
       $("homeSearchStatus").textContent = data.interpretation || "";
     }
     $("discoveryStatus").textContent = data.listings.length ? `${data.selectionMode === "ai" ? "AI shortlist" : "Matched shortlist"} · ${data.listings.length} home${data.listings.length === 1 ? "" : "s"}. Open a home to explore.` : "No matches in the listings checked. This is not a full-market search. Try another type or budget, or check an address directly.";
@@ -1057,6 +1059,7 @@ $("homeSearchForm").addEventListener("submit", event => {
   event.preventDefault();
   if (!$("homeSearchForm").reportValidity()) return;
   openDiscovery("all", false);
+  $("discoveryBudget").value = "";
   $("discoveryTitle").textContent = "Your matches";
   discoveryForm.requestSubmit();
 });
