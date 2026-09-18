@@ -2,6 +2,7 @@ import {sellerArchiveKey,validatedArchive} from './seller-archive.js';
 // Keep the historical standalone bundle compatible with existing consumers.
 // The report owner supplies scoped operations; public requests use native fetch.
 function reportFetch(env, input, init = {}, lifecycle = false) {
+  if (input instanceof URL) input = input.href;
   if (typeof input === 'string' && input.startsWith('https://query.ampre.ca/')) input=input.replaceAll('+','%20');
   const runtime = env?.THM_REPORT_RUNTIME;
   return runtime?.fetch ? runtime.fetch(env, input, init, lifecycle) : fetch(input, init);
@@ -6507,6 +6508,7 @@ async function buildSellerEvidence(subject, env) {
     capped ||= fallback.audit.some((a) => a.totalCount > 1200) || !fallback.audit.some((a) => a.status === 200);
   }
   if (!audit.some((a) => a.status === 200)) return { ...unavailableComp("The historical listing service could not complete the check. We need to restore that connection before estimating."), dataUnavailable: true, diagnostics: { queryAudit: audit } };
+  retainReportRows(env, records, local);
   const result = calculateSellerEvidence(subject, records), active2 = sellerActiveComparisons(subject, records);
   if (capped && result.confidence === "Medium") result.confidence = "Low";
   if (capped && !result.available) {
@@ -6660,7 +6662,7 @@ function sellerReportEmail(address, report) {
   const coverageNote = v.retrievalCapped || policy.retrievalCapped ? "The MLS search did not cover every matching market record. Relevant sales or active listings may be missing." : "";
   const reasons = [];
   if (coverageNote) reasons.push(coverageNote);
-  if (policy.windowDays > 300) reasons.push(`Sparse recent evidence required sales up to ${policy.windowDays} days old; older prices may be less representative today.`);
+  if (policy.windowDays > 300) reasons.push(`The broader review allowed sales up to ${policy.windowDays} days old. Check the displayed sale dates; older prices may be less representative today.`);
   if (policy.missingSizeFallback) reasons.push("Some interior sizes were unavailable, so bedrooms and lot frontage were used to screen those homes.");
   if (seller.evidence?.listingFactsAgree === false) reasons.push("Recorded home details still need confirmation against your home today.");
   if (available && comps.length < 5) reasons.push(`Only ${comps.length} qualifying sold homes support this preliminary range.`);
@@ -6680,7 +6682,7 @@ function sellerReportEmail(address, report) {
   const competitionNote = active2.length ? "Similar active listings recovered in this check. These are asking prices, not completed sales, and do not set your estimated value." : "No sufficiently similar active homes were recovered in this check. This does not establish that none are for sale.";
   const competitionHtml = available || active2.length ? section("02 / On the market", "Your current competition.", paragraph(competitionNote) + (activeRows ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${activeRows}</table>` : "")) : "";
   const archive=seller.evidence?.archiveSubject;
-  const historyNote = archive ? `Home specifications recovered from ${archive.sourceLabel}, dated ${archive.recordedAt}. These are historic facts, not a current survey; confirm present layout, size and condition. The estimate uses current licensed sold comparisons, not historic asking or rental prices.` : latestText ? "Past listings help identify the home. Historical asking prices do not set this estimate." : "We can review the address and available records together.";
+  const historyNote = archive ? `Home specifications recovered from ${archive.sourceLabel}, dated ${archive.recordedAt}. These are historic facts, not a current survey; confirm present layout, size and condition. The estimate uses licensed sold comparisons, not historic asking or rental prices.` : latestText ? "Past listings help identify the home. Historical asking prices do not set this estimate." : "We can review the address and available records together.";
   const communityNote = seller.evidence?.communityConflict ? "The matched listing has a different community label from your entry. We used the recorded community; please ask us to confirm it." : "";
   const historyHtml = `${latestText ? `<p style="${label}">Latest matched MLS listing</p>${paragraph(latestText)}` : ""}<p style="${small}">${html(historyNote)}${archive?.sourceUrl ? ` <a href="${html(archive.sourceUrl)}" style="color:#236b5e;text-decoration:underline">View archived listing</a>.` : ""}</p>${communityNote ? `<p style="${small}margin-top:9px">${html(communityNote)}</p>` : ""}`;
   const checks = (report.narrative?.preparation_checks || []).slice(0, 3);

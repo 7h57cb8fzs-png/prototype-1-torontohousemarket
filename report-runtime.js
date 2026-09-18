@@ -26,6 +26,7 @@ export function runtimeSummary(runtime) {
 export async function reportFetch(env, input, init = {}, lifecycle = false) {
   // AMPRE's OData query parser needs RFC 3986 spaces. Form-style '+' makes
   // operators invalid and turns multiword address literals into non-matches.
+  if (input instanceof URL) input = input.href;
   if (typeof input === 'string' && input.startsWith('https://query.ampre.ca/')) input = input.replaceAll('+', '%20');
   const r = env?.THM_REPORT_RUNTIME;
   if (!r) return fetch(input, init);
@@ -41,7 +42,7 @@ export async function reportFetch(env, input, init = {}, lifecycle = false) {
   r.requests++;
   const service = database ? 'database' : url.hostname;
   r.byService[service] = (r.byService[service] || 0) + 1;
-  const timeout = AbortSignal.timeout(reserved ? 7000 : Math.max(1, Math.min(url.hostname === 'api.openai.com' ? 25000 : 10000, r.deadline - Date.now())));
+  const timeout = AbortSignal.timeout(reserved ? 7000 : Math.max(1, Math.min(url.hostname === 'api.openai.com' ? 30000 : 10000, r.deadline - Date.now())));
   const signals = [timeout, init.signal, ...reserved ? [] : [r.controller.signal, env.THM_REPORT_STAGE_SIGNAL]].filter(Boolean);
   return fetch(input, { ...init, signal: AbortSignal.any(signals) });
 }

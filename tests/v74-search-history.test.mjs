@@ -2,8 +2,8 @@ import test from 'node:test';
 import {shouldUseExpertComp} from '../worker-v12.js';
 import assert from 'node:assert/strict';
 import {basicSearch,homeSearch} from '../discovery-search.js';
-import {resolveSellerSubject,discoverySelection} from '../worker-v11.js';
-import {reportFetch} from '../report-runtime.js';
+import {resolveSellerSubject,discoverySelection,buildSellerEvidence} from '../worker-v11.js';
+import {reportFetch,createReportRuntime} from '../report-runtime.js';
 import {validatedArchive,sellerArchiveKey} from '../seller-archive.js';
 import {reportPriceGraphic,sellerReportEmail} from '../worker-v11.js';
 const originalFetch=globalThis.fetch;
@@ -68,4 +68,21 @@ test('seller email includes pricing reasoning and does not turn missing conditio
  const report={valuation:{available:true,low:800000,high:1000000,midpoint:900000},comparables:[{},{},{}],seller:{profile:{renovationPct:null},strategy:{independent_market_read:'The deep lot is a key comparison.',listing_strategy:'Confirm condition before pricing.'}}};
  const message=sellerReportEmail('Fixture',report);
  assert.match(message.text,/The deep lot is a key comparison/);assert.match(message.html,/Confirm condition before pricing/);assert.doesNotMatch(message.text,/renovation context: 0%/);
+});
+
+test('URL-object OData requests also preserve spaces',async()=>{
+ let sent;globalThis.fetch=async input=>{sent=String(input);return json({value:[]});};
+ try{await reportFetch({},new URL('https://query.ampre.ca/odata/Property?'+new URLSearchParams({'$filter':"contains(CityRegion,'South Richvale')"})));assert.ok(sent.includes('South%20Richvale'));assert.ok(!sent.includes('+'));}finally{globalThis.fetch=originalFetch;}
+});
+test('seller tail-page sales remain available to subsequent expert recovery',async()=>{
+ const subject={ListingKey:'SUBJECT',PropertySubType:'Detached',CityRegion:'Fixture',City:'Toronto',LivingAreaRange:'2000-2500',BedroomsTotal:4,LotWidth:50,StreetName:'Fixture'};
+ const runtime=createReportRuntime({id:1,attempts:1});
+ const sale=(id,date)=>({...subject,ListingKey:id,UnparsedAddress:id+' Fixture Street, Toronto',StreetNumber:id,StandardStatus:'Closed',TransactionType:'For Sale',ClosePrice:1200000,PurchaseContractDate:date});
+ globalThis.fetch=async input=>{
+  const u=new URL(input);if(u.searchParams.get('$count'))return json({'@odata.count':1600,value:[]});
+  const skip=Number(u.searchParams.get('$skip')||0);
+  if(skip>=400)return json({value:[sale('TAIL-RECENT','2026-09-01')]});
+  return json({value:Array.from({length:100},(_,i)=>sale('OLD-'+(skip+i),'2024-01-01')),'@odata.nextLink':'https://query.ampre.ca/odata/Property?$skip='+(skip+100)});
+ };
+ try{await buildSellerEvidence(subject,{AMPRE_TOKEN:'fixture',THM_REPORT_RUNTIME:runtime});assert.ok(runtime.rawRows.has('TAIL-RECENT'),'recent tail must be available to Luna alongside first pages');}finally{globalThis.fetch=originalFetch;}
 });
