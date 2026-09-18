@@ -93,3 +93,12 @@ test('email preserves the verified expert condo evidence and its final range',()
  const email=propertyReportEmail('Fixture',{},report);assert.match(email.text,/Estimated sale range: \$570,000 to \$650,000/);assert.match(email.text,/6 selected sold homes/);assert.doesNotMatch(email.text,/Price window: needs review/);
  const strict=propertyReportEmail('Fixture',{}, {...report,expert_comp_mode:{used:false}});assert.match(strict.text,/Price window: needs review/);
 });
+
+
+test('seller address entry validates without waiting for any MLS provider',async t=>{
+ const {default:app}=await import('../worker-v11.js');
+ t.mock.method(globalThis,'fetch',async()=>{throw Error('Address entry must not wait for MLS');});
+ const r=await app.fetch(new Request('https://example.com/api/property?q=38%20Oak%20Avenue%2C%20Richmond%20Hill&validate_only=1'),{},{});
+ const d=await r.json();assert.equal(r.status,200);assert.equal(d.city,'Richmond Hill');assert.match(d.normalizedAddress,/38 Oak Ave/);assert.equal(d.property,undefined);
+ const {readFileSync}=await import('node:fs');assert.match(readFileSync(new URL('../seller.js',import.meta.url),'utf8'),/validate_only=1/);
+});
