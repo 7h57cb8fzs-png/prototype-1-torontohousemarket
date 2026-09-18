@@ -1,0 +1,24 @@
+name: Validate production address routes
+on:
+  push:
+    branches: [fix-live-address-api-20260917]
+    paths:
+      - worker-v11.js
+      - tests/address-route-production.test.mjs
+      - .github/workflows/validate-address-route.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate live route ownership
+        run: |
+          set -euo pipefail
+          node --check worker-v11.js
+          node --test tests/address-route-production.test.mjs
+          grep -F 'url.pathname === "/api/address-suggestions"' worker-v11.js >/dev/null
+          grep -F 'url.pathname === "/api/address-selection"' worker-v11.js >/dev/null
