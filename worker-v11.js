@@ -449,7 +449,9 @@ __name(mediaPreferred, "mediaPreferred");
 __name2(mediaPreferred, "mediaPreferred");
 function mediaSequence(record) {
   for (const key of ["Order", "MediaOrder", "ImageOf", "MediaSequence", "SequenceNumber", "PhotoNumber", "MediaIndex", "SortOrder"]) {
-    const value = Number(record?.[key]);
+    const raw = record?.[key];
+    if (raw == null || String(raw).trim() === "") continue;
+    const value = Number(raw);
     if (Number.isFinite(value) && value >= 0) return value;
   }
   const description = String(record?.ShortDescription || record?.LongDescription || "");
@@ -4014,13 +4016,13 @@ async function discoveryPhoto(request, env, ctx) {
   if(env.PUBLIC_DISCOVERY_ENABLED!=="true"||!env.AMPRE_TOKEN)return new Response(null,{status:404});
   const listingKey=new URL(request.url).searchParams.get('listingKey');
   if(!/^[A-Z]\d{7,9}$/.test(listingKey||''))return new Response(null,{status:400});
-  const cache=typeof caches!=='undefined'?caches.default:null,key=new Request(new URL('/api/discovery-photo?listingKey='+listingKey+'&photoVersion=2',request.url));
+  const cache=typeof caches!=='undefined'?caches.default:null,key=new Request(new URL('/api/discovery-photo?listingKey='+listingKey+'&photoVersion=3',request.url));
   const hit=await cache?.match(key);if(hit)return hit;
   try{
     const p=await fetchPropertyByKey(listingKey,env,true);
     if(!p||!publicListingFacts(p))return new Response(null,{status:404});
     const media=Array.isArray(p.Media)&&p.Media.length?p.Media:await fetchPropertyMedia(listingKey,env);
-    const photo=normalizeMedia(media)[0];if(!photo)return new Response(null,{status:404});
+    const photo=normalizeMedia(media).sort((a,b)=>a.sequence-b.sequence)[0];if(!photo)return new Response(null,{status:404});
     const image=await mediaProxy(new Request(new URL('/api/media?key='+encodeURIComponent(photo.key),request.url)),env);
     if(!image.ok)return image;
     const result=new Response(image.body,{headers:{'Content-Type':image.headers.get('Content-Type')||'image/jpeg','Cache-Control':'public, max-age=300, s-maxage=300','X-Content-Type-Options':'nosniff'}});
