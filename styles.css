@@ -796,6 +796,11 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
 .buyer-page .nav-actions .home-value-link{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:44px;padding:10px 16px;border:1px solid #d6dfd5;border-radius:10px;background:#f7f8f5;color:var(--finder-ink);font-family:var(--display-font);font-size:18px;line-height:1.2;text-decoration:none;white-space:nowrap}
 .home-value-link svg{width:21px;height:21px;stroke:#a55e40;stroke-width:1.5;flex-shrink:0}
 .buyer-page .nav-actions .home-value-link:hover{background:#eef2eb;border-color:#9aad9e}
+.buyer-page .nav-actions .nav-cta,.buyer-page .nav-actions .home-value-link{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:176px;min-height:44px;padding:10px 14px;border:1px solid #d6dfd5;border-radius:10px;font-family:var(--display-font);font-size:16px;font-weight:400;line-height:1.25;letter-spacing:0;white-space:nowrap}
+.buyer-page .nav-actions .nav-cta{background:#203b3c;border-color:#203b3c;color:#fff}
+.buyer-page .nav-actions .nav-cta:hover{background:#31544d;border-color:#31544d;transform:none}
+.buyer-page .nav-actions .nav-cta>span{font-size:18px;line-height:1}
+.buyer-page .nav-actions .home-value-link svg{width:18px;height:18px}
 .buyer-page #snapshotProperty{font-family:var(--display-font);font-size:clamp(27px,3vw,36px);font-weight:400;letter-spacing:-.7px;line-height:1.2;color:var(--finder-ink)}
 .buyer-page .action-rail{border-radius:18px;padding:22px}
 .buyer-page #liveAddress{font-family:var(--display-font);font-size:25px;font-weight:400;line-height:1.25;letter-spacing:-.5px}
@@ -843,6 +848,16 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
 .buyer-page .buyer-path-options h3{font-family:var(--display-font);font-size:23px;font-weight:400;line-height:1.2;letter-spacing:-.4px;margin:0 0 12px}
 .buyer-page .buyer-path-options p{font-size:14px;line-height:1.7}
 .buyer-page .buyer-path-options small{display:block;font-size:12px;line-height:1.5;color:#64736c}
+.buyer-page .team-footer{padding:28px 0 30px;background:#f0f3ed;border-top:1px solid #dce3d7;color:#203b3c}
+.buyer-page .team-footer .footer-grid{grid-template-columns:minmax(0,.75fr) minmax(0,1.25fr);gap:36px;align-items:start}
+.buyer-page .footer-grid>div>strong{display:block;font-family:var(--display-font);font-size:24px;font-weight:400;line-height:1.2;letter-spacing:-.4px;color:#203b3c}
+.buyer-page .team-footer p{font-size:14px;line-height:1.6;color:#64736c;margin:8px 0}
+.buyer-page .team-credentials{padding-left:28px;border-left:1px solid #d4ded2}
+.buyer-page .team-credentials>p:first-child{margin:0 0 8px}
+.buyer-page .team-credentials>p:first-child strong{font-family:var(--display-font);font-size:21px;font-weight:400;line-height:1.3;letter-spacing:-.3px;color:#203b3c}
+.buyer-page .team-credentials strong{font-size:14px;font-weight:500;color:#36594f}
+.buyer-page .team-credentials small{font-size:12px;line-height:1.65;color:#64736c;max-width:660px}
+.buyer-page .team-footer .team-call{display:inline-flex;align-items:center;min-height:44px;padding:5px 0;font-size:14px;font-weight:500;color:#985338;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:4px}
 @media(max-width:960px){
  .buyer-page .quick-facts{grid-template-columns:repeat(3,minmax(0,1fr))}
  .buyer-page .quick-facts>div{border-bottom:1px solid var(--line)}
@@ -853,6 +868,8 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
 @media(max-width:760px){
  .buyer-page .nav-actions{gap:8px}
  .buyer-page .nav-actions .home-value-link{font-size:16px;padding:9px 11px;gap:6px}
+ .buyer-page .nav-actions .home-value-link{width:auto}
+ .buyer-page .nav-actions .nav-cta{display:none}
  .buyer-page .home-value-link svg{width:18px;height:18px}
  .buyer-page .hero h1{font-size:38px;letter-spacing:-1px}
  .buyer-page .hero-copy{font-size:16px}
@@ -867,6 +884,9 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
  .buyer-page .buyer-path h2{font-size:32px}
  .buyer-page .buyer-path-options{gap:20px}
  .buyer-page .buyer-path-options h3{font-size:22px}
+ .buyer-page .team-footer{padding:24px 0 100px}
+ .buyer-page .team-footer .footer-grid{grid-template-columns:1fr;gap:18px}
+ .buyer-page .team-credentials{border-left:0;border-top:1px solid #d4ded2;padding:18px 0 0}
 }
 @media(max-width:480px){
  .buyer-page .buyer-path-options{grid-template-columns:1fr}
