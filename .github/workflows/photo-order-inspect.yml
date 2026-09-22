@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Inspect five public listings
         env:
-          AMPRE_TOKEN: ${{ secrets.AMPRE_TOKEN }}
+          AMPRE_TOKEN: ${{ secrets.AMPRE_VOW_TOKEN }}
         run: |
           node --input-type=module <<'NODE'
           for(const key of ['N13813276','N13813238','N13813034','N13812888','N13812380']){
