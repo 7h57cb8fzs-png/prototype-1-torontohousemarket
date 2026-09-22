@@ -12,6 +12,7 @@ const source=v=>hash(JSON.stringify(v.modules.map(m=>[m.name,hash(Buffer.from(m.
 const names=v=>v.bindings.filter(b=>b.name!=='ASSETS').map(b=>b.name+':'+b.type).sort();
 const prior=await active(),before=await version(prior),priorHash=source(before),schedule=await cf(`/workers/scripts/${worker}/schedules`);
 console.log(JSON.stringify({stage:'baseline',version:prior,source:priorHash}));
+if(process.env.EXPECTED_ACTIVE_VERSION)assert.equal(prior,process.env.EXPECTED_ACTIVE_VERSION,'Production version changed after review');
 assert.equal(priorHash, '048c3712274dd65095621dea4a8384178f3d8ae4d36946ad26b6ae9f02d69c09', 'Production source differs from the reviewed compact-comparisons baseline');
 try {const settings=await cf('/workers/account-settings');console.log(JSON.stringify({stage:'workers-plan',default_usage_model:settings.default_usage_model,usage_model:settings.usage_model}));}catch(e){console.log(JSON.stringify({stage:'workers-plan',verified:false,reason:e.message}));}
 console.log(JSON.stringify({stage:'worker-plan',usage_model:before.resources?.script?.usage_model||before.usage_model||null}));
