@@ -54,7 +54,9 @@
 .appointment-page :is(h1,h2),.info-page :is(h1,h2){
   font-family:var(--display-font);font-weight:400;line-height:1.2;letter-spacing:-.025em;color:var(--finder-ink);
 }
-.buyer-page :is(.speed-action-box,.offmarket-action-box){background:#f0f3ed;border:1px solid var(--finder-line);box-shadow:none}
+.buyer-page :is(.speed-action-box,.offmarket-action-box){background:#f0f3ed;border:1px solid var(--finder-line);box-shadow:none;color:var(--finder-ink)}
+.buyer-page .speed-action-box :is(p,.ai-after,.speed-action-top){color:var(--finder-muted)}
+.buyer-page .speed-action-top{font-weight:600}
 .buyer-page .listing-price{margin-top:8px}
 
 /* Seller page: retain its address-first flow and existing form sections. */
@@ -107,7 +109,7 @@
 .seller-footer-inner>small{max-width:310px;font-size:12px;line-height:1.65;color:var(--finder-muted);padding-left:24px;border-left:1px solid #d4ded2}
 .appointment-page,.info-page{background:var(--finder-paper);color:var(--finder-ink)}
 .appointment-page #appointmentAddress{font-size:25px;line-height:1.35}
-.appointment-page .appointment-wrap{border:1px solid var(--finder-line);border-radius:18px;box-shadow:none}
+.appointment-page .appointment-wrap{width:calc(100% - 32px);padding:26px;border:1px solid var(--finder-line);border-radius:18px;background:#fff;box-shadow:none}
 .info-page p{color:var(--finder-muted);line-height:1.7}
 .info-page a{color:#985338}
 @media(max-width:780px){
@@ -130,8 +132,8 @@
 }
 @media(max-width:480px){
   .seller-price-inputs{grid-template-columns:minmax(0,1fr);gap:14px}
-  .seller-renovation-v7 .top{align-items:start}
-  .seller-renovation-v7 output{font-size:25px;white-space:nowrap;margin-top:8px}
+  .seller-renovation-v7 .top{align-items:start;flex-wrap:wrap;gap:6px}
+  .seller-renovation-v7 output{font-size:25px;margin-top:0}
   .buyer-page .home-ai-questions{flex-direction:row}
   .buyer-page .home-ai-questions button{flex:1 1 auto}
 }
