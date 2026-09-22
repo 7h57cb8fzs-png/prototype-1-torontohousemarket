@@ -41,8 +41,8 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          CANDIDATE_VERSION_ID: ''
-          EXPECTED_CANDIDATE_SHA: ''
+          CANDIDATE_VERSION_ID: 'f0f7c1af-2786-45d8-a3d8-85989cc262a2'
+          EXPECTED_CANDIDATE_SHA: 'd4b29f2403a8ae76d09d36f2fdeaf84f447c4389254d82f39053e9c5cbad6dfc'
           EXPECTED_ACTIVE_VERSION: e9b2567e-e675-4aa1-bfd9-ec81657b9504
           EXPECTED_ACTIVE_SHA: 276511b92eda0b087bdc6a242f962980c965e2ee193ef1c648ff685d3131910a
           PUBLISH: ${{ contains(github.event.head_commit.message, '[v75-style-release]') && 'true' || 'false' }}
