@@ -29,7 +29,10 @@ for(const b of before.bindings.filter(b=>b.type==='plain_text'&&!['THM_RELEASE',
 async function verify(base){
  const ver=await fetch(base+'/api/version').then(r=>r.json());assert.equal(ver.version,'version-7.4-history-search-20260918');
  for(const file of ['index.html','app.js','styles.css','seller.html','seller.js','seller.css','address-input.js','admin.js','admin.html','admin.css','select-controls.js']){const r=await fetch(base+'/'+(file==='index.html'?'':file)+'?v74='+process.env.GITHUB_SHA);assert(r.ok&&hash(Buffer.from(await r.arrayBuffer()))===hash(readFileSync(file)),'Asset mismatch: '+file);}
- for(const listingKey of ['C13813214','W13812424','N13813276','N13813238','N13813034']) {
+ const addressResponse=await fetch(base+'/api/property?validate_only=1&q='+encodeURIComponent('8 Olympic Garden Drive Unit S3504, Toronto'));
+ const addressData=await addressResponse.json();assert(addressResponse.ok&&addressData.ok&&addressData.unit==='s3504','Alphanumeric unit validation failed');
+ console.log(JSON.stringify({stage:'address-check',address:addressData.normalizedAddress,unit:addressData.unit}));
+ for(const listingKey of ['C13813214','W13812424','N13813276','N13813238']) {
   const r=await fetch(base+'/api/property?listingKey='+listingKey,{signal:AbortSignal.timeout(45000)});
   if(!r.ok||!r.headers.get('Content-Type')?.includes('application/json')){const body=await r.text();const code=body.match(/(?:Error|error code:)\s*(\d{3,5})/i)?.[1]||'unknown';throw Error('Listing response failed: '+listingKey+' HTTP '+r.status+' provider error '+code);}
   const d=await r.json();assert(d.ok&&d.property?.listingKey===listingKey,'Listing check failed: '+listingKey);
@@ -37,7 +40,7 @@ async function verify(base){
   assert.equal(new Set(photos.map(p=>p.key)).size,photos.length,'Duplicate photo identity');
   console.log(JSON.stringify({stage:'photo-check',listingKey,address:d.property.address,count:photos.length,first:photos.slice(0,5).map(p=>({key:p.key,sequence:p.sequence,primary:p.primary}))}));
  }
- console.log(JSON.stringify({stage:'verified',url:base,assets:11,listings:5}));
+ console.log(JSON.stringify({stage:'verified',url:base,assets:11,listings:4,addressChecks:1}));
 }
 await verify(preview);assert.equal(await active(),prior,'Production changed while preparing preview');
 console.log(JSON.stringify({stage:'candidate',candidate,preview,prior,priorHash,candidateHash:source(after)}));

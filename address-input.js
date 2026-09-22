@@ -9,7 +9,7 @@
     if(first){unit=first[1];street=first[2];}
     const explicit=street.match(/(?:,?\s+(?:unit|suite|apt|apartment)\s*|\s*#\s*)([a-z0-9-]+)(?=\s*,|\s*$|\s+[a-z])/i);
     if(explicit){unit=explicit[1];street=street.slice(0,explicit.index)+street.slice(explicit.index+explicit[0].length);}
-    if(!unit){const tail=street.match(/\b(st(?:reet)?|rd|road|ave(?:nue)?|dr(?:ive)?|cres(?:cent)?|circ(?:le)?|blvd|boulevard|crt|court|ct|ln|lane|pkwy|parkway|way|trail|tr|place|pl|terrace|ter)\.?\s+(?:(?:[nsew]|north|south|east|west)\s+)?(\d+[a-z]?|ph\d*)(?=\s*,|\s*$|\s+[a-z])/i);if(tail){unit=tail[2];const end=tail.index+tail[0].length;street=street.slice(0,end-unit.length).trimEnd()+street.slice(end);}}
+    if(!unit){const tail=street.match(/\b(st(?:reet)?|rd|road|ave(?:nue)?|dr(?:ive)?|cres(?:cent)?|circ(?:le)?|blvd|boulevard|crt|court|ct|ln|lane|pkwy|parkway|way|trail|tr|place|pl|terrace|ter)\.?\s+(?:(?:[nsew]|north|south|east|west)\s+)?(\d+[a-z]?|[a-z]{1,3}\d+[a-z]?|ph)(?=\s*,|\s*$|\s+[a-z])/i);if(tail){unit=tail[2];const end=tail.index+tail[0].length;street=street.slice(0,end-unit.length).trimEnd()+street.slice(end);}}
     return {street:street.replace(/\s+,/g,',').replace(/\s{2,}/g,' ').trim(),unit:String(unit||'').toUpperCase()};
   }
   function combine(value,unit){if(nonAddress(value))return String(value).trim();const p=split(value),u=String(unit||p.unit||'').trim().replace(/^(?:unit|suite|apt|#)\s*/i,'').toUpperCase(),comma=p.street.indexOf(',');return u?(comma<0?`${p.street} Unit ${u}`:`${p.street.slice(0,comma)} Unit ${u}${p.street.slice(comma)}`):p.street;}

@@ -84,9 +84,24 @@ function addressHarness(fetcher){
  const control=context.window.THMAddress.attach({input,panel,status});
  const fire=(el,type,key)=>{const event=new Event(type,{cancelable:true});if(key)Object.defineProperty(event,'key',{value:key});el.dispatchEvent(event);return event;};
  const settle=()=>new Promise(resolve=>setImmediate(resolve));
- return {input,panel,list,control,fire,settle,async suggest(value){input.value=value;input.focus();fire(input,'input');for(const [id,t] of timers)if(t.ms===400){timers.delete(id);t.fn();}await settle();}};
+ return {input,panel,list,control,fire,settle,async suggest(value){input.value=value;input.focus();fire(input,'input');for(const [id,t] of timers)if(t.ms===250){timers.delete(id);t.fn();}await settle();}};
 }
 const fakeSuggestion={ok:true,available:true,suggestions:[{placeId:'fixture_address_id',label:'123 Example Street, Toronto, ON, Canada'}]};
+test('letter-prefixed condo unit survives suggestion selection and exact address validation',async()=>{
+ const queries=[];
+ const h=addressHarness(async(path,options)=>{
+  if(path.endsWith('suggestions')){queries.push(JSON.parse(options.body).q);return Response.json({ok:true,available:true,suggestions:[{placeId:'fixture_olympic_id',label:'8 Olympic Garden Drive, North York, ON'}]});}
+  return Response.json({ok:true,available:true,address:'8 Olympic Garden Drive, Toronto',city:'Toronto',unit:''});
+ });
+ await h.suggest('8 Olympic Garden Dr S3504');
+ assert.deepEqual(queries,['8 Olympic Garden Dr']);
+ h.fire(h.input,'keydown','ArrowDown');h.fire(h.input,'keydown','Enter');
+ const address=await h.control.prepare();assert.equal(address,'8 Olympic Garden Drive Unit S3504, Toronto');
+ const entry=validateAddressEntry(address);assert.equal(entry.ok,true);assert.equal(entry.parsed.unit,'s3504');
+ const rows=['S3504','3504','N3504'].map((UnitNumber,i)=>({ListingKey:'FIXTURE'+i,City:'Toronto',StreetNumber:'8',StreetName:'Olympic Garden',StreetSuffix:'Drive',UnitNumber,StandardStatus:'Active'}));
+ assert.equal(selectExactAddressMatch(entry.parsed,rows).UnitNumber,'S3504');
+ h.input.value='150 Glen Cedar Rd';h.fire(h.input,'input');assert.equal(await h.control.prepare(),'150 Glen Cedar Rd');
+});
 test('keyboard selection fills city, retains the typed unit and does not auto-submit the report',async()=>{
  const h=addressHarness(async path=>Response.json(path.endsWith('suggestions')?fakeSuggestion:{ok:true,available:true,address:'123 Example Street, Toronto',city:'Toronto',unit:''}));
  await h.suggest('Unit 201, 123 Exa');assert.equal(h.panel.hidden,false);
