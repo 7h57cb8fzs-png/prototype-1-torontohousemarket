@@ -42,11 +42,11 @@ test('email excludes stale mismatched condo comparables and the range derived fr
   const email=propertyReportEmail('Test home',{},input);assert.ok(!email.html.includes('2 Test Road'));assert.ok(!email.html.includes('$680,000'));assert.match(email.text,/interior size range/);
  }
 });
-test('email uses a styled property link, linked call label and cashback before contact',()=>{
+test('email keeps property, contact and showing links without cashback messaging',()=>{
  const email=propertyReportEmail('Test home',{},report(),{appointmentUrl:'https://torontohousemarket.com/showing.html#token=fixture'});
  assert.match(email.html,/<h1 class="report-address"[^>]*><a href="https:\/\/torontohousemarket.com\/\?listingKey=N1000001#lookup"[^>]*color:#ffffff!important/);
- assert.match(email.html,/tel:\+16478904704/);assert.match(email.html,/>Call Golestan Homes<\/a>/);assert.ok(!email.html.includes('647-890-4704'));
- assert.ok(email.html.indexOf('Up to $10,000 cashback')<email.html.indexOf('Questions? Let’s talk'));
+ assert.match(email.html,/tel:\+16478904704/);assert.match(email.html,/>Contact the team<\/a>/);assert.ok(!email.html.includes('647-890-4704'));
+ for(const body of [email.html,email.text])assert.doesNotMatch(body,/cash\s*back|10,000 back|YOUR BUYER BENEFIT|eligible purchase/i);
  assert.match(email.html,/Inside range/);assert.match(email.text,/within the estimated range/);
  assert.match(email.text,/700-799/);assert.match(email.html,/showing.html#token=fixture/);
 });

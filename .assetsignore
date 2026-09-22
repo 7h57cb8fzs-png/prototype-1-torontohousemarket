@@ -24,3 +24,8 @@ listing-query.js
 report-graphics.js
 
 mls-photos.js
+
+mobile-qa/**
+node_modules/**
+package.json
+package-lock.json

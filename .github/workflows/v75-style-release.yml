@@ -1,0 +1,49 @@
+name: Preview and publish THM 7.5 shared style
+on:
+  push:
+    branches: [phase-6]
+permissions:
+  contents: read
+concurrency:
+  group: thm-v74-guarded-deployment
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: contains(github.event.head_commit.message, '[v75-style-preview]') || contains(github.event.head_commit.message, '[v75-style-release]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify presentation scope and focused email regressions
+        run: |
+          node scripts/v75-style-scope.mjs
+          node --check worker-v11.js
+          node --test tests/interface-email.test.mjs tests/buyer-refinement.test.mjs
+          node --test --test-name-pattern='buyer report email|email infographic|expanded-window|seller scenario' tests/email-copy.test.mjs tests/seller-flow.test.mjs
+      - name: Check navigation and responsive buyer, seller and email layouts
+        if: contains(github.event.head_commit.message, '[v75-style-preview]')
+        run: |
+          npm install --no-save --package-lock=false playwright@1.58.2
+          npx playwright install --with-deps webkit
+          node scripts/v75-navigation.mjs
+          node scripts/v75-style-layout.mjs
+      - uses: actions/upload-artifact@v4
+        if: always() && contains(github.event.head_commit.message, '[v75-style-preview]')
+        with:
+          name: v75-style-review
+          path: mobile-qa/
+      - name: Guarded preview or promotion
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          CANDIDATE_VERSION_ID: ''
+          EXPECTED_CANDIDATE_SHA: ''
+          EXPECTED_ACTIVE_VERSION: 88a4e0c0-2b48-4bb9-956c-50e102a1700f
+          EXPECTED_ACTIVE_SHA: b3e54bdabc655d551798a1ff27cc09ec42472f627bf03f0be5b0cc26c50424cd
+          PUBLISH: ${{ contains(github.event.head_commit.message, '[v75-style-release]') && 'true' || 'false' }}
+        run: node scripts/v75-style-release.mjs

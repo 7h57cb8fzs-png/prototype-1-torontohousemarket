@@ -45,7 +45,6 @@ Phase 2 adds the two timestamped operations migrations in `supabase/migrations/`
 - round robin
 - 5 minute first-response target
 - service hours 9 AM–9 PM Toronto time
-- up to $10,000 cashback
 - Toronto + York + Peel + Durham + Halton
 - defaults remain configurable in `app_settings`
 
