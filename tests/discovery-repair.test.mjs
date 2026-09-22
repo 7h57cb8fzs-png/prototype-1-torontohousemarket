@@ -44,7 +44,7 @@ test("mobile snapshot thumbnail is wired only from verified listing photos", asy
   assert.match(css,/@media\(max-width:720px\)/);
 });
 
-test("discovery thumbnail uses first MLS sequence despite blank Order and later preferred image", async t => {
+test("discovery thumbnail uses MLS preferred photo despite a later sequence", async t => {
   const media = (key, sequence, preferred=false) => ({MediaKey:key,MediaURL:`https://photos.example/${key}.jpg`,MediaType:'image/jpeg',Order:null,MediaOrder:sequence,PreferredPhotoYN:preferred,ImageSizeDescription:'Large'});
   const rows=[media('later-photo',8,true),media('first-photo',1),media('middle-photo',3)];
   let selected;
@@ -55,5 +55,5 @@ test("discovery thumbnail uses first MLS sequence despite blank Order and later 
     return new Response('photo',{headers:{'Content-Type':'image/jpeg'}});
   });
   const r=await worker.fetch(new Request('https://example.com/api/discovery-photo?listingKey=C13718090'),{PUBLIC_DISCOVERY_ENABLED:'true',AMPRE_TOKEN:'idx-fixture'},{});
-  assert.equal(r.status,200);assert.equal(selected,'first-photo');
+  assert.equal(r.status,200);assert.equal(selected,'later-photo');
 });

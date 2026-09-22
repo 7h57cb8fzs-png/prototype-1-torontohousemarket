@@ -1,3 +1,4 @@
+import { normalizeListingPhotos, loadListingMedia } from './mls-photos.js';
 import {valueRangeGraphic,soldComparisonGraphic} from './report-graphics.js';
 import {queryListingInventory,brokerageMatches,canonicalArea} from './listing-query.js';
 import {sellerArchiveKey,validatedArchive} from './seller-archive.js';
@@ -130,7 +131,7 @@ async function handleProperty(request, env) {
   const embeddedMedia = Array.isArray(subject.Media) ? subject.Media : [];
   const [comparableContext, mediaRecords] = await Promise.all([
     publicSnapshot ? Promise.resolve({ available: false, matchCount: 0, confidence: "Included in your report", basis: "Recent sold comparables and the value range are emailed after your request." }) : buildComparableContext(subject, env, activeForSale, requestId),
-    (activeForSale || activeLease) && fullDisplayAllowed && !reportEvidence ? embeddedMedia.length ? Promise.resolve(embeddedMedia) : fetchPropertyMedia(subject.ListingKey, env) : Promise.resolve([])
+    (activeForSale || activeLease) && fullDisplayAllowed && !reportEvidence ? loadListingMedia(subject, env, amplifyFetch) : Promise.resolve([])
   ]);
   const historySummary = summarizeHistory(history, subject);
   const priceOpinion = buildPriceOpinion(comparableContext, activeForSale);
@@ -145,7 +146,7 @@ async function handleProperty(request, env) {
     comparableContext,
     historySummary,
     priceOpinion,
-    photos: normalizeMedia(mediaRecords)
+    photos: normalizeMedia(mediaRecords, subject.ListingKey)
   });
   if (publicSnapshot) {
     property2.publicListing = publicListingFacts(subject);
@@ -201,7 +202,7 @@ __name2(buildNoMlsProperty, "buildNoMlsProperty");
 async function fetchPropertyByKey(listingKey, env, includeMedia = true) {
   if (!listingKey) return null;
   const params = new URLSearchParams();
-  if (includeMedia) params.set("$expand", "Media($select=MediaKey,MediaModificationTimestamp,MediaURL,MediaType;$filter=MediaType eq 'image/jpeg')");
+  if (includeMedia) params.set("$expand", "Media");
   let response = await amplifyFetch(`${AMPRE_BASE}/Property('${encodeURIComponent(listingKey)}')?${params.toString()}`, env);
   if (!response.ok) response = await amplifyFetch(`${AMPRE_BASE}/Property('${encodeURIComponent(listingKey)}')`, env);
   if (!response.ok) return null;
@@ -393,34 +394,8 @@ async function fetchPropertyMedia(listingKey, env) {
 }
 __name(fetchPropertyMedia, "fetchPropertyMedia");
 __name2(fetchPropertyMedia, "fetchPropertyMedia");
-function normalizeMedia(records) {
-  const bestByPhoto = /* @__PURE__ */ new Map();
-  for (const m of records || []) {
-    const mediaKey = m?.MediaKey;
-    const mediaUrl = String(m?.MediaURL || "");
-    const type = String(m?.MediaType || "").toLowerCase();
-    if (!mediaKey || !mediaUrl) continue;
-    if (!(type.startsWith("image/") || /\.(?:jpe?g|png|webp)(?:\?|$)/i.test(mediaUrl))) continue;
-    const sequence = mediaSequence(m);
-    const baseKey = String(mediaKey).replace(/-(?:l|m|nw|t)$/i, "");
-    const identity = Number.isFinite(sequence) && sequence !== Number.MAX_SAFE_INTEGER ? `order:${sequence}` : `key:${baseKey}`;
-    const current = bestByPhoto.get(identity);
-    if (!current || mediaVariantRank(m) < mediaVariantRank(current)) bestByPhoto.set(identity, m);
-  }
-  const output = [];
-  for (const m of [...bestByPhoto.values()].sort(compareMediaSequence)) {
-    const mediaKey = m.MediaKey;
-    const mediaUrl = String(m.MediaURL || "");
-    output.push({
-      key: mediaKey,
-      url: mediaUrl,
-      directUrl: mediaUrl,
-      fallbackUrl: `/api/media?key=${encodeURIComponent(mediaKey)}`,
-      description: cleanText(m.ShortDescription || m.LongDescription),
-      sequence: mediaSequence(m)
-    });
-  }
-  return output.slice(0, 60);
+function normalizeMedia(records, listingKey) {
+  return normalizeListingPhotos(records, listingKey);
 }
 __name(normalizeMedia, "normalizeMedia");
 __name2(normalizeMedia, "normalizeMedia");
@@ -2753,12 +2728,12 @@ function normalizeUniquePhotos(items) {
       ...p,
       // Signed AMPRE URLs are already display-ready and avoid a second API lookup.
       url: p.directUrl || p.url,
-      fallbackUrl: p.url && p.url !== p.directUrl ? p.url : null
+      fallbackUrl: p.fallbackUrl || (p.url && p.url !== p.directUrl ? p.url : null)
     };
     const current = groups.get(base);
     if (!current || rank(candidate) < rank(current)) groups.set(base, candidate);
   }
-  return [...groups.values()].sort((a, b) => photoSequence(a) - photoSequence(b)).slice(0, 60);
+  return [...groups.values()].sort((a, b) => Number(!!b.primary) - Number(!!a.primary) || photoSequence(a) - photoSequence(b));
 }
 __name(normalizeUniquePhotos, "normalizeUniquePhotos");
 __name2(normalizeUniquePhotos, "normalizeUniquePhotos");
@@ -3491,7 +3466,7 @@ async function publicProperty(request, env, ctx) {
   }
   if (publicUrl.searchParams.get("validate_only") === "1") return addressEntry ? json7({ ok: true, normalizedAddress: addressEntry.address, city: addressEntry.city, unit: addressEntry.parsed.unit }, 200, { "Cache-Control": "no-store" }) : json7({ ok: false, inputError: true, error: "Enter the street number and street name." }, 400);
   publicUrl.searchParams.set("mode", "public_snapshot");
-  publicUrl.searchParams.set("snapshot_version", VERSION4);
+  publicUrl.searchParams.set("snapshot_version", VERSION4 + "-mls-photos-4");
   const cacheKey = new Request(publicUrl.toString(), { method: "GET" });
   const edgeCache = typeof caches !== "undefined" ? caches.default : null;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
@@ -4016,13 +3991,13 @@ async function discoveryPhoto(request, env, ctx) {
   if(env.PUBLIC_DISCOVERY_ENABLED!=="true"||!env.AMPRE_TOKEN)return new Response(null,{status:404});
   const listingKey=new URL(request.url).searchParams.get('listingKey');
   if(!/^[A-Z]\d{7,9}$/.test(listingKey||''))return new Response(null,{status:400});
-  const cache=typeof caches!=='undefined'?caches.default:null,key=new Request(new URL('/api/discovery-photo?listingKey='+listingKey+'&photoVersion=3',request.url));
+  const cache=typeof caches!=='undefined'?caches.default:null,key=new Request(new URL('/api/discovery-photo?listingKey='+listingKey+'&photoVersion=4',request.url));
   const hit=await cache?.match(key);if(hit)return hit;
   try{
     const p=await fetchPropertyByKey(listingKey,env,true);
     if(!p||!publicListingFacts(p))return new Response(null,{status:404});
-    const media=Array.isArray(p.Media)&&p.Media.length?p.Media:await fetchPropertyMedia(listingKey,env);
-    const photo=normalizeMedia(media).sort((a,b)=>a.sequence-b.sequence)[0];if(!photo)return new Response(null,{status:404});
+    const media=await loadListingMedia(p,env,amplifyFetch);
+    const photo=normalizeMedia(media,listingKey)[0];if(!photo)return new Response(null,{status:404});
     const image=await mediaProxy(new Request(new URL('/api/media?key='+encodeURIComponent(photo.key),request.url)),env);
     if(!image.ok)return image;
     const result=new Response(image.body,{headers:{'Content-Type':image.headers.get('Content-Type')||'image/jpeg','Cache-Control':'public, max-age=300, s-maxage=300','X-Content-Type-Options':'nosniff'}});
