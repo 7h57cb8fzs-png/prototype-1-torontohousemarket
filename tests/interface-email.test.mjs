@@ -8,8 +8,10 @@ test('buyer and seller emails remove incentives while retaining price, address a
     for(const body of [email.html,email.text]){
       assert.doesNotMatch(body,/cash\s*back|YOUR BUYER BENEFIT|eligible purchase|10,000 back/i);
       assert.match(body,/10 Example Street/);
-      assert.match(body,/647.?890.?4704/);
+      assert.match(body,/contact the team/i);
     }
+    assert.doesNotMatch(email.html.replace(/<[^>]*>/g,''),/647.?890.?4704/);
+    assert.match(email.html,/href="tel:\+16478904704"/);
     assert.match(email.html,/<meta charset="utf-8">/i);
     assert.match(email.html,/font-family:Georgia,Times New Roman,serif;font-size:16px;font-weight:400;line-height:1.25/);
   }
@@ -25,6 +27,7 @@ test('client confirmations preserve verification and showing actions with the sh
     const payload={reason,...reason==='buyer_request_confirmation'?{vow_action_link:'https://torontohousemarket.com/api/verify?token=fixture'}:{}};
     const email=buildEmail({job_type:'email_recipient',payload},lead);
     assert.match(email.html,/TORONTO HOUSE MARKET/);
+    assert.match(email.html,/Property reports &amp; fast showings.<br><a [^>]+>Contact the team<\/a>/);
     assert.match(email.html,/background:#203b3c/);
     assert.match(email.html,/font:400 32px\/1.25 Georgia,Times New Roman,serif/);
     assert.match(email.html,/font:500 16px\/1.5 Arial,Helvetica,sans-serif/);

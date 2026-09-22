@@ -532,9 +532,6 @@ function renderLayoutEssentials(listing) {
 function renderBuyerEssentials(listing) {
   const visible = listing.forSale && !listing.displayRestricted;
   $("buyerEssentials").classList.toggle("hidden", !visible);
-  const offer = visible ? listing.offerTiming : null;
-  $("offerTimingValue").textContent = offer?.type === 'scheduled' ? offer.label : offer?.type === 'anytime' ? 'Offers anytime' : offer?.type === 'unclear' ? 'Confirm offer instructions' : 'Offer date not reported';
-  $("offerTimingNote").textContent = ['scheduled', 'unclear'].includes(offer?.type) ? offer.note || 'Confirm the deadline and any early-offer instructions with your Realtor.' : offer?.type === 'anytime' ? 'The listing says offers can be considered anytime. Confirm before submitting.' : 'No clear deadline in the public listing. Your Realtor will confirm the offer instructions.';
   renderSchoolSummary(visible ? listing.schoolSummary : null, visible && !!listing.schoolResearchToken);
 }
 function renderSchoolSummary(school, loading = false) {

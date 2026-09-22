@@ -48,7 +48,7 @@ test('phone validation agrees in browser and server, including obvious fake numb
 
 test('no-match email explains the gap simply and offers a working call or reply',()=>{
  const email=sellerReportEmail('Example home',{facts:{},valuation:{available:false,missingFacts:['home type']},seller:{evidence:{listingMatched:false}},comparables:[]});
- for(const content of [email.html,email.text]){assert.match(content,/couldn’t confidently match your home/);assert.match(content,/647-890-4704/);assert.match(content,/Reply to this email/);assert.doesNotMatch(content,/lot frontage|floor plan|previous MLS number|Reply with the home type/i);}
+ for(const content of [email.html,email.text]){assert.match(content,/couldn’t confidently match your home/);assert.match(content,/contact the team/i);assert.match(content,/Reply to this email/);assert.doesNotMatch(content,/lot frontage|floor plan|previous MLS number|Reply with the home type/i);}
  assert.match(email.html,/href="tel:\+16478904704"/);
  const dataError=sellerReportEmail('Example home',{valuation:{available:false,dataUnavailable:true},comparables:[]});assert.match(dataError.text,/couldn’t complete the market check/);
 });

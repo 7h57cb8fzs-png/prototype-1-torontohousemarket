@@ -35,6 +35,9 @@ try{
   }
   await page.goto(root+'/?listingKey=N10000001');await page.locator('#snapshotSection:not(.hidden)').waitFor();
   await fits('buyer '+width);
+  assert.equal(await page.locator('#offerTimingValue,#offerTimingNote,.brief-schools summary').count(),0);
+  assert(await page.locator('#schoolName').isVisible());
+  assert(await page.locator('.school-links').isVisible());
   for(const selector of ['#propertyInput','#homeSearchQuery']){
    await page.locator(selector).focus();
    assert.equal(await page.locator(selector).evaluate(e=>getComputedStyle(e).outlineStyle),'none');

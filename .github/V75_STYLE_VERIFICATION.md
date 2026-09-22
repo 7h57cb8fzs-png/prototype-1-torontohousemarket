@@ -50,3 +50,11 @@ User requested removal of the red inner search outlines; matching report and con
 - Final preview source 81f0d950944fdacc3cbe2df8edf5be513e2f551b. Workflow 35779963208 / job 106922657829 succeeded. Preview e9b2567e-e675-4aa1-bfd9-ec81657b9504, module hash 276511b92eda0b087bdc6a242f962980c965e2ee193ef1c648ff685d3131910a.
 - Visual review includes all report email variants and confirmation on mobile, plus seller form at desktop and a live Wheelwright address preview. No real leads or test emails were sent.
 - Promotion pins the reviewed preview and checks fourteen assets, four existing listings and one alphanumeric unit validation; deployment retains rollback 95225d55-916f-4df7-a72d-19430ccfe1c1.
+
+## Email contact and school visibility — September 22, 2026
+
+- Email footers and seller report prompts now display Contact the team instead of the telephone number. HTML contact links still call the team; plain-text reports invite a direct reply.
+- Removed the Offer Timing card from the main buyer brief. Schools and ratings are visible immediately with their existing data loading, boundary note and official links, without a disclosure control.
+- Presentation gate compares against published source 9d15a7fc575d1fef92c8afdadcb7cc9d3736db22 and permits only email renderer edits and removal of the three offer-display lines in app.js. Report processing, email delivery/retries, forms and school data restrictions are unchanged.
+- All 29 focused checks pass locally. The existing six-width layout gate additionally verifies that school information and links are visible without expansion and that the removed offer card is absent.
+- Read-only timing review of the reported delayed seller request: confirmation was accepted by the provider within one second; generation completed on attempt two after about 5m18s, and the report email was accepted about one second later. The successful attempt took 46s, including 37s for MLS evidence and 8s for analysis. The first attempt's detailed execution record was overwritten by the successful attempt, so its specific interruption cannot be established from the saved job. No customer data or live test messages are included in this repository.

@@ -820,16 +820,9 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
 .buyer-page .home-ai-head h3,.buyer-page .panel-head h3,.buyer-page .price-check h3{font-family:var(--display-font);font-weight:400;letter-spacing:-.5px;line-height:1.2;color:var(--finder-ink)}
 .buyer-page .home-ai-head h3{font-size:32px}
 .buyer-page .panel-head h3,.buyer-page .price-check h3{font-size:25px}
-.buyer-page .home-ai-panel .buyer-essentials{grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin:0;border-top:1px solid var(--line);background:#fafbf8}
+.buyer-page .home-ai-panel .buyer-essentials{grid-column:1/-1;grid-template-columns:minmax(0,1fr);gap:0;margin:0;border-top:1px solid var(--line);background:#fafbf8}
 .buyer-page .buyer-essentials article,.buyer-page .brief-schools{min-height:0;margin:0;padding:20px 28px;border:0;border-radius:0;background:transparent}
-.buyer-page .brief-schools{border-left:1px solid var(--line)}
-.brief-schools summary{cursor:pointer;list-style:none;position:relative;padding-right:24px}
-.brief-schools summary::-webkit-details-marker{display:none}
-.brief-schools summary::after{content:'+';position:absolute;right:0;top:1px;color:#a55e40;font-size:22px;font-weight:400}
-.brief-schools[open] summary::after{content:'−'}
-.brief-schools summary>span{display:block}
-.brief-schools summary>span:last-child{font-size:16px;color:#203b3c;margin-top:8px;line-height:1.4}
-.brief-school-content{padding-top:12px}
+.brief-school-content{padding-top:0}
 .buyer-page .buyer-essentials strong{font-size:16px;line-height:1.4;font-weight:500;margin:8px 0 6px}
 .buyer-page .buyer-essentials p,.buyer-page .school-links a{font-size:14px;line-height:1.6}
 .buyer-page .buyer-essentials p{margin-bottom:0}
@@ -878,7 +871,6 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
  .buyer-page .quick-facts strong{font-size:15px}
  .buyer-page .home-ai-panel .buyer-essentials{grid-template-columns:1fr}
  .buyer-page .buyer-essentials article,.buyer-page .brief-schools{padding:18px 20px}
- .buyer-page .brief-schools{border-left:0;border-top:1px solid var(--line)}
  .buyer-page .buyer-path{padding:28px 0}
  .buyer-page .buyer-path-inner{padding:24px;gap:24px}
  .buyer-page .buyer-path h2{font-size:32px}
