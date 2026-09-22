@@ -1,0 +1,37 @@
+name: Inspect requested MLS lookups
+on:
+  push:
+    branches: [phase-6]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: contains(github.event.head_commit.message, '[listing-lookup-read]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Compare requested listing endpoints
+        env:
+          AMPRE_TOKEN: ${{ secrets.AMPRE_TOKEN }}
+          AMPRE_VOW_TOKEN: ${{ secrets.AMPRE_VOW_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          const fields=['ListingKey','StandardStatus','MlsStatus','TransactionType','InternetEntireListingDisplayYN','InternetAddressDisplayYN','OriginalEntryTimestamp','ModificationTimestamp'];
+          for(const [feed,token]of [['IDX',process.env.AMPRE_TOKEN],['VOW',process.env.AMPRE_VOW_TOKEN]]){
+            if(!token){console.log(JSON.stringify({feed,configured:false}));continue;}
+            const requests=[];
+            for(const key of ['N13816334','N13815978']){
+              requests.push([key,'direct',`Property('${key}')`]);
+              const u=new URL('https://query.ampre.ca/odata/Property');u.searchParams.set('$filter',`ListingKey eq '${key}'`);u.searchParams.set('$select',fields.join(','));u.searchParams.set('$top','2');
+              requests.push([key,'collection',u.href]);
+            }
+            const address=new URL('https://query.ampre.ca/odata/Property');address.searchParams.set('$filter',"StreetNumber eq '43' and (StreetName eq 'Jules' or StreetName eq 'JULES' or StreetName eq 'jules')");address.searchParams.set('$select',fields.join(','));address.searchParams.set('$top','5');requests.push(['requested-address','address',address.href]);
+            for(const [key,mode,path]of requests){
+              try{
+                const started=Date.now(),url=(path.startsWith('https:')?path:'https://query.ampre.ca/odata/'+path).replaceAll('+','%20');
+                const r=await fetch(url,{headers:{Authorization:`Bearer ${token}`,Accept:'application/json'},signal:AbortSignal.timeout(10000)}),d=await r.json().catch(()=>null),rows=Array.isArray(d?.value)?d.value:d?.ListingKey?[d]:[];
+                console.log(JSON.stringify({feed,key,mode,status:r.status,ms:Date.now()-started,errorCode:d?.error?.code||null,rows:rows.map(row=>Object.fromEntries(fields.map(f=>[f,row[f]??null])))}));
+              }catch(e){console.log(JSON.stringify({feed,key,mode,error:e.name}));}
+            }
+          }
+          NODE
