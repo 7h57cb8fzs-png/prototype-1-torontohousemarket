@@ -910,3 +910,17 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
  .buyer-page .address-suggestions [role=option]{white-space:normal;overflow-wrap:anywhere}
  .buyer-page .seller-entry{margin:12px 0 0}
 }
+
+/* Match mobile report controls to the desktop header. */
+@media(max-width:760px){
+ .buyer-page .nav{height:auto;min-height:62px;flex-wrap:wrap;gap:9px;padding:10px 0}
+ .buyer-page .nav .brand{flex:1 1 100%}
+ .buyer-page .nav-actions{flex:1 1 100%;width:100%;gap:8px}
+ .buyer-page .nav-actions .nav-cta,.buyer-page .nav-actions .home-value-link{display:inline-flex;flex:1 1 0;width:auto;min-width:0;min-height:44px;padding:10px 8px;font-size:16px}
+ .buyer-page .mobile-showing:not(.hidden){grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);padding:10px 14px max(10px,env(safe-area-inset-bottom));background:#f0f3ed;border-color:#dce3d7;box-shadow:none}
+ .buyer-page .mobile-showing strong{font-family:var(--display-font);font-size:23px;font-weight:400;line-height:1.2;color:var(--finder-ink)}
+ .buyer-page .mobile-showing small{font-size:9px;line-height:1.4;letter-spacing:.03em;color:#64736c}
+ .buyer-page .mobile-showing button{min-height:44px;padding:10px 14px;border:1px solid #203b3c;border-radius:10px;background:#203b3c;color:#fff;font-family:var(--display-font);font-size:16px;font-weight:400;line-height:1.25;letter-spacing:0}
+ .buyer-page .mobile-showing button:hover{background:#31544d;border-color:#31544d;transform:none}
+ .buyer-page #lookup,.buyer-page #snapshotSection{scroll-margin-top:120px}
+}

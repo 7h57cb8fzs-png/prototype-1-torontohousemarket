@@ -92,6 +92,9 @@ let homeAiSequence = 0;
 let homeAiController = null;
 let priceCheckSequence = 0;
 let priceCheckController = null;
+const homePageTitle = document.title;
+let activePreviewQuery = null;
+let previewNavigationSequence = 0;
 
 for (const button of document.querySelectorAll("[data-scroll]")) {
   button.addEventListener("click", () => {
@@ -108,8 +111,13 @@ analysisForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (loading) return;
 
+  const navigationSequence = previewNavigationSequence;
   const value = await buyerAddressControl.prepare();
-  if(value===null)return;
+  if(value===null || navigationSequence!==previewNavigationSequence)return;
+  await lookupProperty(value);
+});
+
+async function lookupProperty(value, {historyMode = "push", includeShowing = false} = {}) {
   const sequence=++buyerLookupSequence;
   if (!value) {
     setInputStatus("error", "Enter an MLS number, street address, or listing URL.");
@@ -119,6 +127,9 @@ analysisForm.addEventListener("submit", async (event) => {
 
   propertyInput.setAttribute("aria-invalid","false");
   activePropertyInput = value;
+  hideLeadModal();
+  closeGallery();
+  $("listingShareDialog").close();
   setLoading(true);
   hideResult();
   setInputStatus("loading", "Checking the live MLS, listing status and property data…");
@@ -137,17 +148,19 @@ analysisForm.addEventListener("submit", async (event) => {
     }
 
     liveListing = result.property;
-    if(result.normalizedAddress)buyerAddressControl.set(result.normalizedAddress);
+    buyerAddressControl.set(result.normalizedAddress || liveListing.address || value);
     renderListing(liveListing);
     showResult();
+    rememberPreview(liveListing, value, historyMode);
     loadPriceCheck(liveListing);
     loadHomeAssistant('overview');
     loadSchoolSnapshot(liveListing);
-    if (new URLSearchParams(window.location.search).get('showing')==='1') openLeadModal('buyer_report',true);
+    if (includeShowing) openLeadModal('buyer_report',true);
 
     const verification = liveListing.inputValidation?.label || "Property checked.";
     setInputStatus(liveListing.foundInMls === false ? "error" : "ok", verification);
-    snapshotSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    propertyInput.blur();
+    snapshotSection.scrollIntoView({ behavior: historyMode === "none" ? "auto" : "smooth", block: "start" });
   } catch (error) {
     if(sequence!==buyerLookupSequence)return;
     liveListing = null;
@@ -158,7 +171,62 @@ analysisForm.addEventListener("submit", async (event) => {
   } finally {
     if(sequence===buyerLookupSequence)setLoading(false);
   }
-});
+}
+
+// Successful previews are real destinations. URLs also restore them after reload.
+function previewQuery() {
+  const params = new URLSearchParams(location.search);
+  const key = params.get('listingKey');
+  if (key && /^[A-Z]\d{7,9}$/i.test(key)) return key.toUpperCase();
+  const query = params.get('q');
+  return query && query.length <= 500 ? query : null;
+}
+
+function rememberPreview(listing, value, mode) {
+  const key = String(listing.listingKey || '').toUpperCase();
+  const query = /^[A-Z]\d{7,9}$/.test(key) ? key : value;
+  if (mode !== 'none') {
+    const url = new URL(location.href);
+    const sameProperty = previewQuery() === query;
+    url.searchParams.delete('listingKey');
+    url.searchParams.delete('q');
+    if (!sameProperty) url.searchParams.delete('showing');
+    url.searchParams.set(query === key ? 'listingKey' : 'q', query);
+    url.hash = 'lookup';
+    history[mode === 'replace' || sameProperty ? 'replaceState' : 'pushState'](null, '', url);
+  }
+  activePreviewQuery = previewQuery();
+  document.title = `${listing.address || value} | Toronto House Market`;
+}
+
+function restorePreview({initial = false} = {}) {
+  const query = previewQuery();
+  // Native anchor navigation within the same property needs no new lookup.
+  if (!initial && query === activePreviewQuery && liveListing && !loading) return;
+  previewNavigationSequence++;
+  buyerLookupSequence++;
+  buyerAddressControl.cancel();
+  setLoading(false);
+  hideLeadModal();
+  closeGallery();
+  $("listingShareDialog").close();
+  hideResult();
+  liveListing = null;
+  activePreviewQuery = query;
+  buyerAddressControl.set(query || '');
+  if (query) {
+    lookupProperty(query, {
+      historyMode: initial ? 'replace' : 'none',
+      includeShowing: initial && new URLSearchParams(location.search).get('showing') === '1'
+    });
+  } else {
+    activePropertyInput = '';
+    document.title = homePageTitle;
+    setInputStatus('', 'Free property preview · No sign-up');
+    if (!initial) document.getElementById('lookup').scrollIntoView({behavior:'auto', block:'start'});
+  }
+}
+window.addEventListener('popstate', () => restorePreview());
 
 function setLoading(value) {
   loading = value;
@@ -1060,13 +1128,11 @@ $('explore').addEventListener('click',event=>{
   const ask=event.target.closest('[data-ask-home]');if(ask){sendHomeChat(`Tell me about MLS ${ask.dataset.askHome}. What should I check before viewing?`);return;}
   const share=event.target.closest('[data-share-listing]');if(share){openListingShare({listingKey:share.dataset.shareListing,address:share.dataset.shareAddress,forSale:true});return;}
   const link=event.target.closest('[data-open-listing]');if(!link||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
-  event.preventDefault();if(loading)return;history.pushState(null,'',`/?listingKey=${encodeURIComponent(link.dataset.openListing)}#lookup`);propertyInput.value=link.dataset.openListing;analysisForm.requestSubmit();
+  event.preventDefault();if(loading)return;buyerAddressControl.set(link.dataset.openListing);analysisForm.requestSubmit();
 });
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(SpeechRecognition){$('chatVoice').hidden=false;$('chatVoice').addEventListener('click',()=>{const recognition=new SpeechRecognition();recognition.lang='en-CA';recognition.interimResults=false;recognition.onstart=()=>{$('homeSearchStatus').textContent='Listening…';};recognition.onresult=event=>{$('homeSearchQuery').value=event.results[0][0].transcript;$('homeSearchStatus').textContent='Review your message, then send.';};recognition.onerror=()=>{$('homeSearchStatus').textContent='Voice input is unavailable. Please type your message.';};recognition.start();});}
-const linkedMls=new URLSearchParams(window.location.search).get('listingKey');
-if(linkedMls&&/^[A-Z]\d{7,9}$/.test(linkedMls)){propertyInput.value=linkedMls;analysisForm.requestSubmit();}
-else{const linkedQuery=new URLSearchParams(window.location.search).get('q');if(linkedQuery&&linkedQuery.length<=500){propertyInput.value=linkedQuery;analysisForm.requestSubmit();}}
+restorePreview({initial:true});
 
 // PUBLIC LISTING SHARING START
 function listingShareData(listing) {
