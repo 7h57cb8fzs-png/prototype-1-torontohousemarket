@@ -7,9 +7,11 @@ export async function startPhotoTrace(cf, worker) {
     socket.addEventListener('open', resolve, { once: true });
     socket.addEventListener('error', () => reject(Error('Preview trace connection failed')), { once: true });
   });
-  socket.addEventListener('message', event => {
+  socket.send(JSON.stringify({ debug: false }));
+  socket.addEventListener('message', async event => {
     try {
-      const data = JSON.parse(String(event.data));
+      const raw = typeof event.data === 'string' ? event.data : event.data instanceof ArrayBuffer ? new TextDecoder().decode(event.data) : await event.data.text();
+      const data = JSON.parse(raw);
       for (const log of data.logs || []) {
         if (log.message?.[0] === 'THM_MLS_PHOTO_TRACE') console.log('MEDIA_METADATA', log.message[1]);
       }
