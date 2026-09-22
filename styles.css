@@ -893,3 +893,20 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
  .buyer-page .buyer-path-options article{display:grid;grid-template-columns:30px minmax(0,1fr);gap:14px;padding-top:18px;border-top:1px solid #d6dfd5}
  .buyer-page .buyer-path-options article>span{border:0;padding:0;margin:0;font-size:24px}
 }
+
+/* 7.5: keep the mobile address lookup within the phone's viewport. */
+@media(max-width:760px){
+ .buyer-page{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+ .buyer-page .hero-inner{width:calc(100% - 28px);max-width:600px;min-width:0;padding:20px 0}
+ .buyer-page .hero h1{font-size:clamp(28px,7.6vw,38px);line-height:1.15;margin:16px auto 12px;max-width:100%;white-space:normal}
+ .buyer-page .hero h1 span{white-space:normal;overflow-wrap:break-word}
+ .buyer-page .hero-copy{max-width:100%;font-size:15px;line-height:1.5}
+ .buyer-page .buyer-address-anchor{width:100%;max-width:100%;min-width:0}
+ .buyer-page .search-box{width:100%;max-width:100%;grid-template-columns:minmax(0,1fr);margin-top:18px}
+ .buyer-page .search-input-wrap{width:100%;min-width:0}
+ .buyer-page .search-input-wrap input{width:100%;min-width:0;max-width:100%;font-size:18px;line-height:1.4;height:48px}
+ .buyer-page .hero-cta{min-width:0;width:100%;max-width:100%;min-height:48px;height:auto;padding:12px;white-space:normal}
+ .buyer-page .address-suggestions{width:100%;max-width:100%;min-width:0}
+ .buyer-page .address-suggestions [role=option]{white-space:normal;overflow-wrap:anywhere}
+ .buyer-page .seller-entry{margin:12px 0 0}
+}

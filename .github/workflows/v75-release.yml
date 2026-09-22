@@ -1,0 +1,42 @@
+name: Preview and publish THM 7.5 mobile layout
+on:
+  push:
+    branches: [phase-6]
+permissions:
+  contents: read
+concurrency:
+  group: thm-v74-guarded-deployment
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: contains(github.event.head_commit.message, '[v75-preview]') || contains(github.event.head_commit.message, '[v75-release]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check five viewport widths in WebKit
+        run: |
+          npm install --no-save --package-lock=false playwright@1.58.2
+          npx playwright install --with-deps webkit
+          node scripts/v75-mobile-layout.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v75-mobile-layout
+          path: mobile-qa/
+      - name: Focused acceptance
+        run: |
+          node --check app.js
+          node --test --test-name-pattern='studio |condo sizes require|front-page condos exclude' tests/studio-price-check.test.mjs tests/buyer-refinement.test.mjs
+      - name: Guarded preview or promotion
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          CANDIDATE_VERSION_ID: ''
+          EXPECTED_ACTIVE_VERSION: 15963302-e453-43b2-b5d7-33cff69df7af
+          EXPECTED_ACTIVE_SHA: b3e54bdabc655d551798a1ff27cc09ec42472f627bf03f0be5b0cc26c50424cd
+          PUBLISH: ${{ contains(github.event.head_commit.message, '[v75-release]') && 'true' || 'false' }}
+        run: node scripts/v74-release.mjs
