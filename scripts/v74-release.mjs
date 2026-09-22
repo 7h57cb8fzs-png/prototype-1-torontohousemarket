@@ -30,7 +30,8 @@ async function verify(base){
  for(const file of ['index.html','app.js','styles.css','seller.html','seller.js','seller.css','address-input.js','admin.js','admin.html','admin.css','select-controls.js']){const r=await fetch(base+'/'+(file==='index.html'?'':file)+'?v74='+process.env.GITHUB_SHA);assert(r.ok&&hash(Buffer.from(await r.arrayBuffer()))===hash(readFileSync(file)),'Asset mismatch: '+file);}
  for(const listingKey of ['W13812424','N13813276','N13813238','N13813034','N13812888']) {
   const r=await fetch(base+'/api/property?listingKey='+listingKey,{signal:AbortSignal.timeout(45000)});
-  const d=await r.json();assert(r.ok&&d.ok&&d.property?.listingKey===listingKey,'Listing check failed: '+listingKey);
+  if(!r.ok||!r.headers.get('Content-Type')?.includes('application/json')){const body=await r.text();const code=body.match(/(?:Error|error code:)\s*(\d{3,5})/i)?.[1]||'unknown';throw Error('Listing response failed: '+listingKey+' HTTP '+r.status+' provider error '+code);}
+  const d=await r.json();assert(d.ok&&d.property?.listingKey===listingKey,'Listing check failed: '+listingKey);
   const photos=d.property.photos||[];assert.equal(d.property.photoCount,photos.length);
   assert.equal(new Set(photos.map(p=>p.key)).size,photos.length,'Duplicate photo identity');
   console.log(JSON.stringify({stage:'photo-check',listingKey,address:d.property.address,count:photos.length,first:photos.slice(0,5).map(p=>({key:p.key,sequence:p.sequence,primary:p.primary}))}));
