@@ -783,3 +783,93 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
 .chat-experience .discovery-home h3{min-height:0;overflow-wrap:anywhere}
 .chat-experience .chat-card-actions{padding-top:6px}
 @media(max-width:760px){.chat-property-row .discovery-home{flex-basis:220px;max-width:220px}.chat-experience .discovery-photo{height:147px!important}}
+
+/* Buyer interface: carry the Home Finder's typography and quieter surfaces through the page. */
+.buyer-page{--display-font:Georgia,'Times New Roman',serif;--finder-ink:#203b3c;--finder-accent:#a55e40}
+.buyer-page .hero{background:#f7f8f5}
+.buyer-page .hero h1{font-family:var(--display-font);font-size:clamp(38px,4.5vw,56px);font-weight:400;line-height:1.13;letter-spacing:-1.5px;color:var(--finder-ink)}
+.buyer-page .hero h1 span{font-style:italic;color:var(--finder-accent)}
+.buyer-page .hero-copy{font-size:16px;line-height:1.7;max-width:610px}
+.buyer-page .speed-chip{border:0;background:transparent;padding:0;border-radius:0;font-size:12px;letter-spacing:.12em;font-weight:650;color:#536961}
+.buyer-page .primary-btn,.buyer-page .showing-btn,.buyer-page .nav-cta{font-weight:600;border-radius:10px}
+.buyer-page .nav-actions{display:flex;align-items:center;gap:12px}
+.buyer-page .nav-actions .home-value-link{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:44px;padding:10px 16px;border:1px solid #d6dfd5;border-radius:10px;background:#f7f8f5;color:var(--finder-ink);font-family:var(--display-font);font-size:18px;line-height:1.2;text-decoration:none;white-space:nowrap}
+.home-value-link svg{width:21px;height:21px;stroke:#a55e40;stroke-width:1.5;flex-shrink:0}
+.buyer-page .nav-actions .home-value-link:hover{background:#eef2eb;border-color:#9aad9e}
+.buyer-page #snapshotProperty{font-family:var(--display-font);font-size:clamp(27px,3vw,36px);font-weight:400;letter-spacing:-.7px;line-height:1.2;color:var(--finder-ink)}
+.buyer-page .action-rail{border-radius:18px;padding:22px}
+.buyer-page #liveAddress{font-family:var(--display-font);font-size:25px;font-weight:400;line-height:1.25;letter-spacing:-.5px}
+.buyer-page .listing-price{font-family:var(--display-font);font-size:34px;font-weight:400;letter-spacing:-.6px;line-height:1.2}
+.buyer-page #liveDetails{font-size:14px;line-height:1.6}
+.buyer-page .eyebrow,.buyer-page .panel-kicker,.buyer-page .section-label,.buyer-page .home-ai-kicker{font-size:12px;font-weight:650;letter-spacing:.12em;color:#536961}
+.buyer-page .speed-action-box>strong,.buyer-page .offmarket-action-box>strong{font-family:var(--display-font);font-size:25px;font-weight:400;line-height:1.2;letter-spacing:-.4px}
+.buyer-page .quick-facts{grid-template-columns:.75fr .75fr .8fr 1.4fr 1.4fr .8fr 1.1fr;box-shadow:none;border-radius:14px}
+.buyer-page .quick-facts>div{min-height:76px;padding:13px 14px;gap:7px;border-bottom:0;border-right:1px solid var(--line)!important}
+.buyer-page .quick-facts>div:last-child{border-right:0!important}
+.buyer-page .quick-facts span{font-size:12px;font-weight:600;letter-spacing:.07em;color:#64736c}
+.buyer-page .quick-facts strong{font-size:16px;font-weight:500;letter-spacing:0;line-height:1.35;overflow-wrap:normal}
+.buyer-page .layout-essentials{padding:16px 20px;border-radius:14px}
+.buyer-page .layout-essentials-head{margin-bottom:12px}
+.buyer-page .layout-essentials-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.buyer-page .layout-essentials-grid strong{font-size:16px;font-weight:500}
+.buyer-page .home-ai-head h3,.buyer-page .panel-head h3,.buyer-page .price-check h3{font-family:var(--display-font);font-weight:400;letter-spacing:-.5px;line-height:1.2;color:var(--finder-ink)}
+.buyer-page .home-ai-head h3{font-size:32px}
+.buyer-page .panel-head h3,.buyer-page .price-check h3{font-size:25px}
+.buyer-page .home-ai-panel .buyer-essentials{grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;margin:0;border-top:1px solid var(--line);background:#fafbf8}
+.buyer-page .buyer-essentials article,.buyer-page .brief-schools{min-height:0;margin:0;padding:20px 28px;border:0;border-radius:0;background:transparent}
+.buyer-page .brief-schools{border-left:1px solid var(--line)}
+.brief-schools summary{cursor:pointer;list-style:none;position:relative;padding-right:24px}
+.brief-schools summary::-webkit-details-marker{display:none}
+.brief-schools summary::after{content:'+';position:absolute;right:0;top:1px;color:#a55e40;font-size:22px;font-weight:400}
+.brief-schools[open] summary::after{content:'−'}
+.brief-schools summary>span{display:block}
+.brief-schools summary>span:last-child{font-size:16px;color:#203b3c;margin-top:8px;line-height:1.4}
+.brief-school-content{padding-top:12px}
+.buyer-page .buyer-essentials strong{font-size:16px;line-height:1.4;font-weight:500;margin:8px 0 6px}
+.buyer-page .buyer-essentials p,.buyer-page .school-links a{font-size:14px;line-height:1.6}
+.buyer-page .buyer-essentials p{margin-bottom:0}
+.buyer-page .school-links{display:flex;flex-wrap:wrap;gap:10px 18px;margin-top:12px}
+.buyer-page .detail-item strong,.buyer-page .market-pulse-grid strong{font-size:16px;font-weight:500}
+.buyer-page .ai-grid article>strong{font-size:19px;font-weight:500}
+.buyer-page .buyer-path{padding:48px 0;background:#fff}
+.buyer-page .buyer-path-inner{grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:44px;align-items:start;padding:30px;border:1px solid #dce3dc;border-radius:18px;background:#f7f8f5}
+.buyer-page .buyer-path h2{font-family:var(--display-font);font-size:clamp(30px,3vw,38px);font-weight:400;line-height:1.16;letter-spacing:-1px;margin:16px 0}
+.buyer-page .buyer-path h2 em{color:var(--finder-accent);font-weight:400}
+.buyer-page .buyer-path p{font-size:16px;line-height:1.65;margin:0 0 12px}
+.buyer-page .buyer-path .team-call{font-size:14px;font-weight:600;padding:8px 0}
+.buyer-page .buyer-path-options{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.buyer-page .buyer-path-options article{display:block;padding:0;border:0;border-radius:0;background:transparent}
+.buyer-page .buyer-path-options article>span{display:block;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid #d6dfd5;font-family:var(--display-font);font-size:27px;font-weight:400;color:var(--finder-accent)}
+.buyer-page .buyer-path-options h3{font-family:var(--display-font);font-size:23px;font-weight:400;line-height:1.2;letter-spacing:-.4px;margin:0 0 12px}
+.buyer-page .buyer-path-options p{font-size:14px;line-height:1.7}
+.buyer-page .buyer-path-options small{display:block;font-size:12px;line-height:1.5;color:#64736c}
+@media(max-width:960px){
+ .buyer-page .quick-facts{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .buyer-page .quick-facts>div{border-bottom:1px solid var(--line)}
+ .buyer-page .quick-facts>div:nth-child(3n){border-right:0!important}
+ .buyer-page .quick-facts>div:last-child{grid-column:1/-1;border-bottom:0}
+ .buyer-page .buyer-path-inner{grid-template-columns:1fr;gap:28px}
+}
+@media(max-width:760px){
+ .buyer-page .nav-actions{gap:8px}
+ .buyer-page .nav-actions .home-value-link{font-size:16px;padding:9px 11px;gap:6px}
+ .buyer-page .home-value-link svg{width:18px;height:18px}
+ .buyer-page .hero h1{font-size:38px;letter-spacing:-1px}
+ .buyer-page .hero-copy{font-size:16px}
+ .buyer-page .action-rail{padding:18px}
+ .buyer-page .quick-facts>div{padding:12px 10px;min-height:70px}
+ .buyer-page .quick-facts strong{font-size:15px}
+ .buyer-page .home-ai-panel .buyer-essentials{grid-template-columns:1fr}
+ .buyer-page .buyer-essentials article,.buyer-page .brief-schools{padding:18px 20px}
+ .buyer-page .brief-schools{border-left:0;border-top:1px solid var(--line)}
+ .buyer-page .buyer-path{padding:28px 0}
+ .buyer-page .buyer-path-inner{padding:24px;gap:24px}
+ .buyer-page .buyer-path h2{font-size:32px}
+ .buyer-page .buyer-path-options{gap:20px}
+ .buyer-page .buyer-path-options h3{font-size:22px}
+}
+@media(max-width:480px){
+ .buyer-page .buyer-path-options{grid-template-columns:1fr}
+ .buyer-page .buyer-path-options article{display:grid;grid-template-columns:30px minmax(0,1fr);gap:14px;padding-top:18px;border-top:1px solid #d6dfd5}
+ .buyer-page .buyer-path-options article>span{border:0;padding:0;margin:0;font-size:24px}
+}

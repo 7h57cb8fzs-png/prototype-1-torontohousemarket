@@ -13,7 +13,8 @@ const names=v=>v.bindings.filter(b=>b.name!=='ASSETS').map(b=>b.name+':'+b.type)
 const prior=await active(),before=await version(prior),priorHash=source(before),schedule=await cf(`/workers/scripts/${worker}/schedules`);
 console.log(JSON.stringify({stage:'baseline',version:prior,source:priorHash}));
 if(process.env.EXPECTED_ACTIVE_VERSION)assert.equal(prior,process.env.EXPECTED_ACTIVE_VERSION,'Production version changed after review');
-assert.equal(priorHash, '048c3712274dd65095621dea4a8384178f3d8ae4d36946ad26b6ae9f02d69c09', 'Production source differs from the reviewed compact-comparisons baseline');
+assert.equal(prior, process.env.EXPECTED_ACTIVE_VERSION, 'Production differs from the reviewed studio-fix release');
+if(process.env.EXPECTED_ACTIVE_SHA)assert.equal(priorHash,process.env.EXPECTED_ACTIVE_SHA,'Production source changed after review');
 try {const settings=await cf('/workers/account-settings');console.log(JSON.stringify({stage:'workers-plan',default_usage_model:settings.default_usage_model,usage_model:settings.usage_model}));}catch(e){console.log(JSON.stringify({stage:'workers-plan',verified:false,reason:e.message}));}
 console.log(JSON.stringify({stage:'worker-plan',usage_model:before.resources?.script?.usage_model||before.usage_model||null}));
 let candidate=process.env.CANDIDATE_VERSION_ID,preview;
@@ -24,7 +25,7 @@ if(!candidate){
   let output;try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config','wrangler.v74.json'],{encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:12e6});}catch{throw Error('Preview upload failed; CLI output withheld to protect configuration.');}
   candidate=output.match(/Worker Version ID:\s*([a-f0-9-]{36})/i)?.[1];preview=output.match(/Version Preview URL:\s*(https:\/\/[^\s]+)/i)?.[1];assert(candidate&&preview,'Missing preview identity');
 }else{assert.equal(priorHash,process.env.EXPECTED_ACTIVE_SHA,'Production changed after preview');preview=`https://${candidate.slice(0,8)}-${worker}.7h57cb8fzs.workers.dev`;}
-const after=await version(candidate);assert.deepEqual(names(after),names(before),'Binding names/types changed');
+const after=await version(candidate);assert.equal(source(after),priorHash,'Interface release must not change any Worker module');assert.deepEqual(names(after),names(before),'Binding names/types changed');
 for(const b of before.bindings.filter(b=>b.type==='plain_text'&&!['THM_RELEASE','PUBLIC_DISCOVERY_ENABLED'].includes(b.name)))assert(after.bindings.some(n=>n.name===b.name&&n.text===b.text),'Existing setting changed');
 async function verify(base){
  const ver=await fetch(base+'/api/version').then(r=>r.json());assert.equal(ver.version,'version-7.4-history-search-20260918');
@@ -52,6 +53,7 @@ async function verify(base){
 }
 await verify(preview);assert.equal(await active(),prior,'Production changed while preparing preview');
 console.log(JSON.stringify({stage:'candidate',candidate,preview,prior,priorHash,candidateHash:source(after)}));
+console.log('::notice title=Verified interface candidate::'+JSON.stringify({candidate,preview,prior,priorHash,candidateHash:source(after)}));
 if(process.env.PUBLISH!=='true')process.exit(0);
 try{
  await cf(`/workers/scripts/${worker}/deployments`,'POST',{strategy:'percentage',versions:[{version_id:candidate,percentage:100}]});

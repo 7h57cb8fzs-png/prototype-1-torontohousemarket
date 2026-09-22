@@ -394,6 +394,8 @@ function renderQuickFacts(listing) {
   if ((!listing.forSale && !listing.forLease) || listing.displayRestricted) listing = {};
   $("factBeds").textContent = bedroomLabel(listing);
   $("factBaths").textContent = listing.baths ?? "—";
+  const kitchens = listing.kitchensTotal;
+  $("kitchenFact").textContent = kitchens != null && Number.isInteger(Number(kitchens)) && Number(kitchens) >= 0 ? String(kitchens) : "—";
   $("factType").textContent = listing.propertySubType || listing.propertyType || "—";
   $("factLotLabel").textContent = listing.isCondominium ? "MAINTENANCE" : "LOT";
   const fee = listing.maintenanceFee, amount = fee?.amount, frequency = String(fee?.frequency || 'month').toLowerCase();
@@ -445,8 +447,8 @@ function renderMarketRead(listing) {
 
 function renderLayoutEssentials(listing) {
   const visible = (listing.forSale || listing.forLease) && !listing.displayRestricted;
-  $("layoutEssentials").classList.toggle("hidden", !visible);
   const apartment = /condo (?:apartment|apt)/i.test(listing.propertySubType || "");
+  $("layoutEssentials").classList.toggle("hidden", !visible || apartment);
   $("basementFactCard").classList.toggle("hidden", apartment);
   $("entranceFactCard").classList.toggle("hidden", apartment);
   const tags = (Array.isArray(listing.basement) ? listing.basement : []).map(v => String(v).replace(/([a-z])([A-Z])/g, "$1 $2").trim()).filter(Boolean);
@@ -457,8 +459,6 @@ function renderLayoutEssentials(listing) {
   const uncertainEntry = entrySentences.some(v => /\b(?:potential|possible|could|proposed|future|option|may|can be|subject to)\b/i.test(v));
   const deniedEntry = tags.some(v => /(?:no|not|without).*separate.*entrance/i.test(v)) || entrySentences.some(v => /\b(?:no|not|without)\b[^,;]{0,45}separate(?:\s+(?:basement|side|rear))?\s+entrance/i.test(v));
   $("entranceFact").textContent = deniedEntry ? explicitEntry ? "Needs confirmation" : "Not available, per listing" : explicitEntry ? "Reported" : uncertainEntry ? "Potential — confirm" : entrySentences.length ? "Reported in remarks" : "Not reported";
-  const kitchens = listing.kitchensTotal;
-  $("kitchenFact").textContent = kitchens != null && Number.isInteger(Number(kitchens)) && Number(kitchens) >= 0 ? `${kitchens} ${Number(kitchens) === 1 ? "kitchen" : "kitchens"}` : "Not reported";
 }
 
 function renderBuyerEssentials(listing) {

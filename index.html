@@ -13,16 +13,16 @@
     gtag('js', new Date());
     gtag('config', 'G-44826VKX1E');
   </script>
-  <link rel="stylesheet" href="/styles.css?v=7410" />
+  <link rel="stylesheet" href="/styles.css?v=7411" />
 </head>
-<body>
+<body class="buyer-page">
 <header class="site-header">
   <div class="wrap nav">
     <a class="brand" href="#top" aria-label="Toronto House Market home">
       <span class="brand-mark" aria-hidden="true">THM</span>
       <span class="brand-name">Toronto<span>House Market</span></span>
     </a>
-    <div class="nav-actions"><button id="headerReportButton" class="nav-cta" type="button">Get my AI report <span aria-hidden="true">→</span></button></div>
+    <div class="nav-actions"><button id="headerReportButton" class="nav-cta" type="button">Get my AI report <span aria-hidden="true">→</span></button><a class="home-value-link" href="/seller.html"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 10 8-7 8 7v10H4V10Z"/><path d="M9 20v-7h6v7"/></svg><span>Home Value</span></a></div>
   </div>
 </header>
 
@@ -112,25 +112,22 @@
       <div class="quick-facts" id="quickFacts">
         <div><span>BEDS</span><strong id="factBeds">—</strong></div>
         <div><span>BATHS</span><strong id="factBaths">—</strong></div>
+        <div><span>KITCHENS</span><strong id="kitchenFact">—</strong></div>
         <div><span>TYPE</span><strong id="factType">—</strong></div>
         <div><span id="factLotLabel">LOT</span><strong id="factLot">—</strong></div>
         <div><span>PARKING</span><strong id="factParking">—</strong></div>
         <div><span>TAX</span><strong id="factTax">—</strong></div>
       </div>
 
-      <section id="layoutEssentials" class="layout-essentials hidden" aria-label="Basement, entrance and kitchens">
+      <section id="layoutEssentials" class="layout-essentials hidden" aria-label="Basement and entrance">
         <div class="layout-essentials-head"><span class="panel-kicker">LAYOUT AT A GLANCE</span><small>As reported in the listing</small></div>
         <div class="layout-essentials-grid">
           <article id="basementFactCard"><span>BASEMENT</span><strong id="basementFact">Not reported</strong></article>
           <article id="entranceFactCard"><span>SEPARATE ENTRANCE</span><strong id="entranceFact">Not reported</strong></article>
-          <article><span>KITCHENS</span><strong id="kitchenFact">Not reported</strong></article>
         </div>
       </section>
 
-      <section id="buyerEssentials" class="buyer-essentials hidden" aria-label="Offer timing and schools">
-        <article><span class="panel-kicker">OFFER TIMING</span><strong id="offerTimingValue">Checking offer details…</strong><p id="offerTimingNote"></p></article>
-        <article><span class="panel-kicker">SCHOOLS &amp; RATINGS</span><strong id="schoolName">Finding a nearby school…</strong><p id="schoolDetails"></p><span id="schoolRating"></span><div class="school-links"><a href="https://www.compareschoolrankings.org/" target="_blank" rel="noopener noreferrer">School ratings ↗</a><a href="https://www.eqao.com/the-assessments/find-my-school/" target="_blank" rel="noopener noreferrer">Official test results ↗</a></div></article>
-      </section>
+
 
       <section id="homeAiPanel" class="home-ai-panel hidden" aria-labelledby="homeAiTitle" tabindex="-1">
         <div class="home-ai-head"><div><span class="home-ai-kicker">PRICE · PROPERTY · NEXT STEP</span><h3 id="homeAiTitle">Your buyer brief.</h3><p>A clearer view before you book a showing.</p></div><span class="home-ai-mark" aria-hidden="true">✦</span></div>
@@ -163,6 +160,10 @@
             <button type="button" data-home-topic="costs">Running costs</button>
           </div>
         </div>
+      <section id="buyerEssentials" class="buyer-essentials hidden" aria-label="Offer timing and schools">
+        <article><span class="panel-kicker">OFFER TIMING</span><strong id="offerTimingValue">Checking offer details…</strong><p id="offerTimingNote"></p></article>
+        <details class="brief-schools"><summary><span class="panel-kicker">SCHOOLS &amp; RATINGS</span><span>View school details</span></summary><div class="brief-school-content"><strong id="schoolName">Finding a nearby school…</strong><p id="schoolDetails"></p><span id="schoolRating"></span><div class="school-links"><a href="https://www.compareschoolrankings.org/" target="_blank" rel="noopener noreferrer">School ratings ↗</a><a href="https://www.eqao.com/the-assessments/find-my-school/" target="_blank" rel="noopener noreferrer">Official test results ↗</a></div></div></details>
+      </section>
         <div class="brief-next"><div><strong>Like what you see?</strong><span>Get the report. Choose a showing now or later.</span></div><button id="briefShowingButton" class="primary-btn" type="button">Get my AI report</button></div>
       </section>
 
@@ -248,8 +249,8 @@
 
   <section class="how buyer-path">
     <div class="wrap buyer-path-inner">
-      <div><span class="section-label">AI INSIGHT. A REAL TEAM.</span><h2>Explore with clarity.<br>Move when you’re ready.</h2><p>Start with the report. We’re one call away when you want a second opinion or a closer look.</p><a class="team-call" href="tel:+16478904704">Contact the team</a></div>
-      <div class="buyer-path-options"><article><span aria-hidden="true">✦</span><div><h3>Get the full picture</h3><p>Sold comparisons, a supported price range and the questions that matter.</p><small>Included in every report request</small></div></article><article><span aria-hidden="true">↗</span><div><h3>See it for yourself</h3><p>Add a showing now, or choose a time from your email later.</p><small>Optional · confirmed by our team</small></div></article></div>
+      <div><span class="section-label">AI INSIGHT. A REAL TEAM.</span><h2>Explore with clarity.<br><em>Move when you’re ready.</em></h2><p>Start with the report. We’re one call away when you want a second opinion or a closer look.</p><a class="team-call" href="tel:+16478904704">Contact the team</a></div>
+      <div class="buyer-path-options"><article><span aria-hidden="true">01</span><div><h3>Get the full picture</h3><p>Sold comparisons, a supported price range and the questions that matter.</p><small>Included in every report request</small></div></article><article><span aria-hidden="true">02</span><div><h3>See it for yourself</h3><p>Add a showing now, or choose a time from your email later.</p><small>Optional · confirmed by our team</small></div></article></div>
     </div>
   </section>
 
@@ -336,6 +337,6 @@
 </div>
 
 <div id="mobileShowing" class="mobile-showing hidden"><div><small>AI REPORT · SHOWING OPTIONAL</small><strong id="mobileAsking"></strong></div><button id="mobileShowingButton" class="primary-btn" type="button">Get my AI report</button></div>
-<script src="/form-inputs.js?v=129" defer></script><script src="/address-input.js?v=131" defer></script><script src="/app.js?v=7406" defer></script>
+<script src="/form-inputs.js?v=129" defer></script><script src="/address-input.js?v=131" defer></script><script src="/app.js?v=ui7411-7406" defer></script>
 <script src="/select-controls.js?v=114" defer></script></body>
 </html>
