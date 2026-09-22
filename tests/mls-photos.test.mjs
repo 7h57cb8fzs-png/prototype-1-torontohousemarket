@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../worker-v11.js';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { normalizeListingPhotos, loadListingMedia } from '../mls-photos.js';
 
 const key = 'W13812424';
@@ -12,7 +14,8 @@ const listing = { ListingKey: key, City: 'Toronto', UnparsedAddress: '101 Test S
 test('gallery groups size variants without losing the MLS cover flag or conflating equal orders', () => {
   const photos = normalizeListingPhotos([media('kitchen-l', 1), media('cover-t', 4, { PreferredPhotoYN: true }),
     media('cover-l', 4), media('other', 1), media('floorplan', 5, { MediaType: 'application/pdf' }),
-    media('old-listing', 0, { ResourceRecordKey: 'W10000000' })], key);
+    media('old-listing', 0, { ResourceRecordKey: 'W10000000' }),
+    media('removed-photo', 2, { MediaStatus: 'Deleted' }), media('deleted-photo', 3, { DeletedYN: 'Yes' })], key);
   assert.deepEqual(photos.map(p => p.key), ['cover-l', 'kitchen-l', 'other']);
   assert.equal(photos[0].primary, true);
 });
@@ -22,6 +25,17 @@ test('blank sequence fields stay unknown and stable feed order survives UUID and
     media('a', '', { MediaModificationTimestamp: '2025-01-01' }), media('first', 0)], key);
   assert.deepEqual(photos.map(p => p.key), ['first', 'z', 'a']);
   assert.equal(photos[1].sequence, Number.MAX_SAFE_INTEGER);
+  const source = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const fallback = source.slice(source.indexOf('function usePhotoFallback('), source.indexOf('photoMainButton.addEventListener('));
+  const context = { photos };
+  vm.runInNewContext(fallback, context);
+  const image = { dataset: {}, removeAttribute(name) { delete this[name]; } };
+  context.usePhotoFallback(image, 0);
+  assert.equal(image.src, photos[0].fallbackUrl);
+  context.usePhotoFallback(image, 0);
+  assert.equal(photos.length, 3);
+  assert.equal(photos[0].key, 'first');
+  assert.equal(image.alt, 'MLS photo temporarily unavailable');
 });
 
 test('pagination retains current listing only and refuses foreign continuation URLs', async () => {

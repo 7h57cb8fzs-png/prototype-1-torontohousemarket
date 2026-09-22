@@ -133,10 +133,6 @@ async function handleProperty(request, env) {
     publicSnapshot ? Promise.resolve({ available: false, matchCount: 0, confidence: "Included in your report", basis: "Recent sold comparables and the value range are emailed after your request." }) : buildComparableContext(subject, env, activeForSale, requestId),
     (activeForSale || activeLease) && fullDisplayAllowed && !reportEvidence ? loadListingMedia(subject, env, amplifyFetch) : Promise.resolve([])
   ]);
-  if (['W13812424','N13813276','N13813238','N13813034','N13812888'].includes(subject.ListingKey)) {
-    const fields=['MediaKey','ResourceRecordKey','ResourceName','ImageSizeDescription','Order','MediaOrder','PreferredPhotoYN','MediaStatus','MediaObjectID','MediaModificationTimestamp','ModificationTimestamp','DeletedYN','IsDeleted'];
-    console.log('THM_MLS_PHOTO_TRACE',JSON.stringify({listingKey:subject.ListingKey,photoFields:Object.fromEntries(Object.entries(subject).filter(([k,v])=>/photo/i.test(k)&&typeof v!=='object')),availableFields:Object.keys(mediaRecords[0]||{}),records:mediaRecords.map(r=>Object.fromEntries(fields.filter(k=>r[k]!==undefined).map(k=>[k,r[k]])))}));
-  }
   const historySummary = summarizeHistory(history, subject);
   const priceOpinion = buildPriceOpinion(comparableContext, activeForSale);
   const property2 = normalizeSubject(subject, {

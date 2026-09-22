@@ -36,7 +36,7 @@ function belongsToListing(row, listingKey, embedded = true) {
 export function normalizeListingPhotos(records, listingKey) {
   const groups = new Map();
   for (const row of records || []) {
-    if (!belongsToListing(row, listingKey) || row.DeletedYN === true || row.IsDeleted === true) continue;
+    if (!belongsToListing(row, listingKey) || truthy(row.DeletedYN) || truthy(row.IsDeleted) || /^(deleted|inactive|removed|archived)$/i.test(String(row.MediaStatus || ''))) continue;
     const key = String(row.MediaKey || '');
     const url = String(row.MediaURL || '');
     if (!key || !/^https:\/\//i.test(url)) continue;

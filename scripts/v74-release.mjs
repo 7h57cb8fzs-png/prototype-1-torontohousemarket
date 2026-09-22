@@ -1,4 +1,3 @@
-import { startPhotoTrace } from './photo-trace.mjs';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -38,9 +37,7 @@ async function verify(base){
  }
  console.log(JSON.stringify({stage:'verified',url:base,assets:11,listings:5}));
 }
-const stopTrace=await startPhotoTrace(cf,worker);
-try { await verify(preview); } finally { await stopTrace(); }
-assert.equal(await active(),prior,'Production changed while preparing preview');
+await verify(preview);assert.equal(await active(),prior,'Production changed while preparing preview');
 console.log(JSON.stringify({stage:'candidate',candidate,preview,prior,priorHash,candidateHash:source(after)}));
 if(process.env.PUBLISH!=='true')process.exit(0);
 try{

@@ -1,4 +1,4 @@
-name: Inspect five licensed MLS media sets
+name: Inspect five MLS photo sequences
 on:
   push:
     branches: [phase-6]
@@ -8,27 +8,15 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
     steps:
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Read media metadata with existing authorization
+      - name: Inspect five public listings
         env:
-          AMPRE_TOKEN: ${{ secrets.AMPRE_TOKEN }}
-          THM_ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          AMPRE_TOKEN: ${{ secrets.AMPRE_VOW_TOKEN }}
         run: |
           node --input-type=module <<'NODE'
-          console.log(JSON.stringify({idxConfigured:!!process.env.AMPRE_TOKEN,adminConfigured:!!process.env.THM_ADMIN_API_KEY}));
-          for(const listingKey of ['W13812424','N13813276','N13813238','N13813034','N13812888']){
-            if(process.env.AMPRE_TOKEN){
-              const u=new URL("https://query.ampre.ca/odata/Property('"+listingKey+"')");u.searchParams.set('$expand','Media');
-              const r=await fetch(u,{headers:{Authorization:'Bearer '+process.env.AMPRE_TOKEN},signal:AbortSignal.timeout(20000)}),p=await r.json().catch(()=>null);
-              const fields=['MediaKey','ResourceRecordKey','ResourceName','ImageSizeDescription','Order','MediaOrder','PreferredPhotoYN','MediaStatus','MediaObjectID','MediaModificationTimestamp','ModificationTimestamp','DeletedYN','IsDeleted'];
-              console.log('MEDIA_METADATA',JSON.stringify({listingKey,status:r.status,photoFields:Object.fromEntries(Object.entries(p||{}).filter(([k,v])=>/photo/i.test(k)&&typeof v!=='object')),availableFields:Object.keys(p?.Media?.[0]||{}),records:(p?.Media||[]).map(r=>Object.fromEntries(fields.filter(k=>r[k]!==undefined).map(k=>[k,r[k]])))}));
-            } else if(process.env.THM_ADMIN_API_KEY) {
-              const r=await fetch('https://torontohousemarket.com/api/admin/media/diagnostics?listingKey='+listingKey,{headers:{Authorization:'Bearer '+process.env.THM_ADMIN_API_KEY},signal:AbortSignal.timeout(20000)});
-              const d=await r.json().catch(()=>null);console.log('MEDIA_METADATA',JSON.stringify({listingKey,status:r.status,publicFeed:d?.publicFeed}));
-            }
+          for(const key of ['N13813276','N13813238','N13813034','N13812888','N13812380']){
+            const u=new URL("https://query.ampre.ca/odata/Property('"+key+"')");u.searchParams.set('$expand','Media');
+            const r=await fetch(u,{headers:{Authorization:'Bearer '+process.env.AMPRE_TOKEN}});const p=await r.json();
+            console.log(JSON.stringify({key,status:r.status,photoFields:Object.fromEntries(Object.entries(p).filter(([k])=>/photo|media|image/i.test(k)&&k!=='Media')),media:(p.Media||[]).slice(0,3)}));
           }
           NODE

@@ -336,6 +336,7 @@ function renderPhotos(items, listing) {
     }
   };
 
+  mainPhoto.dataset.fallbackUsed = "";
   mainPhoto.src = photos[0].url;
   mainPhoto.alt = photos[0].description || `Photo of ${listing.address || "property"}`;
   mainPhoto.onerror = () => usePhotoFallback(mainPhoto,0);
@@ -374,7 +375,10 @@ function usePhotoFallback(image,index) {
     image.src=photo.fallbackUrl;
     return;
   }
-  removeBrokenPhoto(index);
+  // A temporary image failure must not change the MLS gallery count or cover.
+  image.onerror = null;
+  image.removeAttribute("src");
+  image.alt = "MLS photo temporarily unavailable";
 }
 
 photoMainButton.addEventListener("click", () => openGallery(0));
@@ -739,6 +743,8 @@ function closeGallery() {
 function renderGallery() {
   const photo = photos[galleryIndex];
   if (!photo) return;
+  galleryImage.dataset.fallbackUsed = "";
+  galleryImage.onerror = () => usePhotoFallback(galleryImage,galleryIndex);
   galleryImage.src = photo.url;
   galleryImage.alt = photo.description || `Property photo ${galleryIndex + 1}`;
   galleryCounter.textContent = `${galleryIndex + 1} / ${photos.length}`;
