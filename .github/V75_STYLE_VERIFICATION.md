@@ -35,3 +35,18 @@ Verified preview: `5f75b82b-fa52-4dce-8367-aaf0c7e64c0b`, module hash `9b68af8ab
 ## Address and price font refinement — September 22, 2026
 
 At the user’s request, property addresses and prices now use the site’s readable system sans-serif stack with medium weight. Sizes, colours, other headings/buttons and workflows are unchanged; email templates are unchanged by this refinement. Preview `95225d55-916f-4df7-a72d-19430ccfe1c1`, run `35771936209`, retains the identical Worker module hash `9b68af8ab9aec721b058de5c7ab9dd83a8302684fa0de2539335238cdf5a65d1`. Existing responsive and navigation gates passed.
+
+
+## Form and email refinement — September 22, 2026
+
+User requested removal of the red inner search outlines; matching report and confirmation emails; Toronto House Market sender identity; compact optional renovation and min/max price fields below contact details; aligned seller consent checkboxes.
+
+- Buyer address, seller address and Home Finder fields now use a subtle green outer focus treatment without a duplicate input outline. Keyboard focus remains visible.
+- Condition and price expectations sit in a collapsed Optional details section after name/email/mobile/timing. Input IDs, constraints, request payload shape and default unknown/null semantics are preserved. Consent inputs align with the first text line.
+- Buyer/seller reports, shared price graphics and confirmation/verification/showing emails use the site palette and serif section headings/buttons, with readable sans-serif addresses and prices. Buyer HTML now declares UTF-8 to preserve punctuation across clients.
+- New delivery payloads always use the display name Toronto House Market, preserving the configured verified sending mailbox, and reply to torontohousemarket@gmail.com. Existing frozen retry payloads stay unchanged to preserve idempotency; previously sent email cannot be changed.
+- Scope gate now compares against approved source 0e13bc456b6b47eb645d5c123483253b64122453. It explicitly permits these email renderers/sender metadata and two seller helper messages. Valuation, lookup, navigation, lead capture, queue ownership/retries, settings and consent requirements remain unchanged.
+- Focused email, sender, retry, validation and seller scenario checks pass. Six WebKit widths pass with no overflow, zero inner search outlines, aligned checkboxes, and successful mocked submissions leaving renovation/min/max blank. Four email previews pass, including confirmation. Five accepted navigation scenarios pass.
+- Final preview source 81f0d950944fdacc3cbe2df8edf5be513e2f551b. Workflow 35779963208 / job 106922657829 succeeded. Preview e9b2567e-e675-4aa1-bfd9-ec81657b9504, module hash 276511b92eda0b087bdc6a242f962980c965e2ee193ef1c648ff685d3131910a.
+- Visual review includes all report email variants and confirmation on mobile, plus seller form at desktop and a live Wheelwright address preview. No real leads or test emails were sent.
+- Promotion pins the reviewed preview and checks fourteen assets, four existing listings and one alphanumeric unit validation; deployment retains rollback 95225d55-916f-4df7-a72d-19430ccfe1c1.
