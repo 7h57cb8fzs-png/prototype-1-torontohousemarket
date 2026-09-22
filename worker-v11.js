@@ -991,7 +991,7 @@ __name(hasExactCommunity, "hasExactCommunity");
 function condoAreaBounds(record) {
   const range = String(record?.LivingAreaRange || "").replace(/,/g, "").trim();
   const band = range.match(/^(\d+)\s*[-–]\s*(\d+)(?:\s*sq\s*ft)?$/i);
-  if (band) return +band[1] > 0 && +band[2] > +band[1] ? { low: +band[1], high: +band[2], banded: true } : null;
+  if (band) return +band[1] >= 0 && +band[2] > +band[1] ? { low: +band[1], high: +band[2], banded: true } : null;
   if (range && !/^\d+(?:\.\d+)?(?:\s*sq\s*ft)?$/i.test(range)) return null;
   const amount = range ? parseFloat(range) : numberOrNull(record?.BuildingAreaTotal);
   const unit = String(record?.BuildingAreaUnits || record?.LivingAreaUnits || "").toLowerCase();
@@ -3514,11 +3514,11 @@ function forwardPublicSnapshot(source, target) {
   }
 }
 __name(forwardPublicSnapshot, "forwardPublicSnapshot");
-var PRICE_CHECK_VERSION = "freehold-above-grade-v118";
+var PRICE_CHECK_VERSION = "studio-zero-size-band-v119";
 var priceCheckBudget = /* @__PURE__ */ new Map();
 function priceCheckArea(row) {
   const match = String(row?.LivingAreaRange || "").replace(/,/g, "").match(/^\s*(\d+)\s*[-–]\s*(\d+)\s*$/);
-  if (!match || +match[1] <= 0 || +match[2] <= +match[1]) return null;
+  if (!match || +match[1] < 0 || +match[2] <= +match[1]) return null;
   return { low: +match[1], high: +match[2], label: `${+match[1]}\u2013${+match[2]} sq ft` };
 }
 __name(priceCheckArea, "priceCheckArea");

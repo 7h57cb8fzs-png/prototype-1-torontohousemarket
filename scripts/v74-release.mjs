@@ -39,6 +39,14 @@ async function verify(base){
   const photos=d.property.photos||[];assert.equal(d.property.photoCount,photos.length);
   assert.equal(new Set(photos.map(p=>p.key)).size,photos.length,'Duplicate photo identity');
   console.log(JSON.stringify({stage:'photo-check',listingKey,address:d.property.address,count:photos.length,first:photos.slice(0,5).map(p=>({key:p.key,sequence:p.sequence,primary:p.primary}))}));
+  if(listingKey==='W13812424') {
+   const comparisonResponse=await fetch(base+'/api/price-check?listingKey='+listingKey,{signal:AbortSignal.timeout(45000)});
+   const comparison=await comparisonResponse.json();
+   assert(comparisonResponse.ok&&comparison.ok&&comparison.listingKey===listingKey,'Studio comparison request failed');
+   assert.equal(comparison.subjectSize,'0–499 sq ft','Studio size band was rejected');
+   assert(comparison.coverage?.scanned>0,'Studio comparison did not search inventory');
+   console.log(JSON.stringify({stage:'studio-comparison',listingKey,size:comparison.subjectSize,coverage:comparison.coverage,count:comparison.count,related:comparison.relatedMatches?.length,reason:comparison.reason}));
+  }
  }
  console.log(JSON.stringify({stage:'verified',url:base,assets:11,listings:4,addressChecks:1}));
 }
