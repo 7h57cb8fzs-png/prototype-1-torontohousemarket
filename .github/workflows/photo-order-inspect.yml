@@ -1,4 +1,4 @@
-name: Inspect five MLS photo sequences
+name: Inspect the five preview MLS photo sets
 on:
   push:
     branches: [phase-6]
@@ -8,15 +8,32 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
+    timeout-minutes: 4
     steps:
-      - name: Inspect five public listings
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read scoped preview media trace
         env:
-          AMPRE_TOKEN: ${{ secrets.AMPRE_VOW_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           node --input-type=module <<'NODE'
-          for(const key of ['N13813276','N13813238','N13813034','N13812888','N13812380']){
-            const u=new URL("https://query.ampre.ca/odata/Property('"+key+"')");u.searchParams.set('$expand','Media');
-            const r=await fetch(u,{headers:{Authorization:'Bearer '+process.env.AMPRE_TOKEN}});const p=await r.json();
-            console.log(JSON.stringify({key,status:r.status,photoFields:Object.fromEntries(Object.entries(p).filter(([k])=>/photo|media|image/i.test(k)&&k!=='Media')),media:(p.Media||[]).slice(0,3)}));
-          }
+          const root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
+          const worker='prototype-1-torontohousemarket',version='34328061-f3f2-4879-888d-88bc938d4a65';
+          async function api(p,method,body){const r=await fetch(root+p,{method,headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok||!d.success)throw Error('Cloudflare trace status '+r.status);return d.result}
+          const tail=await api('/workers/scripts/'+worker+'/tails','POST',{filters:[{scriptVersion:version}]});
+          const ws=new WebSocket(tail.url,'trace-v1');ws.binaryType='arraybuffer';let events=0,matched=0;
+          ws.addEventListener('message',event=>{try{const d=JSON.parse(typeof event.data==='string'?event.data:new TextDecoder().decode(event.data));events++;for(const log of d.logs||[])if(log.message?.[0]==='THM_MLS_PHOTO_TRACE'){matched++;console.log('MEDIA_METADATA',log.message[1]);}}catch{}});
+          await new Promise((resolve,reject)=>{ws.addEventListener('open',resolve);ws.addEventListener('error',()=>reject(Error('Trace connection failed')))});
+          ws.send(JSON.stringify({debug:false}));
+          try {
+            await new Promise(r=>setTimeout(r,2000));
+            for(const key of ['W13812424','N13813276','N13813238','N13813034','N13812888']){
+              const r=await fetch('https://34328061-'+worker+'.7h57cb8fzs.workers.dev/api/property?listingKey='+key+'&photo_trace=metadata',{signal:AbortSignal.timeout(30000)});
+              console.log(JSON.stringify({key,status:r.status}));
+            }
+            await new Promise(r=>setTimeout(r,10000));
+          } finally {ws.close();await api('/workers/scripts/'+worker+'/tails/'+tail.id,'DELETE');}
+          console.log(JSON.stringify({events,matched}));
           NODE
