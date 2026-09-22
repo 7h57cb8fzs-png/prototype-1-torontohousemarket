@@ -1,0 +1,22 @@
+name: Inspect five MLS photo sequences
+on:
+  push:
+    branches: [phase-6]
+    paths: ['.github/workflows/photo-order-inspect.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect five public listings
+        env:
+          AMPRE_TOKEN: ${{ secrets.AMPRE_TOKEN }}
+        run: |
+          node --input-type=module <<'NODE'
+          for(const key of ['N13813276','N13813238','N13813034','N13812888','N13812380']){
+            const u=new URL("https://query.ampre.ca/odata/Property('"+key+"')");u.searchParams.set('$expand','Media');
+            const r=await fetch(u,{headers:{Authorization:'Bearer '+process.env.AMPRE_TOKEN}});const p=await r.json();
+            console.log(JSON.stringify({key,status:r.status,photoFields:Object.fromEntries(Object.entries(p).filter(([k])=>/photo|media|image/i.test(k)&&k!=='Media')),media:(p.Media||[]).slice(0,3)}));
+          }
+          NODE
