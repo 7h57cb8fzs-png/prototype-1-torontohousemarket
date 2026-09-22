@@ -31,3 +31,7 @@ Requested on September 22, 2026: extend the Home Finder style to the seller page
 The style workflow records the exact preview and publication identities in its logs. Promotion requires the reviewed candidate source hash and unchanged prior production identity; it rolls back on failed live verification.
 
 Verified preview: `5f75b82b-fa52-4dce-8367-aaf0c7e64c0b`, module hash `9b68af8ab9aec721b058de5c7ab9dd83a8302684fa0de2539335238cdf5a65d1`; successful preview workflow `35770279373` / job `106889942880`.
+
+## Address and price font refinement — September 22, 2026
+
+At the user’s request, property addresses and prices now use the site’s readable system sans-serif stack with medium weight. Sizes, colours, other headings/buttons and workflows are unchanged; email templates are unchanged by this refinement. Preview `95225d55-916f-4df7-a72d-19430ccfe1c1`, run `35771936209`, retains the identical Worker module hash `9b68af8ab9aec721b058de5c7ab9dd83a8302684fa0de2539335238cdf5a65d1`. Existing responsive and navigation gates passed.
