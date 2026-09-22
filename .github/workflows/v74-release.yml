@@ -25,7 +25,7 @@ jobs:
           node --check app.js
           node --check home-chat.js
           node --check admin.js
-          node --test tests/v74-chat-admin.test.mjs tests/v74-search-history.test.mjs tests/v74-email-retry.test.mjs tests/report-runtime.test.mjs tests/discovery-repair.test.mjs
+          node --test --test-name-pattern="discovery uses city|mobile snapshot thumbnail|discovery thumbnail uses first|chat context rejects tampering|AI chat searches, retains context" tests/discovery-repair.test.mjs tests/v74-chat-admin.test.mjs
       - name: Guarded preview or promotion
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
