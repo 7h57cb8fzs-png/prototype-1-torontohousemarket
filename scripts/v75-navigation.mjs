@@ -17,6 +17,7 @@ async function setup(width){
   if(url.hostname!=='thm.test')return route.abort();
   if(path==='/api/property'){
    const input=url.searchParams.get('listingKey')||url.searchParams.get('q');
+   if(input==='43 Example Avenue')return route.fulfill({json:{ok:true,property:{address:input,foundInMls:false,forSale:null,listingKey:null,photos:[],details:{},inputValidation:{label:'Not found in connected feed'}}}});
    const key=names[input]?input:input?.startsWith('10 Example')?A:input?.startsWith('20 Sample')?B:null;
    if(key===C&&delayed)await new Promise(r=>setTimeout(r,700));
    if(!key)return route.fulfill({status:404,json:{ok:false,error:'No matching test property'}});
@@ -93,5 +94,29 @@ try{
   await t.lookup(B,B);await t.style();await p.goBack();
   await p.waitForFunction(key=>!document.querySelector('#snapshotSection').classList.contains('hidden')&&document.querySelector('#snapshotMeta').textContent.includes(key),A);
   assert(await p.locator('#leadModal').evaluate(e=>e.classList.contains('hidden')));assert.deepEqual(t.errors,[]);await t.context.close();console.log('PASS 5: desktop alignment and report modal stays closed on Back');
+ }
+ // 6. The brand is a fresh document, clearing the property and unfinished request.
+ for(const width of [390,1280]){
+  const t=await setup(width),p=t.page;await p.goto('https://thm.test/?listingKey='+A+'&showing=1');
+  await p.locator('#leadModal:not(.hidden)').waitFor();
+  await p.locator('#leadForm input[name="name"]').fill('Example Buyer');
+  await p.locator('#leadForm input[name="email"]').fill('fixture@example.com');
+  await p.locator('#leadMobile').fill('6478904704');
+  await p.locator('#closeModal').click();
+  await p.locator('#homeSearchQuery').fill('Unsaved home search');
+  const before=await p.evaluate(()=>performance.timeOrigin);
+  await p.getByRole('link',{name:'Toronto House Market home',exact:true}).click();
+  await p.waitForURL('https://thm.test/');
+  await p.waitForFunction(()=>document.querySelector('#propertyInput').value==='');
+  assert((await p.evaluate(()=>performance.timeOrigin))>before,'Brand must load a fresh document');
+  assert(await p.locator('#snapshotSection').evaluate(e=>e.classList.contains('hidden')));
+  assert(await p.locator('#leadModal').evaluate(e=>e.classList.contains('hidden')));
+  for(const selector of ['#leadForm input[name="name"]','#leadForm input[name="email"]','#leadMobile','#homeSearchQuery'])assert.equal(await p.locator(selector).inputValue(),'');
+  assert.equal(await p.locator('#showingChoice').isChecked(),false);
+  await p.locator('#propertyInput').fill('43 Example Avenue');await p.locator('#lookupButton').click();
+  await p.getByText('LISTING STATUS UNCONFIRMED',{exact:true}).waitFor();
+  assert.equal(await p.getByText('NOT FOR SALE ON MLS',{exact:true}).count(),0);
+  assert.deepEqual(t.errors,[]);await t.context.close();
+  console.log(`PASS 6: ${width}px brand resets URL, property, report form and chat input with a full page load`);
  }
 }finally{await browser.close();}

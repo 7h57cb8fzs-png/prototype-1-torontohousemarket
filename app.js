@@ -288,6 +288,7 @@ function renderListing(listing) {
   offMarketActionBox.classList.toggle("hidden", active);
 
   if (!active) {
+    offMarketActionBox.querySelector(".offmarket-label").textContent = listing.forLease ? "FOR LEASE" : hasMls ? "NOT FOR SALE ON MLS" : "LISTING STATUS UNCONFIRMED";
     if (listing.forLease) {
       offMarketTitle.textContent = "This property is offered for lease.";
       offMarketCopy.textContent = "You found the rental listing. Purchase price reports apply to homes for sale. Contact the team about this rental.";

@@ -17,10 +17,10 @@ writeFileSync('worker-lookup-probe.js',`export default {async fetch(request,env)
   if(!token){results.push({feed,configured:false});continue;}
   for(const key of ['N13816334','N13815978'])for(const mode of ['direct','collection']){
    const url=new URL('https://query.ampre.ca/odata/Property'+(mode==='direct'?"('"+key+"')":''));
-   url.searchParams.set('$select','ListingKey,InternetEntireListingDisplayYN,InternetAddressDisplayYN');
+   if(mode==='collection')url.searchParams.set('$select','ListingKey,InternetEntireListingDisplayYN,InternetAddressDisplayYN');
    if(mode==='collection'){url.searchParams.set('$filter',"ListingKey eq '"+key+"'");url.searchParams.set('$top','1');}
    try{const r=await fetch(url.href.replaceAll('+','%20'),{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(8000)}),d=await r.json().catch(()=>null),rows=Array.isArray(d?.value)?d.value:d?.ListingKey?[d]:[];
-    results.push({feed,key,mode,status:r.status,count:rows.length,exactMatch:rows.some(p=>p.ListingKey===key),displayAllowed:rows.length?rows.every(p=>p.InternetEntireListingDisplayYN!==false&&p.InternetAddressDisplayYN!==false):null});
+    results.push({feed,key,mode,status:r.status,count:rows.length,exactMatch:rows.some(p=>p.ListingKey===key),displayAllowed:rows.length?rows.every(p=>p.InternetEntireListingDisplayYN!==false&&p.InternetAddressDisplayYN!==false):null,...key==='N13816334'&&mode==='direct'&&rows.length?{visibilityFlags:Object.fromEntries(Object.entries(rows[0]).filter(([k,v])=>/IDX|Internet|Syndicat|Recip|OriginalEntryTimestamp|ModificationTimestamp/i.test(k)&&['string','boolean','number'].includes(typeof v)))}:{}});
    }catch(e){results.push({feed,key,mode,error:e.name});}
   }
  }

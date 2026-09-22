@@ -61,3 +61,13 @@ User requested removal of the red inner search outlines; matching report and con
 - Historical Cloudflare log retrieval returned HTTP 403 with the configured token. The timing diagnosis is based on the saved request/job timestamps and Resend acceptance/delivery records; the first interruption's cause remains unverified.
 - Preview run 35783814646 passed all focused, navigation and six-width layout checks. Its live-data gate stopped on one studio comparison request; the same listing then compared successfully on production. Re-running the unchanged application candidate with the full gate, without relaxing its assertions.
 - Verified preview source ff1bef6848d9145c04d64f3f82a6b9c27ac9832a; workflow 35784230506 / job 106936976658 passed all checks. Candidate f0f7c1af-2786-45d8-a3d8-85989cc262a2, Worker module hash d4b29f2403a8ae76d09d36f2fdeaf84f447c4389254d82f39053e9c5cbad6dfc. Promotion pins this candidate and retains rollback e9b2567e-e675-4aa1-bfd9-ec81657b9504.
+
+
+## Jules listing lookup and home reset — September 22, 2026
+
+- The user confirmed the Jules Avenue MLS number is N13816334. Live lookup reproduces the missing record by both MLS and address; the separately supplied N13815978 loads as Benson Avenue.
+- Read-only upstream checks using the existing Worker bindings found N13816334 absent from IDX (direct 404 and exact collection query 200 with zero rows), but present in VOW. N13815978 is present in both feeds. The diagnostic runs in an authenticated, unpublished preview and verifies that production and cron remain unchanged. No private listing data, leads, reports or emails are created or published by it.
+- The buyer THM logo now links to /, starting a new page load and discarding the listing URL, property/form state and unsent chat input. Seller/showing logos already use that destination.
+- Missing feed records now say LISTING STATUS UNCONFIRMED in the action card. The previous fixed NOT FOR SALE ON MLS label incorrectly suggested an absence from the feed proved the home was off market. Known off-market and rental records retain their respective labels.
+- Scope gate is pinned to the prior published commit 7d2a3318d84058977ec448507b288241f5f6a85c and permits only the home link and status-label changes. Lookup, feed access, report valuation, email delivery and browser Back/Forward logic remain unchanged.
+- Existing WebKit navigation checks now include a fresh-document logo reset at 390px and 1280px, unfinished contact/showing/chat state, and missing-feed wording. The four-listing live check includes the supplied Benson listing; together with Jules, no more than five distinct properties are checked.

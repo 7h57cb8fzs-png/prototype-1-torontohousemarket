@@ -37,7 +37,7 @@ async function verify(base){
  const addressResponse=await fetch(base+'/api/property?validate_only=1&q='+encodeURIComponent('8 Olympic Garden Drive Unit S3504, Toronto'));
  const addressData=await addressResponse.json();assert(addressResponse.ok&&addressData.ok&&addressData.unit==='s3504','Alphanumeric unit validation failed');
  console.log(JSON.stringify({stage:'address-check',address:addressData.normalizedAddress,unit:addressData.unit}));
- for(const listingKey of ['C13813214','W13812424','N13813276','N13813238']) {
+ for(const listingKey of ['C13813214','W13812424','N13813276','N13815978']) {
   const r=await fetch(base+'/api/property?listingKey='+listingKey,{signal:AbortSignal.timeout(45000)});
   if(!r.ok||!r.headers.get('Content-Type')?.includes('application/json')){const body=await r.text();const code=body.match(/(?:Error|error code:)\s*(\d{3,5})/i)?.[1]||'unknown';throw Error('Listing response failed: '+listingKey+' HTTP '+r.status+' provider error '+code);}
   const d=await r.json();assert(d.ok&&d.property?.listingKey===listingKey,'Listing check failed: '+listingKey);
