@@ -23,7 +23,7 @@ jobs:
         run: |
           node scripts/v75-style-scope.mjs
           node --check worker-v11.js
-          node --test tests/interface-email.test.mjs tests/buyer-refinement.test.mjs
+          node --test tests/interface-email.test.mjs tests/buyer-refinement.test.mjs tests/v74-email-retry.test.mjs tests/seller-slider-validation.test.mjs tests/form-validation.test.mjs
           node --test --test-name-pattern='buyer report email|email infographic|expanded-window|seller scenario' tests/email-copy.test.mjs tests/seller-flow.test.mjs
       - name: Check navigation and responsive buyer, seller and email layouts
         if: contains(github.event.head_commit.message, '[v75-style-preview]')
@@ -41,9 +41,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          CANDIDATE_VERSION_ID: '95225d55-916f-4df7-a72d-19430ccfe1c1'
-          EXPECTED_CANDIDATE_SHA: '9b68af8ab9aec721b058de5c7ab9dd83a8302684fa0de2539335238cdf5a65d1'
-          EXPECTED_ACTIVE_VERSION: 5f75b82b-fa52-4dce-8367-aaf0c7e64c0b
+          CANDIDATE_VERSION_ID: ''
+          EXPECTED_CANDIDATE_SHA: ''
+          EXPECTED_ACTIVE_VERSION: 95225d55-916f-4df7-a72d-19430ccfe1c1
           EXPECTED_ACTIVE_SHA: 9b68af8ab9aec721b058de5c7ab9dd83a8302684fa0de2539335238cdf5a65d1
           PUBLISH: ${{ contains(github.event.head_commit.message, '[v75-style-release]') && 'true' || 'false' }}
         run: node scripts/v75-style-release.mjs

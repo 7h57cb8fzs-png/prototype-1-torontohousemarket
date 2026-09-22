@@ -55,6 +55,6 @@ test('no-match email explains the gap simply and offers a working call or reply'
 
 test('buyer email shares seller price typography and preserves the infographic and report sections',()=>{
  const email=propertyReportEmail('Example home',{}, {facts:{for_sale:true,list_price:1100000},valuation:{available:true,low:900000,high:1050000,midpoint:975000,confidence:'Medium'},comparables:[1,2,3].map(i=>({address:`${i} Demo Rd`,soldPrice:900000+i*30000,soldDate:'2026-08-20'}))});
- assert.match(email.html,/font-family:Georgia,Times New Roman,serif;font-size:26px/);
+ assert.match(email.html,/font-family:Arial,Helvetica,sans-serif;font-size:26px/);
  for(const content of ['Below range','Inside range','Above range','YOUR PRICE PICTURE','HOME AT A GLANCE','Recent comparable sales','WHAT THE NUMBERS SAY','KNOWN MONTHLY COSTS','CHECK BEFORE AN OFFER','YOUR NEXT MOVE'])assert.ok(email.html.includes(content),content);
 });

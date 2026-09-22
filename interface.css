@@ -35,7 +35,7 @@
 .buyer-page .chat-send{background:var(--finder-ink)}
 .buyer-page .chat-send:hover{background:#31544d}
 :is(.buyer-page,.seller-page,.appointment-page) :is(button,a,input,select,summary):focus-visible{
-  outline:2px solid #a55e40;outline-offset:3px;
+  outline:2px solid #536961;outline-offset:3px;
 }
 
 /* Addresses and prices share the same calm display family at every scale. */
@@ -137,4 +137,32 @@
   .seller-renovation-v7 output{font-size:25px;margin-top:0}
   .buyer-page .home-ai-questions{flex-direction:row}
   .buyer-page .home-ai-questions button{flex:1 1 auto}
+}
+
+/* The combined search control carries focus, without an inner input outline. */
+.buyer-page :is(#propertyInput,#homeSearchQuery):focus,
+.seller-page #sellerAddress:focus{outline:none;box-shadow:none}
+.buyer-page :is(.search-box,.home-search-form):focus-within,
+.seller-page .seller-address-control:focus-within{border-color:#536961;box-shadow:0 0 0 3px #53696114}
+
+/* Optional seller context follows the contact details. */
+.seller-optional-details{margin-top:24px;border-top:1px solid var(--finder-line);border-bottom:1px solid var(--finder-line);padding:16px 0}
+.seller-optional-details>summary{cursor:pointer;font:400 19px/1.5 var(--display-font);color:var(--finder-ink)}
+.seller-optional-details>summary>span{font:400 13px/1.5 var(--property-font);color:var(--finder-muted);margin-left:8px}
+.seller-optional-details .seller-renovation-v7{margin:18px 0 0;padding:0;border:0;border-radius:0;background:transparent}
+.seller-optional-details :is(.seller-renovation-v7,.seller-expectations) h3{font-size:19px;margin:0 0 8px}
+.seller-optional-details .seller-renovation-v7 .top{align-items:center}
+.seller-optional-details .seller-renovation-v7 output{font:400 14px/1.5 var(--property-font);color:var(--finder-muted)}
+.seller-optional-details .seller-renovation-note{margin:8px 0 0;font-size:13px;line-height:1.5}
+.seller-optional-details .seller-expectations{margin-top:22px}
+.seller-optional-details .seller-help{font-size:13px;margin:0 0 12px}
+.seller-optional-details .seller-price-inputs{padding:0;background:transparent;gap:14px;margin:0}
+.seller-page .seller-optional-details .seller-price-inputs input{font-size:16px;font-weight:400}
+.seller-page .seller-consents{margin-top:22px}
+.seller-page .seller-consent{display:flex;align-items:flex-start;gap:10px;font-size:14px;font-weight:400;line-height:1.5;margin-top:14px}
+.seller-page .seller-consent input[type=checkbox]{display:block;flex:0 0 18px;width:18px;height:18px;min-height:0;margin:2px 0 0;padding:0;accent-color:var(--finder-ink)}
+.seller-page .seller-consent span{flex:1;min-width:0;margin:0}
+@media(max-width:480px){
+  .seller-optional-details>summary>span{display:block;margin-left:18px}
+  .seller-optional-details .seller-price-inputs{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 }
