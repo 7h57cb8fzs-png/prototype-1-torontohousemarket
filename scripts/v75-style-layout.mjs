@@ -65,6 +65,6 @@ try{
   await fits('seller optional details '+width);
   await page.locator('#sellerBuilder').scrollIntoViewIfNeeded();await page.screenshot({path:`mobile-qa/seller-form-${width}.png`});
   if(width===375||width===1280)for(const key of Object.keys(emails)){await page.goto(root+'/'+key);await fits(key+' '+width);await page.screenshot({path:`mobile-qa/${key}-${width}.png`,fullPage:true});}
-  assert.deepEqual(errors,[]);await context.close();console.log(`PASS: ${width}px buyer, report form, seller, seller form, buttons${width===375||width===1280?', and three email previews':''}`);
+  assert.deepEqual(errors,[]);await context.close();console.log(`PASS: ${width}px buyer, report form, seller, seller form, buttons${width===375||width===1280?', and four email previews':''}`);
  }
 }finally{await browser.close();}

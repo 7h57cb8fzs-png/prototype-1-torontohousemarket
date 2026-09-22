@@ -10,6 +10,7 @@ test('buyer and seller emails remove incentives while retaining price, address a
       assert.match(body,/10 Example Street/);
       assert.match(body,/647.?890.?4704/);
     }
+    assert.match(email.html,/<meta charset="utf-8">/i);
     assert.match(email.html,/font-family:Georgia,Times New Roman,serif;font-size:16px;font-weight:400;line-height:1.25/);
   }
   const email=propertyReportEmail('10 Example Street',{},report,{appointmentUrl:'https://torontohousemarket.com/showing.html#token=fixture'});
