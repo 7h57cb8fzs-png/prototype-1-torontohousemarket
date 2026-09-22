@@ -850,6 +850,36 @@ function renderAskingRange(data) {
   const graphic = ['Below range','Inside range','Above range'].map((label,i)=>`<div class="${i===position?'is-asking':''}"><small>${i===position?'THIS HOME':'&nbsp;'}</small>${label}</div>`).join('');
   target.innerHTML = `<div class="price-picture"><div class="price-picture-subject"><span>THIS HOME IS ASKING</span><strong>${money(data.asking)}</strong></div><div class="price-picture-market"><span>${data.count} SIMILAR HOMES · ASKING PRICE RANGE</span><div class="price-endpoints"><div><small>From</small><strong>${money(range.low)}</strong></div><div><small>To</small><strong>${money(range.high)}</strong></div></div><div class="price-position" role="img" aria-label="${positionText}">${graphic}</div><p class="price-position-note">${positionText}</p></div></div><p class="price-picture-note">These homes are still for sale. Your email report compares completed sales.</p>`;
 }
+function renderComparisonHomes(data) {
+  const sizeRange = value => {
+    const range = String(value || "").replace(/,/g, "").match(/^(\d+)\s*[-–—]\s*(\d+)(?:\s|$)/);
+    return range && +range[2] >= +range[1] ? [+range[1], +range[2]] : null;
+  };
+  const subject = sizeRange(data.subjectSize || liveListing?.livingAreaRange);
+  const rank = home => {
+    const size = sizeRange(home.size);
+    if (!subject) return [0, 0];
+    if (!size) return [2, 0];
+    return [size[0] === subject[0] && size[1] === subject[1] ? 0 : 1,
+      Math.abs(size[0] + size[1] - subject[0] - subject[1])];
+  };
+  const bySize = rows => [...(rows || [])].sort((a, b) => {
+    const left = rank(a), right = rank(b);
+    return left[0] - right[0] || left[1] - right[1];
+  });
+  const matches = bySize(data.matches), related = bySize(data.relatedMatches);
+  const render = (matchedHomes, relatedHomes) => {
+    const matched = matchedHomes.map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.bedroomLayout || home.beds)} bed · ${home.differences?.length ? escapeHtml(home.differences.join(" · ")) : `${escapeHtml(home.baths ?? "—")} bath`} · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
+    const context = relatedHomes.length ? `<h4>Related homes worth comparing</h4><p>Same community and home type, ${data.sizeRule==='same_condo_size_range'?'same interior size range':'similar size'}. Different bedroom layouts; excluded from the price signal.</p>${relatedHomes.map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.beds)} bed · ${escapeHtml(home.baths)} bath<br>${escapeHtml(home.difference)}<br>MLS ${escapeHtml(home.listingKey)} · ${escapeHtml(home.listingOffice || 'Listing office not reported')}</small></span><b>${money(home.asking)}</b></a>`).join('')}` : "";
+    return matched + context;
+  };
+  // Keep price comparables first, then fill the three visible places with related homes.
+  const visibleMatches = matches.slice(0, 3), relatedSlots = 3 - visibleMatches.length;
+  const remainingMatches = matches.slice(3), remainingRelated = related.slice(relatedSlots);
+  const remainingCount = remainingMatches.length + remainingRelated.length;
+  return render(visibleMatches, related.slice(0, relatedSlots)) + (remainingCount
+    ? `<details class="price-method price-more-comparisons"><summary>Show more comparisons (${remainingCount})</summary>${render(remainingMatches, remainingRelated)}</details>` : "");
+}
 function renderPriceCheck(data) {
   const recognized = ["below", "inline", "above", "review"].includes(data.signal);
   const available = data.available && recognized && data.count >= 3 && Number.isFinite(data.medianAsk) && data.medianAsk > 0 && Number.isFinite(data.differencePct);
@@ -864,8 +894,7 @@ function renderPriceCheck(data) {
   renderAskingRange(data);
   $("priceEvidence").textContent = data.count ? `${available && data.count >= 5 && !data.coverage?.partial ? "Broader asking-price sample" : "Limited asking-price sample"} · ${data.count} home${data.count===1?'':'s'}${data.community ? ` · ${data.community}` : ""}. ${available ? "This compares asking prices, not sale values." : "Too little consistent evidence for a price rating."}` : "No price rating yet. The listing highlights and showing checks are still useful.";
   $("priceCheckCriteria").textContent = data.criteria ? data.criteria : "";
-  $("priceCheckMatches").innerHTML = (data.matches || []).map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.bedroomLayout || home.beds)} bed · ${home.differences?.length ? escapeHtml(home.differences.join(" · ")) : `${escapeHtml(home.baths ?? "—")} bath`} · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
-  if (data.relatedMatches?.length) $("priceCheckMatches").innerHTML += `<h4>Related homes worth comparing</h4><p>Same community and home type, ${data.sizeRule==='same_condo_size_range'?'same interior size range':'similar size'}. Different bedroom layouts; excluded from the price signal.</p>${data.relatedMatches.map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.beds)} bed · ${escapeHtml(home.baths)} bath<br>${escapeHtml(home.difference)}<br>MLS ${escapeHtml(home.listingKey)} · ${escapeHtml(home.listingOffice || 'Listing office not reported')}</small></span><b>${money(home.asking)}</b></a>`).join('')}`;
+  $("priceCheckMatches").innerHTML = renderComparisonHomes(data);
   $("priceCheckCoverage").textContent = `${data.note || "Public IDX asking prices; not the entire market."}${data.coverage?.partial ? " The search reached its scan limit." : ""}${data.checkedAt ? ` Checked ${formatDate(data.checkedAt)}; may be cached for up to 5 minutes.` : ""}`;
   $("priceCheckDetails").classList.toggle("hidden", !data.criteria);
   $("priceCheckDetails").open = !!data.criteria;

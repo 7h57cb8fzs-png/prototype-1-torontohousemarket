@@ -12,7 +12,7 @@ const source=v=>hash(JSON.stringify(v.modules.map(m=>[m.name,hash(Buffer.from(m.
 const names=v=>v.bindings.filter(b=>b.name!=='ASSETS').map(b=>b.name+':'+b.type).sort();
 const prior=await active(),before=await version(prior),priorHash=source(before),schedule=await cf(`/workers/scripts/${worker}/schedules`);
 console.log(JSON.stringify({stage:'baseline',version:prior,source:priorHash}));
-assert.equal(priorHash, '9c4a739ec98410a4a25c9b73f105cb735794329e675b9252013d9caff4027a82', 'Production source differs from the reviewed photo-fix baseline');
+assert.equal(priorHash, '048c3712274dd65095621dea4a8384178f3d8ae4d36946ad26b6ae9f02d69c09', 'Production source differs from the reviewed compact-comparisons baseline');
 try {const settings=await cf('/workers/account-settings');console.log(JSON.stringify({stage:'workers-plan',default_usage_model:settings.default_usage_model,usage_model:settings.usage_model}));}catch(e){console.log(JSON.stringify({stage:'workers-plan',verified:false,reason:e.message}));}
 console.log(JSON.stringify({stage:'worker-plan',usage_model:before.resources?.script?.usage_model||before.usage_model||null}));
 let candidate=process.env.CANDIDATE_VERSION_ID,preview;
@@ -28,7 +28,7 @@ for(const b of before.bindings.filter(b=>b.type==='plain_text'&&!['THM_RELEASE',
 async function verify(base){
  const ver=await fetch(base+'/api/version').then(r=>r.json());assert.equal(ver.version,'version-7.4-history-search-20260918');
  for(const file of ['index.html','app.js','styles.css','seller.html','seller.js','seller.css','address-input.js','admin.js','admin.html','admin.css','select-controls.js']){const r=await fetch(base+'/'+(file==='index.html'?'':file)+'?v74='+process.env.GITHUB_SHA);assert(r.ok&&hash(Buffer.from(await r.arrayBuffer()))===hash(readFileSync(file)),'Asset mismatch: '+file);}
- for(const listingKey of ['W13812424','N13813276','N13813238','N13813034','N13812888']) {
+ for(const listingKey of ['C13813214','W13812424','N13813276','N13813238','N13813034']) {
   const r=await fetch(base+'/api/property?listingKey='+listingKey,{signal:AbortSignal.timeout(45000)});
   if(!r.ok||!r.headers.get('Content-Type')?.includes('application/json')){const body=await r.text();const code=body.match(/(?:Error|error code:)\s*(\d{3,5})/i)?.[1]||'unknown';throw Error('Listing response failed: '+listingKey+' HTTP '+r.status+' provider error '+code);}
   const d=await r.json();assert(d.ok&&d.property?.listingKey===listingKey,'Listing check failed: '+listingKey);

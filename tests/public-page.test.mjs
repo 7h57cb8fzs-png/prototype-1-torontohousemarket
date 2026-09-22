@@ -18,7 +18,9 @@ function page(fetchImpl = async () => { throw new Error("Unexpected network call
   const context = vm.createContext({ document: {
     getElementById(id) { assert.ok(elements.has(id), `HTML element ${id} exists`); return elements.get(id); },
     querySelectorAll() { return []; }, addEventListener() {}, body: { classList: { add() {}, remove() {} } }
-  }, window: { location: { search: "", hash: "" }, addEventListener() {}, setTimeout, clearTimeout }, history: { pushState() {} }, crypto:globalThis.crypto, URLSearchParams, AbortController, fetch: fetchImpl, console });
+  }, window: { location: { search: "", hash: "" }, addEventListener() {}, setTimeout, clearTimeout }, history: { pushState() {} }, crypto:globalThis.crypto, URL, URLSearchParams, AbortController, fetch: fetchImpl, console });
+  vm.runInContext(readFileSync(new URL("../address-input.js", import.meta.url), "utf8"), context);
+  context.THMAddress = context.window.THMAddress;
   vm.runInContext(script, context);
   return { elements, context };
 }
