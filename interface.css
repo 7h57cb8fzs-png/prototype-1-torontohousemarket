@@ -1,6 +1,7 @@
 /* Shared public presentation: the Home Finder's type, colour and quiet controls. */
 :is(.buyer-page,.seller-page,.appointment-page,.info-page){
   --display-font:Georgia,'Times New Roman',serif;
+  --property-font:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
   --finder-ink:#203b3c;
   --finder-accent:#a55e40;
   --finder-muted:#64736c;
@@ -38,12 +39,12 @@
 }
 
 /* Addresses and prices share the same calm display family at every scale. */
-.buyer-page :is(#snapshotProperty,#liveAddress,.listing-price,.share-address,.home-price),
+.buyer-page :is(#snapshotProperty,#liveAddress,#mobileAsking,.listing-price,.share-address,.home-price),
 .buyer-page :is(.price-picture-subject,.price-endpoints,.range-head) strong,
 .buyer-page .price-check-matches :is(strong,b),
 .buyer-page .discovery-home :is(h3,h4),
 .seller-page #sellerSelectedAddress,.appointment-page #appointmentAddress{
-  font-family:var(--display-font);font-weight:400;letter-spacing:-.025em;color:var(--finder-ink);
+  font-family:var(--property-font);font-weight:500;letter-spacing:-.015em;color:var(--finder-ink);
 }
 .buyer-page .price-check-matches strong{font-size:18px;line-height:1.4}
 .buyer-page .price-check-matches b{font-size:21px;line-height:1.3}
@@ -95,7 +96,7 @@
 .seller-renovation-v7 output{font:400 28px/1 var(--display-font);color:var(--finder-accent)}
 .seller-renovation-v7 input[type=range]{accent-color:#536961}
 .seller-price-inputs{background:#f0f3ed}
-.seller-page .seller-price-inputs input{font-family:var(--display-font);font-size:22px;color:var(--finder-ink)}
+.seller-page .seller-price-inputs input{font-family:var(--property-font);font-size:22px;color:var(--finder-ink)}
 .seller-optional{font:400 12px/1.5 Arial,sans-serif;color:var(--finder-muted);letter-spacing:0}
 .seller-page .seller-submit{margin-top:22px}
 .seller-team-note{align-items:center;border-color:var(--finder-line);padding:28px 0;gap:24px}
