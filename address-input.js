@@ -5,7 +5,7 @@
   function split(value){
     let street=String(value||'').trim(),unit=''; if(nonAddress(street))return {street,unit};
     for(const city of cities){const re=new RegExp('(?:,|\\s)'+city.replace(/ /g,'\\s+')+'(?:[,\\s]*(?:ON|Ontario|Canada|[CEW]\\d{2}|[A-Z]\\d[A-Z]\\s?\\d[A-Z]\\d))*[,\\s]*$','i');const m=street.match(re);if(m){street=street.slice(0,m.index).trim().replace(/,$/,'')+', '+city;break;}}
-    const first=street.match(/^(?:(?:unit|suite|apt|apartment|#)\s*)?([a-z0-9]+)\s*[-–—]\s*(\d+[a-z]?\s+.+)$/i)||street.match(/^(?:unit|suite|apt|apartment|#)\s*([a-z0-9-]+)\s*,?\s+(\d+[a-z]?\s+.+)$/i);
+    const first=street.match(/^(?:(?:unit|suite|apt|apartment|#)\s*)?([a-z0-9]+)\s*[-–—]\s*(\d+[a-z]?\s+.+)$/i)||street.match(/^(?:unit|suite|apt|apartment|#)\s*([a-z0-9-]+)\s*,?\s+(\d+[a-z]?\s+.+)$/i)||street.match(/^(\d+)\s+(\d+[a-z]?\s+(?!(?:st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|cres|crescent|lane|ln|court|ct|way|trail|terrace|place)\b)[a-z].+)$/i);
     if(first){unit=first[1];street=first[2];}
     const explicit=street.match(/(?:,?\s+(?:unit|suite|apt|apartment)\s*|\s*#\s*)([a-z0-9-]+)(?=\s*,|\s*$|\s+[a-z])/i);
     if(explicit){unit=explicit[1];street=street.slice(0,explicit.index)+street.slice(explicit.index+explicit[0].length);}

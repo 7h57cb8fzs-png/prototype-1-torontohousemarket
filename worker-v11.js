@@ -3008,6 +3008,9 @@ function addressSuffixIndex(tokens, aliases) {
 __name(addressSuffixIndex, "addressSuffixIndex");
 function normalizeUnitAddress(raw) {
   const parts = splitAddressCity(raw);
+  // Two leading numbers before a named street: unit first, street number second.
+  // Exclude numbered streets such as "761 16 Avenue" and "761 16th Avenue".
+  parts.street = parts.street.replace(/^(\d+)\s+(\d+[a-z]?\s+(?!(?:st|street|ave|avenue|rd|road|dr|drive|blvd|boulevard|cres|crescent|lane|ln|court|ct|way|trail|terrace|place)\b)[a-z].+)$/i, "$2 Unit $1");
   let value = parts.street.replace(/^\s*(?:unit|suite|apt|#)?\s*([A-Za-z0-9]+)\s*[-–—]\s*(\d+[A-Za-z]?)\s+([^,]+)(.*)$/i, (_, unit, number, street, tail) => `${number} ${street} Unit ${unit}${tail}`);
   value = value.replace(/^\s*(?:unit|suite|apt|apartment|#)\s*([A-Za-z0-9-]+)\s*,?\s+(\d+[A-Za-z]?)\s+(.+)$/i, (_, unit, number, street) => `${number} ${street} Unit ${unit}`);
   value = value.replace(/,\s*((?:unit|suite|apt|apartment|#)\s*[A-Za-z0-9-]+)/i, " $1");

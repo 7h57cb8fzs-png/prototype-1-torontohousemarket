@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-import worker,{validateAddressEntry,resolveSellerSubject,sellerReportEmail} from '../worker-v11.js';
+import worker,{sellerParsedAddress,validateAddressEntry,resolveSellerSubject,sellerReportEmail} from '../worker-v11.js';
 const unit={ListingKey:'FIXTURE-1227',StreetNumber:'111',StreetName:'St Clair',StreetSuffix:'Avenue',StreetDirSuffix:'W',UnitNumber:'1227',City:'Toronto C02',PropertySubType:'Condo Apartment',UnparsedAddress:'111 St Clair Avenue W Unit 1227, Toronto',OriginalEntryTimestamp:'2026-08-01T00:00:00Z'};
 test('Google Saint Clair and punctuation variants identify only the exact unit',async t=>{
  const wrong=[{...unit,ListingKey:'OTHER-UNIT',UnitNumber:'1228'},{...unit,ListingKey:'OTHER-DIRECTION',StreetDirSuffix:'E'},{...unit,ListingKey:'OTHER-NUMBER',StreetNumber:'1110'},{...unit,ListingKey:'OTHER-CITY',City:'Vaughan'}];
@@ -36,4 +36,16 @@ test('Google building selection retains an entered unit in every supported forma
  const context=vm.createContext({window:{}});vm.runInContext(readFileSync('address-input.js','utf8'),context);
  const {split,combine}=context.window.THMAddress;
  for(const entered of ['1227-111 St.Clair Avenue West, Toronto','111 St Clair Avenue West Unit 1227, Toronto','Unit 1227, 111 St Clair Avenue West, Toronto'])assert.equal(combine('111 Saint Clair Avenue West, Toronto',split(entered).unit),'111 Saint Clair Avenue West Unit 1227, Toronto');
+});
+
+test('space-separated unit-first address agrees with existing forms in browser and server',()=>{
+ const context=vm.createContext({window:{}});vm.runInContext(readFileSync('address-input.js','utf8'),context);
+ const {split,combine}=context.window.THMAddress;
+ for(const input of ['761 Bay St 2809','2809-761 Bay St','2809 761 Bay St','2809  761 Bay St, Toronto']){
+  const parsed=validateAddressEntry(input).parsed;assert.equal(parsed.number,'761',input);assert.equal(parsed.unit,'2809',input);assert.equal(parsed.name,'bay',input);
+  const browser=split(input);assert.equal(browser.unit,'2809',input);assert.equal(combine('761 Bay Street, Toronto',browser.unit),'761 Bay Street Unit 2809, Toronto');
+ }
+ for(const input of ['761 Bay St','761 16 Avenue','761 16th Avenue','761 Highway 7']){
+  assert.equal(sellerParsedAddress(input).number,'761',input);assert.equal(sellerParsedAddress(input).unit,null,input);assert.equal(split(input).unit,'',input);
+ }
 });

@@ -34,9 +34,11 @@ for(const b of before.bindings.filter(b=>b.type==='plain_text'&&!['THM_RELEASE',
 async function verify(base){
  const ver=await fetch(base+'/api/version').then(r=>r.json());assert.equal(ver.version,'version-7.4-history-search-20260918');
  for(const file of ['index.html','app.js','styles.css','seller.html','seller.js','seller.css','address-input.js','admin.js','admin.html','admin.css','select-controls.js','interface.css','showing.html','address-search.html']){const r=await fetch(base+'/'+(file==='index.html'?'':file)+'?v74='+process.env.GITHUB_SHA);assert(r.ok&&hash(Buffer.from(await r.arrayBuffer()))===hash(readFileSync(file)),'Asset mismatch: '+file);}
- const addressResponse=await fetch(base+'/api/property?validate_only=1&q='+encodeURIComponent('8 Olympic Garden Drive Unit S3504, Toronto'));
- const addressData=await addressResponse.json();assert(addressResponse.ok&&addressData.ok&&addressData.unit==='s3504','Alphanumeric unit validation failed');
- console.log(JSON.stringify({stage:'address-check',address:addressData.normalizedAddress,unit:addressData.unit}));
+ for (const input of ['761 Bay St 2809','2809-761 Bay St','2809 761 Bay St']) {
+  const response=await fetch(base+'/api/property?validate_only=1&q='+encodeURIComponent(input));
+  const data=await response.json();assert(response.ok&&data.ok&&data.unit==='2809'&&data.normalizedAddress==='761 Bay Street Unit 2809','Condo address format failed: '+input);
+  console.log(JSON.stringify({stage:'address-check',input,address:data.normalizedAddress,unit:data.unit}));
+ }
  for(const listingKey of ['C13813214','W13812424','N13813276','N13815978']) {
   const r=await fetch(base+'/api/property?listingKey='+listingKey,{signal:AbortSignal.timeout(45000)});
   if(!r.ok||!r.headers.get('Content-Type')?.includes('application/json')){const body=await r.text();const code=body.match(/(?:Error|error code:)\s*(\d{3,5})/i)?.[1]||'unknown';throw Error('Listing response failed: '+listingKey+' HTTP '+r.status+' provider error '+code);}
@@ -53,7 +55,7 @@ async function verify(base){
    console.log(JSON.stringify({stage:'studio-comparison',listingKey,size:comparison.subjectSize,coverage:comparison.coverage,count:comparison.count,related:comparison.relatedMatches?.length,reason:comparison.reason}));
   }
  }
- console.log(JSON.stringify({stage:'verified',url:base,assets:14,listings:4,addressChecks:1}));
+ console.log(JSON.stringify({stage:'verified',url:base,assets:14,listings:4,addressChecks:3}));
 }
 await verify(preview);assert.equal(await active(),prior,'Production changed while preparing preview');
 console.log(JSON.stringify({stage:'candidate',candidate,preview,prior,priorHash,candidateHash:source(after)}));

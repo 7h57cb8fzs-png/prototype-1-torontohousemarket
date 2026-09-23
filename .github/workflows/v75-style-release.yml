@@ -41,9 +41,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          CANDIDATE_VERSION_ID: 'e859eb93-c9c3-42f8-9e28-977ebc61ba39'
-          EXPECTED_CANDIDATE_SHA: '05feaf71af7a364d419b07bc66fa82577dd735c84c74ed16d5e31f2729bf2b37'
-          EXPECTED_ACTIVE_VERSION: 88a7ba4c-b521-4d9f-87bc-c845a5f705af
-          EXPECTED_ACTIVE_SHA: d4b29f2403a8ae76d09d36f2fdeaf84f447c4389254d82f39053e9c5cbad6dfc
+          CANDIDATE_VERSION_ID: ''
+          EXPECTED_CANDIDATE_SHA: ''
+          EXPECTED_ACTIVE_VERSION: e859eb93-c9c3-42f8-9e28-977ebc61ba39
+          EXPECTED_ACTIVE_SHA: 05feaf71af7a364d419b07bc66fa82577dd735c84c74ed16d5e31f2729bf2b37
           PUBLISH: ${{ contains(github.event.head_commit.message, '[v75-style-release]') && 'true' || 'false' }}
         run: node scripts/v75-style-release.mjs

@@ -2,16 +2,17 @@
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import assert from 'node:assert/strict';
-const baseline='7d5422b02d401e627399dff65581ea17e267bccc';
+const baseline='061c6cad74858c795fd3afbf7b5312ec141e4c76';
 const old=file=>execFileSync('git',['show',`${baseline}:${file}`],{encoding:'utf8'});
 const now=file=>readFileSync(file,'utf8');
 for(const file of ['app.js','seller.js','showing.js','worker-v22.js','worker-v12.js','report-runtime.js','discovery-search.js','home-chat.js','wrangler.jsonc'])assert.equal(now(file),old(file),`${file} changed`);
 const omitAddressFunctions=source=>{
- for(const name of ['normalizeUnitAddress','canonicalLookupStreet','sellerExactHistoryMatch','resolveSellerSubject','publicProperty']) source=source.replace(new RegExp('(?:async )?function '+name+'\\([^]*?\\n}\\n'),'');
- return source.replace(/^  const pendingBasis = .*$/m,'  const pendingBasis = REVIEWED_ADDRESS_MESSAGE;');
+ for(const name of ['normalizeUnitAddress']) source=source.replace(new RegExp('(?:async )?function '+name+'\\([^]*?\\n}\\n'),'');
+ return source;
 };
 assert.equal(omitAddressFunctions(now('worker-v11.js')),omitAddressFunctions(old('worker-v11.js')),'Changes escaped address matching/preflight and unmatched email copy');
-assert.equal(now('address-input.js').replace('if(p.unit)return;',''),old('address-input.js'),'Changes escaped unit-preservation guard');
+const omitLeadingUnitPattern=source=>source.replace(/^    const first=.*$/m,'    const first=REVIEWED_LEADING_UNIT_PATTERN;');
+assert.equal(omitLeadingUnitPattern(now('address-input.js')),omitLeadingUnitPattern(old('address-input.js')),'Changes escaped leading-unit recognition');
 const omitFooter=source=>source.replace(/<footer\b[\s\S]*?<\/footer>/,'FOOTER').replace(/address-input.js\?v=\d+/g,'address-input.js?v=REVIEWED');
 for(const file of ['index.html','seller.html','showing.html'])assert.equal(omitFooter(now(file)),omitFooter(old(file)),`Changes escaped footer in ${file}`);
 for(const file of ['index.html','seller.html','showing.html']){
