@@ -11,9 +11,10 @@ delete config.secrets;delete config.assets;delete config.triggers;
 config.main='worker-lookup-probe.js';config.vars=Object.fromEntries(version.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));config.vars.THM_LOOKUP_PROBE_KEY=nonce;
 assert.equal(before,process.env.EXPECTED_ACTIVE_VERSION,'Production must match the reviewed offer-email release');
 // One explicitly requested email, through the existing authorized production endpoint.
-writeFileSync('worker-lookup-probe.js',String.raw`export default {async fetch(request,env){
+writeFileSync('worker-lookup-probe.js',String.raw`import worker from './worker-v22.js';
+export default {async fetch(request,env,ctx){
  if(request.method!=='POST'||new URL(request.url).pathname!=='/probe'||request.headers.get('Authorization')!=='Bearer '+env.THM_LOOKUP_PROBE_KEY)return new Response('Not found',{status:404});
- const response=await fetch('https://torontohousemarket.com/api/admin/reports/test-email-by-listing',{method:'POST',headers:{Authorization:'Bearer '+env.ADMIN_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({listingKey:'N13816518',recipient:'ali.golestan.reza@gmail.com',subject:{listingKey:'N13816518',address:'30 Riley Reed Lane, Richmond Hill, ON L4S 0M3'}}),signal:AbortSignal.timeout(180000)});
+ const response=await worker.fetch(new Request('https://torontohousemarket.com/api/admin/reports/test-email-by-listing',{method:'POST',headers:{Authorization:'Bearer '+env.ADMIN_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({listingKey:'N13816518',recipient:'ali.golestan.reza@gmail.com',subject:{listingKey:'N13816518',address:'30 Riley Reed Lane, Richmond Hill, ON L4S 0M3'}}),signal:AbortSignal.timeout(180000)}),env,ctx);
  const d=await response.json().catch(()=>({error:'Invalid report response'}));return Response.json({http:response.status,ok:d.ok,report_id:d.report_id,lead_id:d.lead_id,comparable_count:d.comparable_count,valuation_available:d.valuation_available,email_status:d.email_job?.status,error:d.error},{headers:{'Cache-Control':'private, no-store'}});
 }};`);
 writeFileSync('wrangler.lookup-probe.json',JSON.stringify(config));
