@@ -38,8 +38,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           EXPECTED_ACTIVE_VERSION: a9d06533-8061-4d76-9ef6-504e15fdece6
           EXPECTED_ACTIVE_SHA: 5bcfa6b849e1dd926be7947a2ff602834f0541c0ba65ecc62d8fc2ee15ba5fa6
-          CANDIDATE_VERSION_ID: ''
-          EXPECTED_CANDIDATE_SHA: ''
+          CANDIDATE_VERSION_ID: '799f4250-9e3e-4518-aef9-37c0847d21a7'
+          EXPECTED_CANDIDATE_SHA: '50f5c7850bdc909b6b42b396c55e09293c895d82e5ba69212408abe95f5a3b2f'
           PUBLISH: ${{ contains(github.event.head_commit.message, '[photo-speed-release]') && 'true' || 'false' }}
         run: node scripts/photo-speed-release.mjs
       - uses: actions/upload-artifact@v4
