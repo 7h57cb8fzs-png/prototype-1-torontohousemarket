@@ -10,15 +10,12 @@ const nonce=randomBytes(32).toString('hex'),config=JSON.parse(readFileSync('wran
 delete config.secrets;delete config.assets;delete config.triggers;
 config.main='worker-lookup-probe.js';config.vars=Object.fromEntries(version.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));config.vars.THM_LOOKUP_PROBE_KEY=nonce;
 // No customer data, reports, database changes or emails. Never deploy this version.
-writeFileSync('worker-lookup-probe.js',`import {resolveSellerSubject,sellerQueryRows} from './worker-v11.js';
-export default {async fetch(request,env){
+writeFileSync('worker-lookup-probe.js',`export default {async fetch(request,env){
  if(new URL(request.url).pathname!=='/probe'||request.headers.get('Authorization')!=='Bearer '+env.THM_LOOKUP_PROBE_KEY)return new Response('Not found',{status:404});
  const results=[];
  for(const [feed,token] of [['IDX',env.AMPRE_TOKEN],['VOW',env.AMPRE_VOW_TOKEN]]) {
-  const scoped={...env,AMPRE_TOKEN:token},diagnostics={};
-  const rows=await sellerQueryRows(["contains(StreetName,'Bastion') and contains(StreetNumber,'35') and contains(UnitNumber,'1720')"],scoped,300);
-  const subject=await resolveSellerSubject('35 Bastion Street Unit 1720, Toronto',{city:'Toronto'},scoped,diagnostics);
-  results.push({feed,complete:rows.complete,statuses:rows.audit.map(a=>a.status),matches:rows.rows.map(r=>({key:r.ListingKey,address:r.UnparsedAddress,number:r.StreetNumber,street:r.StreetName,suffix:r.StreetSuffix,unit:r.UnitNumber,city:r.City,status:r.StandardStatus,mlsStatus:r.MlsStatus,transaction:r.TransactionType,display:r.InternetEntireListingDisplayYN,addressDisplay:r.InternetAddressDisplayYN})),subjectMatched:!!subject,queries:diagnostics.queries?.map(q=>({filter:q.filter,rows:q.rows,exactMatches:q.exactMatches,complete:q.complete}))});
+  const r=await fetch("https://query.ampre.ca/odata/Property('C13683220')",{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(8000)});
+  const d=await r.json();results.push({feed,http:r.status,key:d.ListingKey,address:d.UnparsedAddress,standard:d.StandardStatus,mls:d.MlsStatus,contract:d.ContractStatus,transaction:d.TransactionType,display:d.InternetEntireListingDisplayYN,addressDisplay:d.InternetAddressDisplayYN});
  }
  return Response.json({results},{headers:{'Cache-Control':'private, no-store'}});
 }};`);
