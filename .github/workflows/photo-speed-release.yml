@@ -1,0 +1,49 @@
+name: Verify and publish targeted photo performance
+on:
+  push:
+    branches: [phase-6]
+permissions:
+  contents: read
+concurrency:
+  group: thm-v75-style-guarded-deployment
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: contains(github.event.head_commit.message, '[photo-speed-preview]') || contains(github.event.head_commit.message, '[photo-speed-release]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify scope and targeted regressions
+        run: |
+          node scripts/photo-speed-scope.mjs
+          node --check app.js
+          node --check worker-v11.js
+          node --test tests/mls-photos.test.mjs tests/st-clair-address.test.mjs tests/buyer-refinement.test.mjs
+      - name: Install browser for mobile and desktop checks
+        if: contains(github.event.head_commit.message, '[photo-speed-preview]')
+        run: |
+          npm install --no-save --package-lock=false playwright@1.58.2
+          npx playwright install --with-deps webkit
+          node scripts/v75-navigation.mjs
+          node scripts/photo-speed-races.mjs
+      - name: Verify three properties and prepare or publish reviewed version
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          EXPECTED_ACTIVE_VERSION: a9d06533-8061-4d76-9ef6-504e15fdece6
+          EXPECTED_ACTIVE_SHA: 5bcfa6b849e1dd926be7947a2ff602834f0541c0ba65ecc62d8fc2ee15ba5fa6
+          CANDIDATE_VERSION_ID: ''
+          EXPECTED_CANDIDATE_SHA: ''
+          PUBLISH: ${{ contains(github.event.head_commit.message, '[photo-speed-release]') && 'true' || 'false' }}
+        run: node scripts/photo-speed-release.mjs
+      - uses: actions/upload-artifact@v4
+        if: always() && contains(github.event.head_commit.message, '[photo-speed-preview]')
+        with:
+          name: photo-speed-review
+          path: mobile-qa/

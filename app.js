@@ -82,6 +82,7 @@ const galleryNext = $("galleryNext");
 let activePropertyInput = "";
 let liveListing = null;
 let photos = [];
+let photoController = null;
 let galleryIndex = 0;
 let currentLeadMode = "showing";
 let loading = false;
@@ -140,7 +141,7 @@ async function lookupProperty(value, {historyMode = "push", includeShowing = fal
     : `/api/property?q=${encodeURIComponent(value)}`;
 
   try {
-    const response = await fetch(apiUrl, { headers: { Accept: "application/json" } });
+    const response = await fetch(apiUrl + "&defer_photos=1", { headers: { Accept: "application/json" } });
     const result = await response.json().catch(() => null);
     if(sequence!==buyerLookupSequence)return;
     if (!response.ok || !result?.ok || !result?.property) {
@@ -151,6 +152,7 @@ async function lookupProperty(value, {historyMode = "push", includeShowing = fal
     buyerAddressControl.set(result.normalizedAddress || liveListing.address || value);
     renderListing(liveListing);
     showResult();
+    loadListingPhotos(liveListing, sequence);
     rememberPreview(liveListing, value, historyMode);
     loadPriceCheck(liveListing);
     loadHomeAssistant('overview');
@@ -242,6 +244,7 @@ function setInputStatus(type, text) {
 }
 
 function hideResult() {
+  photoController?.abort();
   schoolSequence++; schoolController?.abort();
   $("mobileShowing").classList.add("hidden");
   $("mobileAsking").textContent = "";
@@ -359,6 +362,40 @@ function buildFactLine(listing, restricted) {
   return facts.length ? facts.join(" · ") : listing.foundInMls === false ? "No current MLS property details available" : "Property identified from MLS history";
 }
 
+// The snapshot can render before the complete, correctly ordered gallery arrives.
+async function loadListingPhotos(listing, sequence) {
+  photoController?.abort();
+  if (!listing.photosPending || !listing.listingKey || listing.displayRestricted) return;
+  const controller = new AbortController();
+  photoController = controller;
+  try {
+    const response = await fetch(`/api/property?listingKey=${encodeURIComponent(listing.listingKey)}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)])
+    });
+    const result = await response.json();
+    if (!response.ok || !result?.ok || result.property?.listingKey !== listing.listingKey) throw new Error("Photos unavailable");
+    if (controller.signal.aborted || sequence !== buyerLookupSequence || liveListing !== listing) return;
+    listing.photos = result.property.photos || [];
+    listing.photoCount = listing.photos.length;
+    listing.photosPending = false;
+    renderPhotos(listing.photos, listing);
+  } catch {
+    if (controller.signal.aborted || sequence !== buyerLookupSequence || liveListing !== listing) return;
+    listing.photosPending = false;
+    renderPhotos([], listing);
+  }
+}
+
+function setPhotoSource(image, photo, role = "preview") {
+  const variant = role === "thumbnail" ? photo.thumbnail || photo.mobile || photo
+    : role === "preview" && window.matchMedia("(max-width: 767px)").matches ? photo.mobile || photo : photo;
+  image.dataset.fallbackUsed = "";
+  image.dataset.photoFallback = variant.fallbackUrl || photo.fallbackUrl || "";
+  image.decoding = "async";
+  image.src = variant.url;
+}
+
 function renderPhotos(items, listing) {
   photos = Array.isArray(items) ? items.filter((item) => item?.url) : [];
   photoThumbs.innerHTML = "";
@@ -370,7 +407,10 @@ function renderPhotos(items, listing) {
     photoMainButton.classList.add("hidden");
     photoThumbs.classList.add("hidden");
 
-    if (listing.forSale && listing.displayRestricted) {
+    if (listing.photosPending && !listing.displayRestricted) {
+      photoPlaceholderTitle.textContent = "Loading listing photos…";
+      photoPlaceholderText.textContent = "Your property details are ready. Photos will appear here shortly.";
+    } else if (listing.forSale && listing.displayRestricted) {
       photoPlaceholderTitle.textContent = "Photo display restricted";
       photoPlaceholderText.textContent = "The listing was found, but this feed does not permit full internet display.";
     } else if (listing.forSale) {
@@ -391,43 +431,29 @@ function renderPhotos(items, listing) {
   photoThumbs.classList.remove("hidden");
 
   snapshotThumb.classList.remove("hidden");
-  snapshotThumbImg.dataset.fallbackUsed = "";
-  snapshotThumbImg.src = photos[0].url;
   snapshotThumbImg.alt = photos[0].description || `Photo of ${listing.address || "property"}`;
-  snapshotThumbImg.onerror = () => {
-    const photo = photos[0];
-    if (photo?.fallbackUrl && !snapshotThumbImg.dataset.fallbackUsed) {
-      snapshotThumbImg.dataset.fallbackUsed = "true";
-      snapshotThumbImg.src = photo.fallbackUrl;
-    } else {
-      snapshotThumb.classList.add("hidden");
-      snapshotThumbImg.removeAttribute("src");
-    }
-  };
+  snapshotThumbImg.onerror = () => usePhotoFallback(snapshotThumbImg, 0);
+  setPhotoSource(snapshotThumbImg, photos[0], "thumbnail");
 
-  mainPhoto.dataset.fallbackUsed = "";
-  mainPhoto.src = photos[0].url;
   mainPhoto.alt = photos[0].description || `Photo of ${listing.address || "property"}`;
-  mainPhoto.onerror = () => usePhotoFallback(mainPhoto,0);
+  mainPhoto.onerror = () => usePhotoFallback(mainPhoto, 0);
+  setPhotoSource(mainPhoto, photos[0]);
   photoCountBadge.textContent = `${photos.length} photo${photos.length === 1 ? "" : "s"}`;
 
   const secondary = photos.slice(1, 5);
   photoThumbs.innerHTML = secondary.map((photo, index) => `
     <button type="button" data-photo-index="${index + 1}" aria-label="Open property photo ${index + 2}">
-      <img src="${escapeAttr(photo.url)}" alt="" loading="lazy" />
+      <img alt="" loading="lazy" />
     </button>`).join("");
 
   for (const button of photoThumbs.querySelectorAll("button")) {
     const index=Number(button.dataset.photoIndex||0);
     button.addEventListener("click", () => openGallery(index));
     const img = button.querySelector("img");
-    if (img) img.addEventListener("error", () => {
-      const photo=photos[index];
-      if(photo?.fallbackUrl&&!img.dataset.fallbackUsed){
-        img.dataset.fallbackUsed="true";
-        img.src=photo.fallbackUrl;
-      }else button.remove();
-    });
+    if (img) {
+      img.onerror = () => usePhotoFallback(img, index);
+      setPhotoSource(img, photos[index], "thumbnail");
+    }
   }
 }
 
@@ -439,9 +465,10 @@ function removeBrokenPhoto(index) {
 
 function usePhotoFallback(image,index) {
   const photo=photos[index];
-  if(photo?.fallbackUrl&&!image.dataset.fallbackUsed){
+  const fallback = image.dataset.photoFallback || photo?.fallbackUrl;
+  if(fallback&&!image.dataset.fallbackUsed){
     image.dataset.fallbackUsed="true";
-    image.src=photo.fallbackUrl;
+    image.src=fallback;
     return;
   }
   // A temporary image failure must not change the MLS gallery count or cover.
@@ -809,9 +836,8 @@ function closeGallery() {
 function renderGallery() {
   const photo = photos[galleryIndex];
   if (!photo) return;
-  galleryImage.dataset.fallbackUsed = "";
   galleryImage.onerror = () => usePhotoFallback(galleryImage,galleryIndex);
-  galleryImage.src = photo.url;
+  setPhotoSource(galleryImage, photo, "gallery");
   galleryImage.alt = photo.description || `Property photo ${galleryIndex + 1}`;
   galleryCounter.textContent = `${galleryIndex + 1} / ${photos.length}`;
   galleryPrev.disabled = photos.length < 2;
@@ -1059,7 +1085,7 @@ function chatCards(turn,data){
   const row=document.createElement('div');row.className='chat-property-row';row.tabIndex=0;row.setAttribute('aria-label','Property cards. Scroll for more.');
   row.innerHTML=data.listings.map((home,i)=>{
     const key=encodeURIComponent(home.listingKey),facts=[home.bedroomLayout||home.beds?`${home.bedroomLayout||home.beds} bed`:null,home.baths?`${home.baths} bath`:null,home.livingAreaRange?`${home.livingAreaRange} sq ft`:null].filter(Boolean).join(' · ');
-    const photo=home.photoUrl?.startsWith('/api/discovery-photo?listingKey=')?`<img src="${escapeAttr(home.photoUrl)}" alt="${escapeAttr(home.address)}" loading="${i<3?'eager':'lazy'}" decoding="async" width="420" height="280" />`:'';
+    const photo=home.photoUrl?.startsWith('/api/discovery-photo?listingKey=')?`<img src="${escapeAttr(home.photoUrl + '&size=preview')}" alt="${escapeAttr(home.address)}" loading="${i<3?'eager':'lazy'}" decoding="async" width="420" height="280" />`:'';
     return `<article class="discovery-home"><a class="discovery-photo" href="/?listingKey=${key}#lookup" data-open-listing="${escapeAttr(home.listingKey)}" aria-label="Explore ${escapeAttr(home.address)}"><span class="photo-fallback">THM · Property photo</span>${photo}${home.priceChange?.amount?'<span class="home-badge">Price reduced</span>':''}</a><div class="discovery-home-content"><strong class="home-price">${money(home.listPrice)}</strong><p class="chat-home-facts">${escapeHtml(facts)}</p><h3>${escapeHtml(home.address)}</h3><p class="chat-home-type">${escapeHtml(home.propertySubType||'')}</p><div class="chat-card-actions"><a href="/?listingKey=${key}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">View home ↗</a><button type="button" data-ask-home="${escapeAttr(home.listingKey)}" aria-label="Ask about ${escapeAttr(home.address)}">Ask AI</button><button type="button" data-share-listing="${escapeAttr(home.listingKey)}" data-share-address="${escapeAttr(home.address)}" aria-label="Share ${escapeAttr(home.address)}">↗</button></div><small class="chat-attribution">${escapeHtml(home.listingOffice||'Listing brokerage not reported')} · MLS® ${escapeHtml(home.listingKey)}</small></div></article>`;
   }).join('');
   section.append(row);

@@ -50,9 +50,10 @@ export function normalizeListingPhotos(records, listingKey) {
       description: row.ShortDescription || row.LongDescription || null,
       sequence: sequence(row), primary: primary(row), rank: variantRank(row) };
     const current = groups.get(identity);
-    if (!current) groups.set(identity, candidate);
+    if (!current) groups.set(identity, { ...candidate, variants: [candidate] });
     else {
-      const chosen = candidate.rank < current.rank ? candidate : current;
+      const chosen = candidate.rank < current.rank ? { ...candidate } : current;
+      chosen.variants = [...current.variants, candidate];
       chosen.primary = current.primary || candidate.primary;
       chosen.sequence = Math.min(current.sequence, candidate.sequence);
       groups.set(identity, chosen);
@@ -60,7 +61,14 @@ export function normalizeListingPhotos(records, listingKey) {
   }
   // Stable ties preserve feed order. UUIDs and modification times aren't MLS order.
   return [...groups.values()].sort((a, b) => Number(b.primary) - Number(a.primary) || a.sequence - b.sequence)
-    .map(({ rank, ...photo }) => photo);
+    .map(({ rank, variants, ...photo }) => {
+      // Use only actual size variants of this same MLS photo; never invent URLs.
+      const variant = row => row && ({ key: row.key, url: row.url, fallbackUrl: row.fallbackUrl });
+      const medium = variants.find(row => row.rank === 2);
+      const thumbnail = variants.find(row => row.rank === 3) || medium;
+      return { ...photo, ...(medium ? { mobile: variant(medium) } : {}),
+        ...(thumbnail ? { thumbnail: variant(thumbnail) } : {}) };
+    });
 }
 
 export async function loadListingMedia(property, env, fetchFeed) {

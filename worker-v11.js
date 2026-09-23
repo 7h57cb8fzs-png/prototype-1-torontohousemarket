@@ -90,6 +90,7 @@ async function handleProperty(request, env) {
   if (!env.AMPRE_TOKEN) return json({ ok: false, error: "IDX connection is not configured." }, 503);
   const url = new URL(request.url);
   const publicSnapshot = url.searchParams.get("mode") === "public_snapshot";
+  const deferPhotos = publicSnapshot && url.searchParams.get("defer_photos") === "1";
   const reportEvidence = url.searchParams.get("mode") === "report_evidence";
   const requestId = clean(request.headers.get("X-THM-Request-Id"), 100) || crypto.randomUUID();
   const listingKeyParam = clean(url.searchParams.get("listingKey"), 40).toUpperCase();
@@ -106,7 +107,7 @@ async function handleProperty(request, env) {
   let validationLabel = null;
   const directKey = /^[A-Z]\d{7,9}$/.test(listingKeyParam) ? listingKeyParam : input.listingKey;
   if (directKey) {
-    subject = await fetchPropertyByKey(directKey, env, !reportEvidence);
+    subject = await fetchPropertyByKey(directKey, env, !reportEvidence && !deferPhotos);
     if (!subject) return json({ ok: false, error: "We couldn\u2019t retrieve this MLS listing from our connected feed. It may still be listed elsewhere. Contact the team to check it." }, 404);
     history = publicSnapshot || reportEvidence ? [subject] : await findSameAddressHistory(subject, env);
     resolution = input.type === "link" ? "link_mls" : "mls";
@@ -119,7 +120,7 @@ async function handleProperty(request, env) {
         property: buildNoMlsProperty(input.queryText || rawQuery, "Not found in connected feed")
       });
     }
-    subject = found.subject.ListingKey ? await fetchPropertyByKey(found.subject.ListingKey, env, !reportEvidence) || found.subject : found.subject;
+    subject = found.subject.ListingKey ? await fetchPropertyByKey(found.subject.ListingKey, env, !reportEvidence && !deferPhotos) || found.subject : found.subject;
     history = found.history;
     resolution = found.resolution;
     validationLabel = input.type === "link" ? `Listing URL matched to ${subject.ListingKey ? `MLS ${subject.ListingKey}` : "MLS history"}` : found.resolution === "address_live" ? `Address matched to active MLS ${subject.ListingKey}` : "Address matched to MLS history";
@@ -132,7 +133,7 @@ async function handleProperty(request, env) {
   const embeddedMedia = Array.isArray(subject.Media) ? subject.Media : [];
   const [comparableContext, mediaRecords] = await Promise.all([
     publicSnapshot ? Promise.resolve({ available: false, matchCount: 0, confidence: "Included in your report", basis: "Recent sold comparables and the value range are emailed after your request." }) : buildComparableContext(subject, env, activeForSale, requestId),
-    (activeForSale || activeLease) && fullDisplayAllowed && !reportEvidence ? loadListingMedia(subject, env, amplifyFetch) : Promise.resolve([])
+    (activeForSale || activeLease) && fullDisplayAllowed && !reportEvidence && !deferPhotos ? loadListingMedia(subject, env, amplifyFetch) : Promise.resolve([])
   ]);
   const historySummary = summarizeHistory(history, subject);
   const priceOpinion = buildPriceOpinion(comparableContext, activeForSale);
@@ -155,6 +156,7 @@ async function handleProperty(request, env) {
       return json({ ok: true, property: { listingKey: property2.listingKey, forSale: activeForSale, foundInMls: true, displayRestricted: true, address: "Listing display restricted", photos: [], remarks: null, details: {}, publicListing: null } });
     }
   }
+  if (deferPhotos && (activeForSale || activeLease) && !displayRestricted) property2.photosPending = true;
   return json({ ok: true, property: property2 });
 }
 __name(handleProperty, "handleProperty");
@@ -3480,7 +3482,7 @@ async function publicProperty(request, env, ctx) {
   }
   if (publicUrl.searchParams.get("validate_only") === "1") return addressEntry ? json7({ ok: true, normalizedAddress: addressEntry.address, city: addressEntry.city, unit: addressEntry.parsed.unit }, 200, { "Cache-Control": "no-store" }) : json7({ ok: false, inputError: true, error: "Enter the street number and street name." }, 400);
   publicUrl.searchParams.set("mode", "public_snapshot");
-  publicUrl.searchParams.set("snapshot_version", VERSION4 + "-mls-photos-4");
+  publicUrl.searchParams.set("snapshot_version", VERSION4 + "-mls-photos-5");
   const cacheKey = new Request(publicUrl.toString(), { method: "GET" });
   const edgeCache = typeof caches !== "undefined" ? caches.default : null;
   const cached = edgeCache ? await edgeCache.match(cacheKey) : null;
@@ -3524,6 +3526,7 @@ function forwardPublicSnapshot(source, target) {
   if (source.searchParams.get("mode") === "report_evidence") target.searchParams.set("mode", "report_evidence");
   if (source.searchParams.get("mode") === "public_snapshot") {
     target.searchParams.set("mode", "public_snapshot");
+    if (source.searchParams.get("defer_photos") === "1") target.searchParams.set("defer_photos", "1");
     target.searchParams.set("snapshot_version", source.searchParams.get("snapshot_version") || "public-facts-address-v104-20260906");
   }
 }
@@ -4005,14 +4008,16 @@ async function discoveryPhoto(request, env, ctx) {
   if(env.PUBLIC_DISCOVERY_ENABLED!=="true"||!env.AMPRE_TOKEN)return new Response(null,{status:404});
   const listingKey=new URL(request.url).searchParams.get('listingKey');
   if(!/^[A-Z]\d{7,9}$/.test(listingKey||''))return new Response(null,{status:400});
-  const cache=typeof caches!=='undefined'?caches.default:null,key=new Request(new URL('/api/discovery-photo?listingKey='+listingKey+'&photoVersion=4',request.url));
+  const preview = new URL(request.url).searchParams.get('size') === 'preview';
+  const cache=typeof caches!=='undefined'?caches.default:null,key=new Request(new URL('/api/discovery-photo?listingKey='+listingKey+'&photoVersion=5&size='+(preview?'preview':'full'),request.url));
   const hit=await cache?.match(key);if(hit)return hit;
   try{
     const p=await fetchPropertyByKey(listingKey,env,true);
     if(!p||!publicListingFacts(p))return new Response(null,{status:404});
     const media=await loadListingMedia(p,env,amplifyFetch);
     const photo=normalizeMedia(media,listingKey)[0];if(!photo)return new Response(null,{status:404});
-    const image=await mediaProxy(new Request(new URL('/api/media?key='+encodeURIComponent(photo.key),request.url)),env);
+    const selected = preview ? photo.mobile || photo : photo;
+    const image=await mediaProxy(new Request(new URL('/api/media?key='+encodeURIComponent(selected.key),request.url)),env);
     if(!image.ok)return image;
     const result=new Response(image.body,{headers:{'Content-Type':image.headers.get('Content-Type')||'image/jpeg','Cache-Control':'public, max-age=300, s-maxage=300','X-Content-Type-Options':'nosniff'}});
     if(cache&&ctx?.waitUntil)ctx.waitUntil(cache.put(key,result.clone()));return result;
