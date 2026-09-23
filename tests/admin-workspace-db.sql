@@ -1,5 +1,6 @@
 -- Run against the migrated database. Every fixture is rolled back; no email can claim it.
 begin;
+set local role service_role;
 do $$
 #variable_conflict use_variable
 declare session_id uuid; lead_id uuid; report_id uuid; generate_id bigint; email_id bigint; busy_id bigint; result jsonb; created_agent public.agents; duplicate_rejected boolean:=false;
