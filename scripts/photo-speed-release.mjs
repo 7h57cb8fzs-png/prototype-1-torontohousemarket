@@ -58,6 +58,12 @@ async function verify(base){
   assert.equal(gallery.data.photoCount,gallery.data.photos.length);assert(gallery.data.photos.length>0);
   const cover=gallery.data.photos[0];assert(cover.mobile&&cover.thumbnail,'MLS smaller variants unavailable: '+key);
   for(const photo of gallery.data.photos)for(const size of ['mobile','thumbnail'])if(photo[size])assert.equal(photo[size].key.replace(/-(?:l|m|t|nw)$/i,''),photo.key.replace(/-(?:l|m|t|nw)$/i,''));
+  if(key==='W13812424'){
+   const r=await fetch(base+'/api/property?defer_photos=1&q='+encodeURIComponent('505 2464 Weston Rd, Toronto'),{signal:AbortSignal.timeout(45000)});
+   const d=await r.json();assert(r.ok&&d.ok&&d.property?.listingKey===key&&d.property.photosPending===true,'Condo address must retain deferred media behavior');
+   assert.deepEqual(facts(d.property),facts(fast.data));
+   console.log(JSON.stringify({stage:'address-photo-check',listingKey:key,input:'505 2464 Weston Rd, Toronto',deferred:true}));
+  }
   const result={listingKey:key,address:fast.data.address,photoCount:gallery.data.photoCount,cover:cover.key,mobile:cover.mobile.key,thumbnail:cover.thumbnail.key,previousFullMs:baseline.get(key).milliseconds,detailsMs:fast.milliseconds,galleryMs:gallery.milliseconds};
   if(process.env.PUBLISH!=='true'){
    const sizes={};

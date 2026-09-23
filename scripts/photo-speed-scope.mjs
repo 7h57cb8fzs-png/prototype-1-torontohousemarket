@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 const baseline='ea377e314df2861f022a5df4344210519b45c792';
 const old=file=>execFileSync('git',['show',`${baseline}:${file}`],{encoding:'utf8',maxBuffer:2e6});
 const now=file=>readFileSync(file,'utf8');
-for(const file of ['seller.js','seller.html','styles.css','interface.css','address-input.js','showing.js','worker-v22.js','worker-v12.js','report-runtime.js','offer-instructions.js','discovery-search.js','home-chat.js','wrangler.jsonc'])assert.equal(now(file),old(file),`${file} changed outside photo scope`);
+for(const file of ['seller.js','seller.html','interface.css','address-input.js','showing.js','worker-v22.js','worker-v12.js','report-runtime.js','offer-instructions.js','discovery-search.js','home-chat.js','wrangler.jsonc'])assert.equal(now(file),old(file),`${file} changed outside photo scope`);
 let worker=now('worker-v11.js');
 worker=worker.replace('  const deferPhotos = publicSnapshot && url.searchParams.get("defer_photos") === "1";\n','')
  .replaceAll('!reportEvidence && !deferPhotos','!reportEvidence')
@@ -19,5 +19,6 @@ let app=now('app.js').replace('let photoController = null;\n','').replace('apiUr
  .replace('// The snapshot can render before the complete, correctly ordered gallery arrives.\n','');
 const omitPhotos=s=>['loadListingPhotos','setPhotoSource','renderPhotos','usePhotoFallback','renderGallery'].reduce((v,name)=>v.replace(new RegExp('(?:async )?function '+name+'\\([^]*?\\n}\\n\\n'),'').trim(),s);
 assert.equal(omitPhotos(app),omitPhotos(old('app.js')),'Non-photo client behavior changed');
-assert.equal(now('index.html').replace('/app.js?v=7509','/app.js?v=7502'),old('index.html'));
+assert.equal(now('index.html').replace('/app.js?v=7509','/app.js?v=7502').replace('/styles.css?v=7510','/styles.css?v=7502'),old('index.html'));
+assert.equal(now('styles.css').replace('\n/* Keep the photo frame stable when its loading placeholder is removed in Safari. */\n.photo-panel{width:100%;min-width:0}\n',''),old('styles.css'));
 console.log('PASS: Address matching, report generation, offer instructions, valuation, forms, seller flow, navigation and design are unchanged; changes are confined to photo loading and size selection.');

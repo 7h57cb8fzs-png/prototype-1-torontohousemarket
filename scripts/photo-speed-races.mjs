@@ -35,7 +35,7 @@ try{
  assert((await page.locator('#snapshotThumbImg').getAttribute('src')).endsWith(A+'-t.jpg'));
  await page.locator('#photoMainButton').evaluate(el=>el.scrollIntoView({behavior:'instant',block:'center'}));
  await page.screenshot({path:'mobile-qa/photo-race-before-gallery.png'});
- console.log('Gallery geometry',await page.locator('#photoMainButton').evaluate(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML.slice(0,160)};}));
+ const frame=await page.locator('#photoMainButton').boundingBox();assert(frame.width>300&&frame.height>200,'Mobile photo frame collapsed after gallery load');
  await page.locator('#photoMainButton').click();assert((await page.locator('#galleryImage').getAttribute('src')).endsWith(A+'-l.jpg'));await page.locator('#galleryClose').click();
  console.log('PASS: usable details and report form while gallery waits; mobile, thumbnail and full-gallery sizes remain distinct');
  // A second slow response must never replace the next property's photos.
