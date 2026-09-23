@@ -1,3 +1,4 @@
+import { adminOps } from './admin-api.js';
 import { homeChat } from './home-chat.js';
 import { homeSearch } from './discovery-search.js';
 import legacyApp, { deliverEmailJob } from './worker-v11.js';
@@ -13,6 +14,7 @@ const AUTOMATION_ROUTES=new Set(['/api/lead','/api/vow/accept-terms','/api/vow/a
 export default {
   async fetch(request,env,ctx){
     const url=new URL(request.url);
+    if(url.pathname.startsWith('/api/admin/ops/')) return adminOps(request,env);
     if(url.pathname==='/api/home-chat' && request.method==='POST') return homeChat(request,env,ctx,legacyApp);
     if(url.pathname==='/api/home-search' && request.method==='GET') return homeSearch(request,env,ctx,legacyApp);
     if(url.pathname==='/api/version') return json({

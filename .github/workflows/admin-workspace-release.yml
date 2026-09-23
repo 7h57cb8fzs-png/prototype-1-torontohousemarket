@@ -1,0 +1,38 @@
+name: Verify and publish THM admin workspace
+on:
+  push:
+    branches: [phase-6]
+permissions:
+  contents: read
+concurrency:
+  group: thm-v75-style-guarded-deployment
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: contains(github.event.head_commit.message, '[admin-preview]') || contains(github.event.head_commit.message, '[admin-release]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify admin scope and operations
+        run: |
+          node scripts/admin-workspace-scope.mjs
+          node --check admin-api.js
+          node --check admin-workspace.js
+          node --test tests/admin-workspace.test.mjs tests/v74-email-retry.test.mjs
+      - name: Prepare or publish reviewed admin workspace
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          EXPECTED_ACTIVE_VERSION: 799f4250-9e3e-4518-aef9-37c0847d21a7
+          EXPECTED_ACTIVE_SHA: 50f5c7850bdc909b6b42b396c55e09293c895d82e5ba69212408abe95f5a3b2f
+          CANDIDATE_VERSION_ID: ''
+          EXPECTED_CANDIDATE_SHA: ''
+          PUBLISH: ${{ contains(github.event.head_commit.message, '[admin-release]') && 'true' || 'false' }}
+        run: node scripts/admin-workspace-release.mjs

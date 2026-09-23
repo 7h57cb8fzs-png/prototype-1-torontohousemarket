@@ -31,3 +31,4 @@ package.json
 package-lock.json
 
 offer-instructions.js
+admin-api.js
