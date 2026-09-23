@@ -11,9 +11,10 @@ function parseDate(text,anchor){
  return {iso:date.toISOString().slice(0,10),label:date.toLocaleDateString('en-CA',{timeZone:'UTC',month:'long',day:'numeric',...(explicitYear?{year:'numeric'}:{})})};
 }
 export function extractOfferInstructions(record,now=new Date()){
- const entries=[];let ambiguous=false;
+ const entries=[];let ambiguous=false,anytime=false;
  for(const [field,value] of Object.entries(record||{})){
   if(!/^(?:PrivateRemarks|BrokerageRemarks|BrokerRemarks|RemarksForBrokerages|OfferRemarks|OfferRemark|OfferPresentationRemarks|PublicRemarks|PublicRemarksExtras)$/i.test(field)||typeof value!=='string')continue;
+  if(/\boffers?\s+(?:(?:accepted|welcome|considered)\s+)?any\s*time\b/i.test(value)&&!/\b(?:no|not)\b[^.!?]{0,35}offers?[^.!?]{0,35}any\s*time/i.test(value))anytime=true;
   for(let clause of value.split(/;|\n|[.!?]\s+(?=[A-Z])/)){
    // Exclude acceptance-expiry instructions, even when appended to an offer sentence.
    clause=clause.split(/\birrevocab\w*\b/i)[0];
@@ -29,7 +30,7 @@ export function extractOfferInstructions(record,now=new Date()){
   }
  }
  const days=new Set(entries.map(e=>e.iso)),times=new Set(entries.map(e=>e.clock).filter(Boolean));
- if(ambiguous||days.size>1||times.size>1)return {type:'unclear'};
+ if(ambiguous||anytime&&entries.length||days.size>1||times.size>1)return {type:'unclear'};
  if(!entries.length)return null;
  const e=entries.find(e=>e.time)||entries[0],p=torontoParts(now),today=`${p.year}-${p.month}-${p.day}`;
  return {type:'scheduled',date:e.label,time:e.time,dateIso:e.iso,past:e.iso<today||e.iso===today&&!!e.clock&&e.clock<`${p.hour}:${p.minute}`};

@@ -33,3 +33,5 @@ test('presentation time is separate from earlier registration deadline',()=>{
  const result=extract(record('Offers (If Any) Will Be Reviewed On October 6 at 7:00 pm (EMAIL), register by 5:00 pm. Seller reserves the right to accept pre emptive offers.'),now);
  assert.equal(result.type,'scheduled');assert.equal(result.date,'October 6');assert.equal(result.time,'7:00 PM');assert.equal(result.past,false);
 });
+
+test('offers-anytime conflicts with a dated offer instruction',()=>{assert.equal(extract({...record('Offers reviewed October 6 at 7pm'),OfferRemarks:'Offers anytime.'},now).type,'unclear');});
