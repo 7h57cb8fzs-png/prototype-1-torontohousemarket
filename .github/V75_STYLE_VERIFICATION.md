@@ -101,3 +101,14 @@ Reported: 761 Bay St 2809 and 2809-761 Bay St worked, but 2809 761 Bay St was mi
 27 focused local regression tests passed. Release preflight checks all three reported formats without creating reports or sending emails.
 
 Preview workflow 35812637815 succeeded: responsive/navigation checks, 14 assets, four existing listing checks, and all three Bay Street format checks. Candidate 5778b355-72fc-4b5a-8ef4-91e4033c49d8; source hash 5530ff0ef9f69abc8eebd15c097d702521cd40f0dc6e7f34117679bf2585a94e.
+
+
+## Report-only offer instructions — September 23, 2026
+
+User authorized email offer date/time from brokerage and offer remarks, past-date label, and confirmation with our team. Date/time extraction is isolated in offer-instructions.js. Registration and acceptance-expiry times are excluded from presentation time; conflicting dated/anytime instructions require confirmation. Raw private remarks are not included in the report payload. Main-page display is unchanged.
+
+The below-range strategy explanation appears only with a scheduled offer date, available supported valuation and a positive current ask below the low end. No comparable selection, valuation or price-window calculation changed. The scope gate pins the accepted implementation and protects those paths.
+
+Five offer-specific tests plus existing focused tests, responsive email/navigation checks, 14 assets, four existing listing checks and three address formats passed in workflow 35816516109. Requested N13816518 was checked read-only: presentation October 6 at 7 PM; separate registration time is excluded. Candidate a9d06533-8061-4d76-9ef6-504e15fdece6, source 5bcfa6b849e1dd926be7947a2ff602834f0541c0ba65ecc62d8fc2ee15ba5fa6.
+
+The user also explicitly requested one report email for N13816518. Its isolated sender uses the existing production admin endpoint and verified recipient, with a production-version precondition; it is not triggered by this release commit. No batch or general queue is invoked.
