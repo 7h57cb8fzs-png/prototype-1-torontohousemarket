@@ -81,3 +81,14 @@ User requested removal of the red inner search outlines; matching report and con
 - Responsive lower bar stacks on small screens; keyboard focus and mobile showing-bar clearance are retained. Website release label is 7.5; backend version metadata is unchanged.
 - Scope gate pins c9a84f2fa4310f4052c80129dbda0832154bf74f and verifies all application/server logic and form controls remain unchanged. Existing six-width checks capture the footer and verify regular-weight names.
 - Preview 88a7ba4c-b521-4d9f-87bc-c845a5f705af passed workflow 35807437534 / job 107011291394. All six responsive widths, navigation/reset checks, focused regressions and live asset/listing checks passed. Mobile 375px and desktop 1280px footer screenshots visually reviewed. Worker module hash remains unchanged.
+
+
+## Targeted St Clair address correction — 2026-09-23
+
+User authorized small address changes while preserving the current system. Saint Clair, St Clair, St. Clair and St.Clair canonicalize together; historical subject queries use Clair with strict exact address/unit/city/direction checks. Other street names and comparable selection are unchanged. Existing Google unit preservation is covered by regression checks; requireUnit cannot erase an existing unit. Missing-unit seller preflight uses a bounded public IDX check and prompts only for an unambiguous exact condo building. Missing unit history has distinct email copy.
+
+Validation: 26 focused tests plus 7 seller/email scenarios passed. Preview workflow 35811446138 passed navigation and six viewport checks, 14 asset checks and existing listing checks. Protected read-only diagnostics confirmed missing-unit prompt for 111 St Clair. No customer submissions or emails were sent.
+
+Remaining data limitation: the two recovered unit 1227 history records omit street direction; the same building/postal records contain conflicting W/S directions. Strict direction matching remains unchanged. Do not claim this unit now produces comparable evidence. A broader direction-inference change was considered locally and discarded because evidence conflicts.
+
+Reviewed candidate e859eb93-c9c3-42f8-9e28-977ebc61ba39; module hash 05feaf71af7a364d419b07bc66fa82577dd735c84c74ed16d5e31f2729bf2b37.
