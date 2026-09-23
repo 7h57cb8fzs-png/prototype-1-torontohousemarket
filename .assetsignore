@@ -32,3 +32,6 @@ package-lock.json
 
 offer-instructions.js
 admin-api.js
+
+seller-marketing.js
+seller-marketing-template.js

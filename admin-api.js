@@ -14,12 +14,17 @@ export async function adminOps(request,env){
    if(/^\/leads\/[0-9a-f-]+$/i.test(path)){
     const id=path.split('/')[2];if(!UUID.test(id))return json({ok:false,error:'Invalid lead.'},400);
     const rows=await db(env,'leads?'+new URLSearchParams({id:'eq.'+id,select:LEAD_SELECT,limit:'1'}));
+    if(rows[0]?.lead_mode==='seller')rows[0].seller_marketing=await rpc(env,'admin_seller_marketing_status',{p_lead_id:id});
     return rows[0]?json({ok:true,lead:rows[0]}):json({ok:false,error:'Lead not found.'},404);
    }
   }
   if(request.method==='POST'){
    if(Number(request.headers.get('content-length')||0)>100000)return json({ok:false,error:'Selection is too large.'},413);
    const body=await request.json().catch(()=>null);if(!body)return json({ok:false,error:'Invalid request.'},400);
+   if(/^\/leads\/[0-9a-f-]+\/marketing-unsubscribe$/i.test(path)){
+    const id=path.split('/')[2];if(!UUID.test(id))return json({ok:false,error:'Invalid lead.'},400);
+    return json({ok:true,unsubscribed:await rpc(env,'admin_seller_marketing_unsubscribe',{p_lead_id:id})===true});
+   }
    if(path==='/leads/bulk'){
     if(!validIds(body.ids,UUID)||!['archive','restore','delete'].includes(body.action))return json({ok:false,error:'Choose 1–1000 leads and an action.'},400);
     return json({ok:true,...await rpc(env,'admin_ops_lead_action',{p_ids:body.ids,p_action:body.action})});

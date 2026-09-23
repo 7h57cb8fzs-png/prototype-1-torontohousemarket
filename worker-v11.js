@@ -1,3 +1,4 @@
+import { marketingConsent } from './seller-marketing.js';
 import {extractOfferInstructions,offerEmailLines} from './offer-instructions.js';
 import { normalizeListingPhotos, loadListingMedia } from './mls-photos.js';
 import {valueRangeGraphic,soldComparisonGraphic} from './report-graphics.js';
@@ -6172,7 +6173,7 @@ function validateSellerProfile(value) {
   if (condition === "owner_reported" && (!Number.isFinite(renovationPct) || renovationPct < 0 || renovationPct > 100)) {
     throw new Error("Choose a renovation level from 0 to 100.");
   }
-  return { version: condition === "owner_reported" ? 3 : 2, homeType, city: pick("city", ["", ...SELLER_CITIES]), community: clean5(value.community, 100), sizeBand, beds: integer("beds", 20, true), belowBeds: integer("belowBeds", 20, true), basement: pick("basement", ["unknown", "none", "unfinished", "part_finished", "finished", "apartment"]), entrance: pick("entrance", ["unknown", "yes", "no"]), kitchens: integer("kitchens", 10, true), postal, condition, renovationPct, upgrades, targetPrice: target, targetMin, targetMax, timing: pick("timing", ["exploring", "0_3", "3_6", "6_12"]), notes: clean5(value.notes, 900), ownerConsent: true, contactConsent: true, consentAt: (/* @__PURE__ */ new Date()).toISOString(), source: "owner_reported" };
+  return { version: condition === "owner_reported" ? 3 : 2, homeType, city: pick("city", ["", ...SELLER_CITIES]), community: clean5(value.community, 100), sizeBand, beds: integer("beds", 20, true), belowBeds: integer("belowBeds", 20, true), basement: pick("basement", ["unknown", "none", "unfinished", "part_finished", "finished", "apartment"]), entrance: pick("entrance", ["unknown", "yes", "no"]), kitchens: integer("kitchens", 10, true), postal, condition, renovationPct, upgrades, targetPrice: target, targetMin, targetMax, timing: pick("timing", ["exploring", "0_3", "3_6", "6_12"]), notes: clean5(value.notes, 900), ...marketingConsent(value.marketingConsent), ownerConsent: true, contactConsent: true, consentAt: (/* @__PURE__ */ new Date()).toISOString(), source: "owner_reported" };
 }
 __name(validateSellerProfile, "validateSellerProfile");
 function sellerCityMatches(a, b) {

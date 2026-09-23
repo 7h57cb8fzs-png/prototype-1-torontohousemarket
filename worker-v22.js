@@ -1,3 +1,4 @@
+import { processSellerMarketing, marketingUnsubscribe } from './seller-marketing.js';
 import { adminOps } from './admin-api.js';
 import { homeChat } from './home-chat.js';
 import { homeSearch } from './discovery-search.js';
@@ -14,6 +15,7 @@ const AUTOMATION_ROUTES=new Set(['/api/lead','/api/vow/accept-terms','/api/vow/a
 export default {
   async fetch(request,env,ctx){
     const url=new URL(request.url);
+    if(url.pathname==='/api/marketing/unsubscribe') return marketingUnsubscribe(request,env);
     if(url.pathname.startsWith('/api/admin/ops/')) return adminOps(request,env);
     if(url.pathname==='/api/home-chat' && request.method==='POST') return homeChat(request,env,ctx,legacyApp);
     if(url.pathname==='/api/home-search' && request.method==='GET') return homeSearch(request,env,ctx,legacyApp);
@@ -45,6 +47,7 @@ export default {
   },
 
   async scheduled(controller,env,ctx){
+    ctx.waitUntil(processSellerMarketing(env));
     ctx.waitUntil((async()=>{
       await rpc(env, 'recover_stale_report_jobs', {});
       await rpc(env, 'queue_overdue_sla_notifications', {}).catch(()=>null);
