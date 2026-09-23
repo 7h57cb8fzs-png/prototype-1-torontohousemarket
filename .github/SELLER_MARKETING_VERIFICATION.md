@@ -23,3 +23,5 @@ Base: phase-6 commit 6a659c9adeb1f3d252120e019514b655d7030177, including the lat
 
 ## Deployment
 Promote only the exact verified candidate with the guarded workflow. Recheck production source/version before promotion, verify assets and cron afterward, and restore the previous version on verification failure. The additive database migration can remain if code is rolled back; old forms cannot create marketing consent.
+
+Published successfully at 18:05 UTC on 23 September 2026. Release commit dc5b3a85c068faa183a09a7eb6f9d435923fa23b; run 35899948658, attempt 2. Attempt 1 stopped before promotion on a transient ECONNRESET during preview file verification. Production now runs the exact verified candidate 0666a0bf-3900-445b-b57d-97ed18673402; all 18 live assets, bindings and unchanged cron verified. Live seller form shows the optional checkbox unchecked. No existing contacts enrolled and no test messages sent.
