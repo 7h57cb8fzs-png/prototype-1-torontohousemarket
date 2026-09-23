@@ -1,0 +1,91 @@
+{
+  "activeVersion": "beed29ff-b1ce-450f-8b6e-26459bc17820",
+  "mainModule": "worker-v22.js",
+  "hashes": {
+    "worker-v22.js": "dfe2a1ef714852077166d4874de438c668153bae1af7330434808e6051364119"
+  },
+  "bindings": [
+    {
+      "name": "ADMIN_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "AGENT_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "AI",
+      "type": "ai"
+    },
+    {
+      "name": "AMPRE_TOKEN",
+      "type": "secret_text"
+    },
+    {
+      "name": "AMPRE_VOW_TOKEN",
+      "type": "secret_text"
+    },
+    {
+      "name": "ASSETS",
+      "type": "assets"
+    },
+    {
+      "name": "GEMINI_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "GOOGLE_PLACES_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "OPENAI_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "OPENROUTER_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "PUBLIC_DISCOVERY_ENABLED",
+      "type": "plain_text"
+    },
+    {
+      "name": "RESEND_API_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "SUPABASE_SERVICE_ROLE_KEY",
+      "type": "secret_text"
+    },
+    {
+      "name": "THM_RELEASE",
+      "type": "plain_text"
+    },
+    {
+      "name": "VOW_AUDIT_SALT",
+      "type": "secret_text"
+    }
+  ],
+  "schedules": {
+    "schedules": [
+      {
+        "cron": "* * * * *",
+        "created_on": "2026-08-26T15:30:31.424278Z",
+        "modified_on": "2026-09-18T04:27:35.089361Z"
+      }
+    ]
+  },
+  "publicVersion": {
+    "ok": true,
+    "version": "version-7.4-history-search-20260918",
+    "release": "7.4",
+    "chat_model": "gpt-5.6-luna",
+    "chat_search": "neighbourhood and brokerage scoped MLS queries",
+    "valuation": "Estimated Market Value + Likely Market Range",
+    "candidate_policy": "broad VOW evidence when strict evidence is insufficient; structural attributes are relevance signals",
+    "openai_policy": "Luna first; Terra only for compound severe complexity",
+    "scheduler": "single report pipeline; no duplicate nested scheduler",
+    "seller_condition": "native 0-100 renovation context; no fixed renovation markup",
+    "address_input": "shared buyer/seller touch-first suggestions; condo unit-first input preserved"
+  }
+}

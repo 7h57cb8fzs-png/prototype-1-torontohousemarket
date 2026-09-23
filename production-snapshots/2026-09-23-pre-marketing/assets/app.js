@@ -1,0 +1,1215 @@
+// Format validation only; a successful check does not verify phone ownership.
+function normalizeNorthAmericanPhone(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw || raw.length > 24 || !/^\+?[\d\s().-]+$/.test(raw)) return null;
+  let digits = raw.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+  else if (raw.startsWith('+')) return null;
+  if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return null;
+  if (digits.slice(1,3) === '11' || digits.slice(4,6) === '11' || /^(\d)\1{9}$/.test(digits) || ['1234567890','0123456789','9876543210'].includes(digits)) return null;
+  return '+1' + digits;
+}
+
+const $ = (id) => document.getElementById(id);
+
+const analysisForm = $("analysisForm");
+const propertyInput = $("propertyInput");
+const lookupButton = $("lookupButton");
+const inputStatus = $("inputStatus");
+const snapshotSection = $("snapshotSection");
+const snapshotProperty = $("snapshotProperty");
+const snapshotMeta = $("snapshotMeta");
+const resultEyebrow = $("resultEyebrow");
+const linkValidationBadge = $("linkValidationBadge");
+const marketStatusPill = $("marketStatusPill");
+const mlsBadge = $("mlsBadge");
+const liveAddress = $("liveAddress");
+const livePrice = $("livePrice");
+const liveDetails = $("liveDetails");
+const activeActionBox = $("activeActionBox");
+const offMarketActionBox = $("offMarketActionBox");
+const offMarketTitle = $("offMarketTitle");
+const offMarketCopy = $("offMarketCopy");
+const seeHomeButton = $("seeHomeButton");
+const deepReportButton = $("deepReportButton");
+const sellerReportButton = $("sellerReportButton");
+const detailsGrid = $("detailsGrid");
+const remarksToggle = $("remarksToggle");
+const listingRemarks = $("listingRemarks");
+
+const photoPlaceholder = $("photoPlaceholder");
+const photoPlaceholderTitle = $("photoPlaceholderTitle");
+const photoPlaceholderText = $("photoPlaceholderText");
+const photoMainButton = $("photoMainButton");
+const mainPhoto = $("mainPhoto");
+const photoThumbs = $("photoThumbs");
+const photoCountBadge = $("photoCountBadge");
+const snapshotThumb = $("snapshotThumb");
+const snapshotThumbImg = $("snapshotThumbImg");
+
+const leadModal = $("leadModal");
+const closeModal = $("closeModal");
+const doneButton = $("doneButton");
+const leadForm = $("leadForm");
+const leadFormPanel = $("leadFormPanel");
+const leadSuccessPanel = $("leadSuccessPanel");
+const modalProperty = $("modalProperty");
+const modalPropertyDisplay = $("modalPropertyDisplay");
+const leadMode = $("leadMode");
+const modalEyebrow = $("modalEyebrow");
+const modalTitle = $("modalTitle");
+const modalCopy = $("modalCopy");
+const nextStepLabel = $("nextStepLabel");
+const showingTiming = $("showingTiming");
+const sellerTimelineWrap = $("sellerTimelineWrap");
+const sellerTimeline = $("sellerTimeline");
+const leadSubmit = $("leadSubmit");
+const leadError = $("leadError");
+const serviceNote = $("serviceNote");
+const successTitle = $("successTitle");
+const successCopy = $("successCopy");
+const successStepOne = $("successStepOne");
+const successStepOneNote = $("successStepOneNote");
+
+const galleryModal = $("galleryModal");
+const galleryImage = $("galleryImage");
+const galleryCounter = $("galleryCounter");
+const galleryClose = $("galleryClose");
+const galleryPrev = $("galleryPrev");
+const galleryNext = $("galleryNext");
+
+let activePropertyInput = "";
+let liveListing = null;
+let photos = [];
+let photoController = null;
+let galleryIndex = 0;
+let currentLeadMode = "showing";
+let loading = false;
+let buyerLookupSequence = 0;
+let schoolSequence = 0;
+let schoolController = null;
+let homeAiSequence = 0;
+let homeAiController = null;
+let priceCheckSequence = 0;
+let priceCheckController = null;
+const homePageTitle = document.title;
+let activePreviewQuery = null;
+let previewNavigationSequence = 0;
+
+for (const button of document.querySelectorAll("[data-scroll]")) {
+  button.addEventListener("click", () => {
+    const target = document.querySelector(button.dataset.scroll);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => propertyInput.focus(), 350);
+  });
+}
+
+const buyerAddressControl=THMAddress.attach({input:propertyInput,panel:$("buyerSuggestions"),status:inputStatus,onChange:()=>{buyerLookupSequence++;setLoading(false);hideResult();liveListing=null;setInputStatus("", "Enter a street address, MLS number or listing link. City is optional.");}});
+
+analysisForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (loading) return;
+
+  const navigationSequence = previewNavigationSequence;
+  const value = await buyerAddressControl.prepare();
+  if(value===null || navigationSequence!==previewNavigationSequence)return;
+  await lookupProperty(value);
+});
+
+async function lookupProperty(value, {historyMode = "push", includeShowing = false} = {}) {
+  const sequence=++buyerLookupSequence;
+  if (!value) {
+    setInputStatus("error", "Enter an MLS number, street address, or listing URL.");
+    propertyInput.focus();
+    return;
+  }
+
+  propertyInput.setAttribute("aria-invalid","false");
+  activePropertyInput = value;
+  hideLeadModal();
+  closeGallery();
+  $("listingShareDialog").close();
+  setLoading(true);
+  hideResult();
+  setInputStatus("loading", "Checking the live MLS, listing status and property data…");
+
+  const mls = detectMlsKey(value);
+  const apiUrl = mls && !/^https?:\/\//i.test(value)
+    ? `/api/property?listingKey=${encodeURIComponent(mls)}`
+    : `/api/property?q=${encodeURIComponent(value)}`;
+
+  try {
+    const response = await fetch(apiUrl + "&defer_photos=1", { headers: { Accept: "application/json" } });
+    const result = await response.json().catch(() => null);
+    if(sequence!==buyerLookupSequence)return;
+    if (!response.ok || !result?.ok || !result?.property) {
+      throw Object.assign(new Error(result?.error || "We could not check that property right now."),{inputError:!!result?.inputError,unitRequired:!!result?.unitRequired,cityChoices:result?.cityChoices});
+    }
+
+    liveListing = result.property;
+    buyerAddressControl.set(result.normalizedAddress || liveListing.address || value);
+    renderListing(liveListing);
+    showResult();
+    loadListingPhotos(liveListing, sequence);
+    rememberPreview(liveListing, value, historyMode);
+    loadPriceCheck(liveListing);
+    loadHomeAssistant('overview');
+    loadSchoolSnapshot(liveListing);
+    if (includeShowing) openLeadModal('buyer_report',true);
+
+    const verification = liveListing.inputValidation?.label || "Property checked.";
+    setInputStatus(liveListing.foundInMls === false ? "error" : "ok", verification);
+    propertyInput.blur();
+    snapshotSection.scrollIntoView({ behavior: historyMode === "none" ? "auto" : "smooth", block: "start" });
+  } catch (error) {
+    if(sequence!==buyerLookupSequence)return;
+    liveListing = null;
+    hideResult();
+    if(error.cityChoices){setInputStatus("", "Choose the matching city below.");buyerAddressControl.showCities(error.cityChoices);}
+    else if(error.unitRequired){setInputStatus("", "");buyerAddressControl.requireUnit();}
+    else setInputStatus(error.inputError?"error":"", error instanceof Error ? error.message : "We could not check that property right now.");
+  } finally {
+    if(sequence===buyerLookupSequence)setLoading(false);
+  }
+}
+
+// Successful previews are real destinations. URLs also restore them after reload.
+function previewQuery() {
+  const params = new URLSearchParams(location.search);
+  const key = params.get('listingKey');
+  if (key && /^[A-Z]\d{7,9}$/i.test(key)) return key.toUpperCase();
+  const query = params.get('q');
+  return query && query.length <= 500 ? query : null;
+}
+
+function rememberPreview(listing, value, mode) {
+  const key = String(listing.listingKey || '').toUpperCase();
+  const query = /^[A-Z]\d{7,9}$/.test(key) ? key : value;
+  if (mode !== 'none') {
+    const url = new URL(location.href);
+    const sameProperty = previewQuery() === query;
+    url.searchParams.delete('listingKey');
+    url.searchParams.delete('q');
+    if (!sameProperty) url.searchParams.delete('showing');
+    url.searchParams.set(query === key ? 'listingKey' : 'q', query);
+    url.hash = 'lookup';
+    history[mode === 'replace' || sameProperty ? 'replaceState' : 'pushState'](null, '', url);
+  }
+  activePreviewQuery = previewQuery();
+  document.title = `${listing.address || value} | Toronto House Market`;
+}
+
+function restorePreview({initial = false} = {}) {
+  const query = previewQuery();
+  // Native anchor navigation within the same property needs no new lookup.
+  if (!initial && query === activePreviewQuery && liveListing && !loading) return;
+  previewNavigationSequence++;
+  buyerLookupSequence++;
+  buyerAddressControl.cancel();
+  setLoading(false);
+  hideLeadModal();
+  closeGallery();
+  $("listingShareDialog").close();
+  hideResult();
+  liveListing = null;
+  activePreviewQuery = query;
+  buyerAddressControl.set(query || '');
+  if (query) {
+    lookupProperty(query, {
+      historyMode: initial ? 'replace' : 'none',
+      includeShowing: initial && new URLSearchParams(location.search).get('showing') === '1'
+    });
+  } else {
+    activePropertyInput = '';
+    document.title = homePageTitle;
+    setInputStatus('', 'Free property preview · No sign-up');
+    if (!initial) document.getElementById('lookup').scrollIntoView({behavior:'auto', block:'start'});
+  }
+}
+window.addEventListener('popstate', () => restorePreview());
+
+function setLoading(value) {
+  loading = value;
+  lookupButton.disabled = value;
+  lookupButton.textContent = value ? "Finding property…" : "Preview this home →";
+  analysisForm.classList.toggle("is-loading", value);
+}
+
+function setInputStatus(type, text) {
+  inputStatus.className = `input-status ${type || ""}`.trim();
+  inputStatus.textContent = text;
+  propertyInput.setAttribute("aria-invalid",String(type==="error"));
+}
+
+function hideResult() {
+  photoController?.abort();
+  schoolSequence++; schoolController?.abort();
+  $("mobileShowing").classList.add("hidden");
+  $("mobileAsking").textContent = "";
+  resetHomeAssistant();
+  resetPriceCheck();
+  snapshotSection.classList.add("hidden");
+}
+
+function showResult() {
+  snapshotSection.classList.remove("hidden");
+}
+
+function renderListing(listing) {
+  schoolSequence++; schoolController?.abort();
+  resetDynamicSections();
+  resetPriceCheck();
+
+  const hasMls = listing.foundInMls !== false;
+  const active = !!listing.forSale;
+  const restricted = !!listing.displayRestricted;
+
+  resultEyebrow.textContent = active ? "PUBLIC MLS SNAPSHOT" : "PROPERTY REVIEW";
+  const fullAddress = listing.address || activePropertyInput;
+  const addressParts = fullAddress.split(/,\s*/);
+  snapshotProperty.textContent = addressParts[0];
+  $("snapshotLocality").textContent = addressParts.slice(1).join(", ").replace(/([A-Z]\d[A-Z])\s+(\d[A-Z]\d)/ig, "$1\u00a0$2");
+  snapshotMeta.textContent = buildSnapshotMeta(listing);
+  $("shareListing").hidden = !listingShareData(listing);
+
+  if (listing.inputValidation?.label) {
+    linkValidationBadge.textContent = `${hasMls ? "✓ " : ""}${listing.inputValidation.label}`;
+    linkValidationBadge.classList.remove("hidden");
+  }
+
+  marketStatusPill.textContent = active ? "FOR SALE" : listing.forLease ? "FOR LEASE" : hasMls ? "NOT FOR SALE" : "STATUS UNCONFIRMED";
+  marketStatusPill.className = `market-status-pill ${active ? "is-live" : "is-off"}`;
+  mlsBadge.textContent = listing.listingKey ? `MLS ${listing.listingKey}` : hasMls ? "MLS HISTORY" : "NO MLS MATCH";
+
+  liveAddress.textContent = listing.address || activePropertyInput;
+  livePrice.innerHTML = renderPrice(listing);
+  liveDetails.textContent = buildFactLine(listing, restricted);
+
+  activeActionBox.classList.toggle("hidden", !active);
+  offMarketActionBox.classList.toggle("hidden", active);
+
+  if (!active) {
+    offMarketActionBox.querySelector(".offmarket-label").textContent = listing.forLease ? "FOR LEASE" : hasMls ? "NOT FOR SALE ON MLS" : "LISTING STATUS UNCONFIRMED";
+    if (listing.forLease) {
+      offMarketTitle.textContent = "This property is offered for lease.";
+      offMarketCopy.textContent = "You found the rental listing. Purchase price reports apply to homes for sale. Contact the team about this rental.";
+    } else if (hasMls) {
+      offMarketTitle.textContent = "Not listed — but the property still has useful history.";
+      offMarketCopy.textContent = "Request a deeper review using available MLS history and current local market context.";
+    } else {
+      offMarketTitle.textContent = "This listing needs a team check.";
+      offMarketCopy.textContent = "Check the unit and city, or try the MLS number. If it is listed elsewhere, our feed may not include it. Contact the team to confirm availability.";
+    }
+  }
+
+  renderPhotos(listing.photos || [], listing);
+  renderQuickFacts(listing);
+  renderAiBrief(listing);
+  renderMarketRead(listing);
+  renderLayoutEssentials(listing);
+  renderBuyerEssentials(listing);
+  renderDetails(listing);
+  $("mobileShowing").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
+  $("mobileAsking").textContent = listing.forSale && listing.listPrice > 0 ? money(listing.listPrice) : "";
+  $("homeAiPanel").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
+  $("priceCheckPanel").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
+  $("priceCheckJump").classList.toggle("hidden", !listing.forSale || listing.displayRestricted || !listing.listingKey);
+  const updated = listing.publicListing?.updatedAt;
+  $("snapshotFreshness").textContent = active ? `${updated ? `Listing updated ${formatDate(updated)}. ` : ""}Public IDX snapshot · may be cached for up to 5 minutes. Confirm availability before visiting.` : "No current for-sale listing verified. Historical details may not describe the property today.";
+}
+
+function resetDynamicSections() {
+  linkValidationBadge.classList.add("hidden");
+  listingRemarks.classList.add("hidden");
+  remarksToggle.classList.add("hidden");
+  listingRemarks.textContent = "";
+  detailsGrid.innerHTML = "";
+}
+
+function buildSnapshotMeta(listing) {
+  if (listing.forLease) return `MLS ${listing.listingKey} · For lease · this is a rental listing, not a sale listing`;
+  if (listing.forSale) {
+    const bits = [];
+    if (listing.listingKey) bits.push(`MLS ${listing.listingKey}`);
+    bits.push("active listing");
+    if (typeof listing.daysLive === "number") bits.push(listing.daysLive === 0 ? "listed today" : `${listing.daysLive} day${listing.daysLive === 1 ? "" : "s"} live`);
+    return bits.join(" · ");
+  }
+  if (listing.foundInMls === false) return "Not found in our connected MLS feed · sale or lease status unconfirmed";
+  const count = listing.historySummary?.appearanceCount || 0;
+  return `Not currently listed${count ? ` · ${count} MLS appearance${count === 1 ? "" : "s"} found in 10 years` : ""}`;
+}
+
+function renderPrice(listing) {
+  if (listing.forLease) return `${money(listing.listPrice)}<span class="price-caption"> RENT / MONTH</span>`;
+  if (listing.foundInMls === false) return `<span class="price-caption">STATUS</span>Listing status unconfirmed`;
+  if (listing.forSale) {
+    return listing.listPrice ? money(listing.listPrice) : `<span class="price-caption">ACTIVE LISTING</span>Price unavailable`;
+  }
+  return `<span class="price-caption">STATUS</span>Not currently for sale`;
+}
+
+function buildFactLine(listing, restricted) {
+  if (restricted) return "Listing identified · full internet display is restricted by the listing feed";
+  const facts = [
+    (listing.propertySubType || listing.propertyType || "").replace(/^Condo Apartment$/i, "Condo"),
+    listing.beds != null ? `${bedroomLabel(listing)} bed` : null,
+    listing.baths != null ? `${listing.baths} bath` : null,
+    listing.livingAreaRange ? `${listing.livingAreaRange.replace(/-/g, "–")}\u00a0sq\u00a0ft` : null,
+  ].filter(Boolean);
+  return facts.length ? facts.join(" · ") : listing.foundInMls === false ? "No current MLS property details available" : "Property identified from MLS history";
+}
+
+// The snapshot can render before the complete, correctly ordered gallery arrives.
+async function loadListingPhotos(listing, sequence) {
+  photoController?.abort();
+  if (!listing.photosPending || !listing.listingKey || listing.displayRestricted) return;
+  const controller = new AbortController();
+  photoController = controller;
+  try {
+    const response = await fetch(`/api/property?listingKey=${encodeURIComponent(listing.listingKey)}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30000)])
+    });
+    const result = await response.json();
+    if (!response.ok || !result?.ok || result.property?.listingKey !== listing.listingKey) throw new Error("Photos unavailable");
+    if (controller.signal.aborted || sequence !== buyerLookupSequence || liveListing !== listing) return;
+    listing.photos = result.property.photos || [];
+    listing.photoCount = listing.photos.length;
+    listing.photosPending = false;
+    renderPhotos(listing.photos, listing);
+  } catch {
+    if (controller.signal.aborted || sequence !== buyerLookupSequence || liveListing !== listing) return;
+    listing.photosPending = false;
+    renderPhotos([], listing);
+  }
+}
+
+function setPhotoSource(image, photo, role = "preview") {
+  const variant = role === "thumbnail" ? photo.thumbnail || photo.mobile || photo
+    : role === "preview" && window.matchMedia("(max-width: 767px)").matches ? photo.mobile || photo : photo;
+  image.dataset.fallbackUsed = "";
+  image.dataset.photoFallback = variant.fallbackUrl || photo.fallbackUrl || "";
+  image.decoding = "async";
+  image.src = variant.url;
+}
+
+function renderPhotos(items, listing) {
+  photos = Array.isArray(items) ? items.filter((item) => item?.url) : [];
+  photoThumbs.innerHTML = "";
+
+  if (!photos.length) {
+    snapshotThumb.classList.add("hidden");
+    snapshotThumbImg.removeAttribute("src");
+    photoPlaceholder.classList.remove("hidden", "is-ready");
+    photoMainButton.classList.add("hidden");
+    photoThumbs.classList.add("hidden");
+
+    if (listing.photosPending && !listing.displayRestricted) {
+      photoPlaceholderTitle.textContent = "Loading listing photos…";
+      photoPlaceholderText.textContent = "Your property details are ready. Photos will appear here shortly.";
+    } else if (listing.forSale && listing.displayRestricted) {
+      photoPlaceholderTitle.textContent = "Photo display restricted";
+      photoPlaceholderText.textContent = "The listing was found, but this feed does not permit full internet display.";
+    } else if (listing.forSale) {
+      photoPlaceholderTitle.textContent = "Listing found — photos unavailable";
+      photoPlaceholderText.textContent = "The property details are live. The MLS media feed did not return displayable photos for this listing.";
+    } else if (listing.foundInMls === false) {
+      photoPlaceholderTitle.textContent = "Try the MLS number or add the city";
+      photoPlaceholderText.textContent = "We couldn’t confirm a listing for this address. Its availability is unknown.";
+    } else {
+      photoPlaceholderTitle.textContent = "No active listing photos";
+      photoPlaceholderText.textContent = "Off-market properties do not use old listing photos in the public result.";
+    }
+    return;
+  }
+
+  photoPlaceholder.classList.add("is-ready");
+  photoMainButton.classList.remove("hidden");
+  photoThumbs.classList.remove("hidden");
+
+  snapshotThumb.classList.remove("hidden");
+  snapshotThumbImg.alt = photos[0].description || `Photo of ${listing.address || "property"}`;
+  snapshotThumbImg.onerror = () => usePhotoFallback(snapshotThumbImg, 0);
+  setPhotoSource(snapshotThumbImg, photos[0], "thumbnail");
+
+  mainPhoto.alt = photos[0].description || `Photo of ${listing.address || "property"}`;
+  mainPhoto.onerror = () => usePhotoFallback(mainPhoto, 0);
+  setPhotoSource(mainPhoto, photos[0]);
+  photoCountBadge.textContent = `${photos.length} photo${photos.length === 1 ? "" : "s"}`;
+
+  const secondary = photos.slice(1, 5);
+  photoThumbs.innerHTML = secondary.map((photo, index) => `
+    <button type="button" data-photo-index="${index + 1}" aria-label="Open property photo ${index + 2}">
+      <img alt="" loading="lazy" />
+    </button>`).join("");
+
+  for (const button of photoThumbs.querySelectorAll("button")) {
+    const index=Number(button.dataset.photoIndex||0);
+    button.addEventListener("click", () => openGallery(index));
+    const img = button.querySelector("img");
+    if (img) {
+      img.onerror = () => usePhotoFallback(img, index);
+      setPhotoSource(img, photos[index], "thumbnail");
+    }
+  }
+}
+
+function removeBrokenPhoto(index) {
+  if (!photos[index]) return;
+  photos.splice(index, 1);
+  renderPhotos(photos, liveListing || {});
+}
+
+function usePhotoFallback(image,index) {
+  const photo=photos[index];
+  const fallback = image.dataset.photoFallback || photo?.fallbackUrl;
+  if(fallback&&!image.dataset.fallbackUsed){
+    image.dataset.fallbackUsed="true";
+    image.src=fallback;
+    return;
+  }
+  // A temporary image failure must not change the MLS gallery count or cover.
+  image.onerror = null;
+  image.removeAttribute("src");
+  image.alt = "MLS photo temporarily unavailable";
+}
+
+photoMainButton.addEventListener("click", () => openGallery(0));
+snapshotThumb.addEventListener("click", () => openGallery(0));
+
+function bedroomLabel(listing) {
+  const primary = listing.publicListing?.bedroomsAboveGrade;
+  const extra = listing.publicListing?.bedroomsBelowGrade;
+  return primary != null && extra > 0 ? `${primary}+${extra}` : listing.beds ?? "—";
+}
+
+function renderQuickFacts(listing) {
+  if ((!listing.forSale && !listing.forLease) || listing.displayRestricted) listing = {};
+  $("factBeds").textContent = bedroomLabel(listing);
+  $("factBaths").textContent = listing.baths ?? "—";
+  const kitchens = listing.kitchensTotal;
+  $("kitchenFact").textContent = kitchens != null && Number.isInteger(Number(kitchens)) && Number(kitchens) >= 0 ? String(kitchens) : "—";
+  $("factType").textContent = listing.propertySubType || listing.propertyType || "—";
+  $("factLotLabel").textContent = listing.isCondominium ? "MAINTENANCE" : "LOT";
+  const fee = listing.maintenanceFee, amount = fee?.amount, frequency = String(fee?.frequency || 'month').toLowerCase();
+  const feeKnown = amount != null && Number.isFinite(Number(amount)) && Number(amount) >= 0;
+  const feeUnit = /^(month|monthly)$/.test(frequency) ? '' : /^(year|annual|annually|yearly)$/.test(frequency) ? '/yr' : ` / ${frequency}`;
+  $("factLot").textContent = listing.isCondominium ? feeKnown ? `${new Intl.NumberFormat("en-CA",{style:"currency",currency:"CAD",minimumFractionDigits:Number(amount)%1?2:0,maximumFractionDigits:2}).format(Number(amount))}${feeUnit}` : "Not reported" : listing.lotWidth && listing.lotDepth ? `${formatNumber(listing.lotWidth)} × ${formatNumber(listing.lotDepth)} ${listing.publicListing?.lotUnits || "(units not reported)"}` : "—";
+  $("factParking").textContent = listing.parkingTotal ?? "—";
+  $("factTax").textContent = listing.details?.annualTax ? `${money(listing.details.annualTax)}${listing.details.taxYear ? ` · ${listing.details.taxYear}` : ""}` : "—";
+}
+
+function renderAiBrief(listing) {
+  if (!listing.forSale || listing.displayRestricted) {
+    for (const id of ["priceSignal", "marketSignal", "flagSignal", "showingSignal"]) setSignal(id, "Current details unavailable", "Request a property review. We have not verified current public listing facts.");
+    return;
+  }
+  const change = listing.publicListing?.priceChange;
+  setSignal("priceSignal", listing.listPrice ? money(listing.listPrice) : "Not reported",
+    change ? `${money(change.amount)} (${change.percent}%) below the original ${money(change.original)} asking price on this MLS listing. Not a value estimate.` : "The seller’s asking price, not an estimate of market value. No verified reduction is shown.");
+  const days = listing.daysLive;
+  setSignal("marketSignal", Number.isFinite(days) ? days === 0 ? "Listed today" : `${days} days on this listing` : "Active listing",
+    listing.offerTiming?.note || "Confirm showing access and whether there is an offer deadline.");
+  const layout = [];
+  if (listing.publicListing?.bedroomsBelowGrade > 0) layout.push(listing.isCondominium ? `${bedroomLabel(listing)} reported bedroom layout; confirm the additional room's use` : `${listing.publicListing.bedroomsBelowGrade} bedroom(s) below grade`);
+  if (Array.isArray(listing.basement) && listing.basement.length) layout.push(`${listing.basement.join(", ")} basement`);
+  if (listing.parkingTotal != null) layout.push(`${listing.parkingTotal} parking space(s)`);
+  setSignal("flagSignal", listing.livingAreaRange ? `${listing.livingAreaRange} sq ft (MLS range)` : "Size not reported", layout.join(" · ") || "Confirm room dimensions, usable space and parking at your showing.");
+  const extraUnit = !listing.isCondominium && (listing.kitchensTotal > 1 || /separate entrance|basement apartment|secondary unit/i.test(listing.remarks || ""));
+  setSignal("showingSignal", extraUnit ? "Verify any additional unit" : listing.isCondominium ? "Review fees & building records" : "Check condition & major systems",
+    extraUnit ? "Listing mentions are not proof of legal use. Verify permits, occupancy and fire safety with qualified professionals." : listing.isCondominium ? "Ask what fees cover, about planned work, and for a professional review of the status certificate." : "Check the roof, heating, cooling and signs of moisture. Photos cannot confirm condition.");
+}
+
+function renderMarketRead(listing) {
+  const current = listing.forSale && !listing.displayRestricted;
+  const d = current ? listing.details || {} : {};
+  const tax = d.annualTax;
+  $("snapshotTaxValue").textContent = Number.isFinite(tax) ? `${money(tax)} / year` : "Not reported";
+  $("snapshotTaxNote").textContent = Number.isFinite(tax) ? `${d.taxYear || "MLS-reported"} · about ${money(tax / 12)} / month for tax alone. Not total ownership cost.` : "Confirm the current tax bill.";
+  const fee = current ? listing.maintenanceFee : null;
+  $("snapshotFeeValue").textContent = Number.isFinite(fee?.amount) ? `${money(fee.amount)} / ${fee.frequency || "period not reported"}` : "Not reported";
+  const feeNotes = [];
+  if (fee?.included?.length) feeNotes.push(`Listed as included: ${fee.included.join(", ")}.`);
+  if (fee?.notIncluded?.length) feeNotes.push(`Listed as excluded: ${fee.notIncluded.join(", ")}.`);
+  $("snapshotFeeNote").textContent = feeNotes.join(" ") || "Do not assume no fee. Confirm any condo, common-element or other charges.";
+  $("snapshotPossessionValue").textContent = d.possession || "To be confirmed";
+  $("snapshotPossessionNote").textContent = "Possession is separate from your showing date.";
+  $("snapshotCommunityValue").textContent = current ? listing.cityRegion || listing.city || "Not reported" : "Not verified";
+  $("snapshotCommunityNote").textContent = d.crossStreet ? `Near ${d.crossStreet}` : "Check the exact location and your commute.";
+}
+
+function renderLayoutEssentials(listing) {
+  const visible = (listing.forSale || listing.forLease) && !listing.displayRestricted;
+  const apartment = /condo (?:apartment|apt)/i.test(listing.propertySubType || "");
+  $("layoutEssentials").classList.toggle("hidden", !visible || apartment);
+  $("basementFactCard").classList.toggle("hidden", apartment);
+  $("entranceFactCard").classList.toggle("hidden", apartment);
+  const tags = (Array.isArray(listing.basement) ? listing.basement : []).map(v => String(v).replace(/([a-z])([A-Z])/g, "$1 $2").trim()).filter(Boolean);
+  const noBasement = tags.some(v => /^(none|no basement)$/i.test(v));
+  $("basementFact").textContent = noBasement ? "No basement" : tags.filter(v => !/separate.*entrance/i.test(v)).join(" · ") || "Not reported";
+  const explicitEntry = tags.some(v => /separate.*entrance/i.test(v) && !/no |not |without /i.test(v));
+  const entrySentences = String(listing.remarks || "").split(/[.!?\n]+/).filter(v => /separate(?:\s+(?:basement|side|rear))?\s+entrance/i.test(v));
+  const uncertainEntry = entrySentences.some(v => /\b(?:potential|possible|could|proposed|future|option|may|can be|subject to)\b/i.test(v));
+  const deniedEntry = tags.some(v => /(?:no|not|without).*separate.*entrance/i.test(v)) || entrySentences.some(v => /\b(?:no|not|without)\b[^,;]{0,45}separate(?:\s+(?:basement|side|rear))?\s+entrance/i.test(v));
+  $("entranceFact").textContent = deniedEntry ? explicitEntry ? "Needs confirmation" : "Not available, per listing" : explicitEntry ? "Reported" : uncertainEntry ? "Potential — confirm" : entrySentences.length ? "Reported in remarks" : "Not reported";
+}
+
+function renderBuyerEssentials(listing) {
+  const visible = listing.forSale && !listing.displayRestricted;
+  $("buyerEssentials").classList.toggle("hidden", !visible);
+  renderSchoolSummary(visible ? listing.schoolSummary : null, visible && !!listing.schoolResearchToken);
+}
+function renderSchoolSummary(school, loading = false) {
+  $("schoolName").textContent = school?.name || (loading ? 'Finding a nearby school…' : 'Check schools for this address');
+  $("schoolDetails").textContent = school?.name ? [school.distanceKm != null ? `${school.distanceKm} km away` : null, school.board, 'Nearby does not confirm enrolment. Check the school board’s boundary.'].filter(Boolean).join(' · ') : loading ? 'School details load separately from your property preview.' : 'Use the ratings and official results links to search by school or address.';
+  const score = school?.rating;
+  $("schoolRating").textContent = typeof score === 'number' && Number.isFinite(score) && score >= 0 && score <= 10 && school.ratingScale === 10 ? `${score}/10 · MLS-reported rating${school.ratingYear ? ` · ${school.ratingYear}` : ' · year not supplied'}` : school?.name ? 'Rating: check the published school report below.' : '';
+}
+async function loadSchoolSnapshot(listing) {
+  if (!listing?.forSale || listing.displayRestricted || listing.schoolSummary?.name || !listing.schoolResearchToken) return;
+  const sequence = schoolSequence, key = listing.listingKey;
+  schoolController = new AbortController(); const controller = schoolController;
+  const timer = window.setTimeout(() => controller.abort(), 26000);
+  try {
+    const response = await fetch(`/api/school-enrichment?token=${encodeURIComponent(listing.schoolResearchToken)}`, {headers:{Accept:'application/json'},signal:controller.signal,cache:'no-store'});
+    const data = await response.json();
+    if (sequence !== schoolSequence || liveListing?.listingKey !== key) return;
+    if (!response.ok || !data.ok) throw new Error('School lookup unavailable');
+    renderSchoolSummary(data.schoolSummary);
+  } catch {
+    if (sequence === schoolSequence && liveListing?.listingKey === key) { renderSchoolSummary(null); $("schoolDetails").textContent = 'Nearby school lookup is unavailable. You can still check published ratings and official results.'; }
+  } finally { window.clearTimeout(timer); }
+}
+function renderDetails(listing) {
+  if (!listing.forSale || listing.displayRestricted) listing = { forSale: false };
+  const d = listing.details || {};
+  const items = [
+    ["STYLE", joinValue(d.architecturalStyle)],
+    ["CONSTRUCTION", joinValue(d.construction)],
+    ["HEATING", joinValue(d.heating)],
+    ["COOLING", joinValue(d.cooling)],
+    ["BASEMENT", Array.isArray(listing.basement) ? listing.basement.join(", ") : ""],
+    ["PARKING", joinValue(d.parking) || (listing.garageType ? `${listing.garageType} garage` : "")],
+    ["POSSESSION", d.possession],
+    ["CROSS STREET", d.crossStreet],
+    ["INTERIOR", joinValue(d.interior)],
+    ["POOL", joinValue(d.pool)],
+    ["DIRECTION", d.direction],
+    ["LISTING OFFICE", d.listingOffice],
+  ].filter(([, value]) => value && value !== "—");
+
+  if (!items.length) {
+    detailsGrid.innerHTML = `<div class="empty-details"><strong>${listing.forSale ? "Property details are limited for this listing." : "No active-listing details to display."}</strong><span>${listing.forSale ? "The showing request can still be sent." : "Use the deep report option for the next layer."}</span></div>`;
+  } else {
+    detailsGrid.innerHTML = items.map(([label, value]) => `<div class="detail-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`).join("");
+  }
+
+  if (listing.remarks) {
+    listingRemarks.textContent = listing.remarks;
+    remarksToggle.classList.remove("hidden");
+  }
+}
+
+remarksToggle.addEventListener("click", () => {
+  const opening = listingRemarks.classList.contains("hidden");
+  listingRemarks.classList.toggle("hidden");
+  remarksToggle.textContent = opening ? "Hide listing remarks ↑" : "Read listing remarks ↓";
+});
+
+$("headerReportButton").addEventListener("click", () => {
+  if (!loading && liveListing?.forSale && !liveListing.displayRestricted) return openLeadModal("buyer_report");
+  document.getElementById("lookup").scrollIntoView({behavior:"smooth",block:"start"}); propertyInput.focus({preventScroll:true});
+});
+seeHomeButton.addEventListener("click", () => openLeadModal("buyer_report"));
+for (const id of ["briefShowingButton", "mobileShowingButton"]) $(id).addEventListener("click", () => openLeadModal("buyer_report"));
+deepReportButton.addEventListener("click", () => openLeadModal("buyer_offmarket"));
+sellerReportButton.addEventListener("click", () => { location.href = "/seller.html?address=" + encodeURIComponent(liveListing?.address || propertyInput.value || ""); });
+
+let leadRequestKey = null;
+function openLeadModal(mode, includeShowing = false) {
+  if (!liveListing) return;
+  if (["showing","buyer_report"].includes(mode) && !liveListing.forSale) return;
+
+  currentLeadMode = mode;
+  leadForm.reset();
+  $("leadMobile").removeAttribute("aria-invalid");
+  leadRequestKey = crypto.randomUUID();
+  $("showingChoice").checked = includeShowing;
+  $("showingChoiceWrap").classList.toggle("hidden", !["buyer_report","showing"].includes(mode));
+  $("showingOptions").classList.add("hidden");
+  $("showingCalendarFields").classList.add("hidden");
+  leadError.classList.add("hidden");
+  leadError.textContent = "";
+  leadFormPanel.classList.remove("hidden");
+  leadSuccessPanel.classList.add("hidden");
+  sellerTimelineWrap.classList.add("hidden");
+  leadSubmit.disabled = false;
+
+  modalProperty.value = activePropertyInput;
+  modalPropertyDisplay.value = liveListing.address || activePropertyInput;
+  leadMode.value = mode;
+
+  if (["showing","buyer_report"].includes(mode)) {
+    modalEyebrow.textContent = "AI BUYER REPORT";
+    modalTitle.textContent = "Your AI report starts here.";
+    modalCopy.textContent = "We’ll email your sold comparisons, price guidance and key checks. Add a fast showing—we aim for within 24 hours, subject to availability.";
+    nextStepLabel.textContent = "WHEN DO YOU WANT TO SEE IT?";
+    showingTiming.innerHTML = `<option value="asap">Earliest available</option><option value="preferred_time">Choose a date &amp; time</option>`;
+    $("showingTime").innerHTML = Array.from({length:24},(_,i)=>{const hour=9+Math.floor(i/2), minute=i%2?"30":"00",value=`${String(hour).padStart(2,"0")}:${minute}`;return `<option value="${value}">${hour>12?hour-12:hour}:${minute} ${hour>=12?"PM":"AM"}</option>`;}).join("");
+    $("showingDate").min = new Date().toLocaleDateString("en-CA",{timeZone:"America/Toronto"});
+    $("showingDate").max = new Date(Date.now()+29*86400000).toLocaleDateString("en-CA",{timeZone:"America/Toronto"});
+    leadSubmit.textContent = "Get my AI report";
+    syncShowingChoice();
+    serviceNote.textContent = "Realtor response target: within 28 minutes, 9 AM–9 PM. Showing target: 1–24 hours, subject to availability.";
+  } else if (mode === "seller") {
+    modalEyebrow.textContent = "SELLER VALUE REVIEW";
+    modalTitle.textContent = "Own this home? Understand its position.";
+    modalCopy.textContent = "Request a private, AI-assisted value and market review without listing the property.";
+    nextStepLabel.textContent = "REPORT";
+    showingTiming.innerHTML = `<option value="seller_report">Seller Value Review</option>`;
+    sellerTimelineWrap.classList.remove("hidden");
+    leadSubmit.textContent = "Request seller review →";
+    serviceNote.textContent = "Preliminary decision support only. A Realtor review is required before relying on pricing or listing strategy.";
+  } else {
+    modalEyebrow.textContent = "BUYER PROPERTY REVIEW";
+    modalTitle.textContent = "Interested even though it is not listed?";
+    modalCopy.textContent = "Request a deeper review of available MLS history and current local market context.";
+    nextStepLabel.textContent = "NEXT STEP";
+    showingTiming.innerHTML = `<option value="buyer_offmarket_report">Buyer Property Review</option><option value="buyer_offmarket_contact">Talk to a Realtor about this property</option>`;
+    leadSubmit.textContent = "Request property review →";
+    serviceNote.textContent = "This property is not currently listed for sale. Any value range is preliminary and requires verification.";
+  }
+
+  leadModal.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+  window.setTimeout(() => leadForm.querySelector('input[name="name"]')?.focus(), 80);
+}
+
+function syncShowingChoice() {
+  if(!['buyer_report','showing'].includes(currentLeadMode)) return;
+  const showing=$('showingChoice').checked;
+  currentLeadMode=showing?'showing':'buyer_report'; leadMode.value=currentLeadMode;
+  $('showingOptions').classList.toggle('hidden',!showing);
+  const calendar=showing && showingTiming.value==='preferred_time';
+  $('showingCalendarFields').classList.toggle('hidden',!calendar);
+  $('showingDate').required=calendar; $('showingTime').required=calendar;
+  leadSubmit.textContent=showing?'Get report + request showing':'Get my AI report';
+}
+$('showingChoice').addEventListener('change',syncShowingChoice);
+showingTiming.addEventListener('change',syncShowingChoice);
+
+function hideLeadModal() {
+  leadModal.classList.add("hidden");
+  document.body.classList.remove("modal-open");
+}
+
+closeModal.addEventListener("click", hideLeadModal);
+doneButton.addEventListener("click", () => {
+  hideLeadModal();
+  snapshotSection.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+leadModal.addEventListener("click", (event) => { if (event.target === leadModal) hideLeadModal(); });
+
+leadForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!liveListing || !THMInputs.validate(leadForm)) return;
+
+  const form = new FormData(leadForm);
+  const name = String(form.get("name") || "").trim();
+  const mobile = normalizeNorthAmericanPhone(String(form.get("mobile") || ""));
+  const email = String(form.get("email") || "").trim();
+  const website = String(form.get("website") || "").trim();
+
+  if (name.length < 2) return showLeadError("Please enter your name.");
+  if (!mobile) { $("leadMobile").setAttribute("aria-invalid", "true"); $("leadMobile").focus(); return showLeadError("Enter a valid 10-digit mobile number. You can include +1."); }
+  if (!email) return showLeadError("Please enter your email address.");
+  if (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?)+$/i.test(email)) return showLeadError("Please enter a valid email address.");
+
+  let timing = currentLeadMode === "showing" ? showingTiming.value || "asap" : "report";
+  if (currentLeadMode === "showing" && timing === "preferred_time" && (!$("showingDate").value || !$("showingTime").value)) return showLeadError("Choose your preferred showing date and time.");
+  if (currentLeadMode === "seller") timing = sellerTimeline.value || "seller_curious";
+
+  leadSubmit.disabled = true;
+  const originalText = leadSubmit.textContent;
+  leadSubmit.textContent = "Sending…";
+  leadError.classList.add("hidden");
+
+  const payload = {
+    property_input: activePropertyInput,
+    listing_key: liveListing.listingKey || null,
+    resolved_address: liveListing.address || activePropertyInput,
+    name,
+    mobile,
+    email,
+    website,
+    showing_timing: timing,
+    showing_requested: currentLeadMode === "showing",
+    showing_date: currentLeadMode === "showing" ? $("showingDate").value : null,
+    showing_time: currentLeadMode === "showing" ? $("showingTime").value : null,
+    request_key: leadRequestKey,
+    lead_mode: currentLeadMode,
+    page_url: location.href,
+    referrer: document.referrer || null,
+    property_snapshot: {
+      listingKey: liveListing.listingKey || null,
+      address: liveListing.address || activePropertyInput,
+      listPrice: liveListing.listPrice ?? null,
+      marketStatus: liveListing.marketStatus || null,
+      forSale: !!liveListing.forSale,
+      beds: liveListing.beds ?? null,
+      baths: liveListing.baths ?? null,
+      propertySubType: liveListing.propertySubType || null,
+      lotWidth: liveListing.lotWidth ?? null,
+      lotDepth: liveListing.lotDepth ?? null,
+    },
+  };
+
+  try {
+    const response = await fetch("/api/lead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !result?.ok) throw new Error(result?.error || "Unable to send the request right now.");
+
+    leadFormPanel.classList.add("hidden");
+    leadSuccessPanel.classList.remove("hidden");
+    if (currentLeadMode === "showing" && result.showing_requested === false) currentLeadMode = "buyer_report";
+    renderLeadSuccess(result);
+  } catch (error) {
+    showLeadError(error instanceof Error ? error.message : "Unable to send the request right now.");
+  } finally {
+    leadSubmit.disabled = false;
+    leadSubmit.textContent = originalText;
+  }
+});
+
+function renderLeadSuccess(result) {
+  const afterHours = !!result.queued_after_hours;
+  if (currentLeadMode === "showing") {
+    successTitle.textContent = "Showing + AI report requested.";
+    successCopy.textContent = afterHours
+      ? "Your request is saved for the next service window. A Realtor will confirm the earliest available appointment."
+      : "A Realtor will contact you to confirm the earliest appointment available from the listing side.";
+    successStepOne.textContent = "Showing request routed";
+    successStepOneNote.textContent = afterHours ? "We will respond in the next 9 AM–9 PM service window." : "Realtor response target: within 28 minutes.";
+  } else if (currentLeadMode === "buyer_report") {
+    successTitle.textContent = "Your AI report is on its way.";
+    successCopy.textContent = "Your request is saved. We’ll email the report when it is ready.";
+    successStepOne.textContent = "No showing requested";
+    successStepOneNote.textContent = "Choose a time from your report whenever you’re ready.";
+  } else if (currentLeadMode === "seller") {
+    successTitle.textContent = "Seller review requested.";
+    successCopy.textContent = "Your private property review is now being prepared.";
+    successStepOne.textContent = "Seller request routed";
+    successStepOneNote.textContent = "A Realtor reviews the AI-assisted property read before you rely on it.";
+  } else {
+    successTitle.textContent = "Property review requested.";
+    successCopy.textContent = "We will review the available MLS history and local market context.";
+    successStepOne.textContent = "Buyer request routed";
+    successStepOneNote.textContent = "A Realtor reviews the result before the next decision.";
+  }
+}
+
+function showLeadError(message) {
+  leadError.textContent = message;
+  leadError.classList.remove("hidden");
+}
+
+function openGallery(index) {
+  if (!photos.length) return;
+  galleryIndex = Math.max(0, Math.min(index, photos.length - 1));
+  renderGallery();
+  galleryModal.classList.remove("hidden");
+  document.body.classList.add("modal-open");
+}
+
+function closeGallery() {
+  galleryModal.classList.add("hidden");
+  if (leadModal.classList.contains("hidden")) document.body.classList.remove("modal-open");
+}
+
+function renderGallery() {
+  const photo = photos[galleryIndex];
+  if (!photo) return;
+  galleryImage.onerror = () => usePhotoFallback(galleryImage,galleryIndex);
+  setPhotoSource(galleryImage, photo, "gallery");
+  galleryImage.alt = photo.description || `Property photo ${galleryIndex + 1}`;
+  galleryCounter.textContent = `${galleryIndex + 1} / ${photos.length}`;
+  galleryPrev.disabled = photos.length < 2;
+  galleryNext.disabled = photos.length < 2;
+}
+
+galleryClose.addEventListener("click", closeGallery);
+galleryPrev.addEventListener("click", () => { if (photos.length) { galleryIndex = (galleryIndex - 1 + photos.length) % photos.length; renderGallery(); } });
+galleryNext.addEventListener("click", () => { if (photos.length) { galleryIndex = (galleryIndex + 1) % photos.length; renderGallery(); } });
+galleryModal.addEventListener("click", (event) => { if (event.target === galleryModal) closeGallery(); });
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    if (!galleryModal.classList.contains("hidden")) closeGallery();
+    else if (!leadModal.classList.contains("hidden")) hideLeadModal();
+  }
+});
+
+function detectMlsKey(value) {
+  const match = String(value || "").trim().toUpperCase().match(/\b[A-Z]\d{7,9}\b/);
+  return match ? match[0] : null;
+}
+
+function setSignal(id, title, note) {
+  const el = $(id);
+  const noteEl = $(`${id}Text`);
+  if (el) el.textContent = title || "—";
+  if (noteEl) noteEl.textContent = note || "";
+}
+
+function money(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 }).format(value);
+}
+
+function compactMoney(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  if (value >= 1000000) return `$${(value / 1000000).toFixed(value % 1000000 === 0 ? 0 : 2)}M`;
+  if (value >= 1000) return `$${Math.round(value / 1000)}K`;
+  return money(value);
+}
+
+function formatNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? new Intl.NumberFormat("en-CA", { maximumFractionDigits: 1 }).format(n) : "—";
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  const d = new Date(String(value).length === 10 ? `${value}T12:00:00` : value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: "numeric" }).format(d);
+}
+
+function joinValue(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).join(", ");
+  return value == null ? "" : String(value).trim();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/`/g, "&#096;");
+}
+
+function syncPriceCheckQuickStatus() {
+  $("priceCheckQuickStatus").textContent = $("priceCheckBadge").textContent;
+  $("priceCheckQuickStatus").className = $("priceCheckBadge").className;
+}
+function resetPriceCheck() {
+  priceCheckSequence++;
+  priceCheckController?.abort();
+  $("priceCheckPanel").classList.add("hidden");
+  $("priceCheckJump").classList.add("hidden");
+  $("priceCheckBadge").className = "price-check-badge";
+  $("priceCheckBadge").textContent = "Checking similar asking prices…";
+  syncPriceCheckQuickStatus();
+  $("priceCheckSummary").textContent = "Looking for similar homes in this exact community…";
+  $("priceCheckDetails").open = false;
+  $("priceCheckDetails").classList.add("hidden");
+  $("priceCheckRetry").classList.add("hidden");
+  for (const id of ["priceCheckNumbers", "priceCheckRange", "priceEvidence", "priceCheckCriteria", "priceCheckMatches", "priceCheckCoverage"]) $(id).innerHTML = "";
+}
+function renderAskingRange(data) {
+  const range = data.observedAsking, target = $("priceCheckRange");
+  if (!range || !(range.low > 0) || !(range.high >= range.low) || !(data.asking > 0)) { target.innerHTML = ""; return; }
+  if (range.low === range.high) {
+    const gap = data.asking - range.low;
+    const comparison = gap === 0 ? "The asking prices are the same." : `This home asks ${money(Math.abs(gap))} ${gap < 0 ? 'less' : 'more'}.`;
+    target.innerHTML = `<div class="price-picture"><div class="price-picture-subject"><span>THIS HOME IS ASKING</span><strong>${money(data.asking)}</strong></div><div class="price-picture-market price-picture-subject"><span>${data.count === 1 ? '1 SIMILAR HOME IS ASKING' : `${data.count} SIMILAR HOMES ARE ASKING`}</span><strong>${money(range.low)}</strong><p class="price-position-note">${comparison}</p></div></div><p class="price-picture-note">${data.count === 1 ? 'One listing is a comparison point, not a market range.' : 'The matched listings share the same asking price.'} Your email report compares completed sales.</p>`;
+    return;
+  }
+  const position = data.asking < range.low ? 0 : data.asking > range.high ? 2 : 1;
+  const positionText = position === 0 ? `Asking ${money(range.low-data.asking)} below this range.` : position === 2 ? `Asking ${money(data.asking-range.high)} above this range.` : "This home’s asking price is inside this range.";
+  const graphic = ['Below range','Inside range','Above range'].map((label,i)=>`<div class="${i===position?'is-asking':''}"><small>${i===position?'THIS HOME':'&nbsp;'}</small>${label}</div>`).join('');
+  target.innerHTML = `<div class="price-picture"><div class="price-picture-subject"><span>THIS HOME IS ASKING</span><strong>${money(data.asking)}</strong></div><div class="price-picture-market"><span>${data.count} SIMILAR HOMES · ASKING PRICE RANGE</span><div class="price-endpoints"><div><small>From</small><strong>${money(range.low)}</strong></div><div><small>To</small><strong>${money(range.high)}</strong></div></div><div class="price-position" role="img" aria-label="${positionText}">${graphic}</div><p class="price-position-note">${positionText}</p></div></div><p class="price-picture-note">These homes are still for sale. Your email report compares completed sales.</p>`;
+}
+function renderComparisonHomes(data) {
+  const sizeRange = value => {
+    const range = String(value || "").replace(/,/g, "").match(/^(\d+)\s*[-–—]\s*(\d+)(?:\s|$)/);
+    return range && +range[2] >= +range[1] ? [+range[1], +range[2]] : null;
+  };
+  const subject = sizeRange(data.subjectSize || liveListing?.livingAreaRange);
+  const rank = home => {
+    const size = sizeRange(home.size);
+    if (!subject) return [0, 0];
+    if (!size) return [2, 0];
+    return [size[0] === subject[0] && size[1] === subject[1] ? 0 : 1,
+      Math.abs(size[0] + size[1] - subject[0] - subject[1])];
+  };
+  const bySize = rows => [...(rows || [])].sort((a, b) => {
+    const left = rank(a), right = rank(b);
+    return left[0] - right[0] || left[1] - right[1];
+  });
+  const matches = bySize(data.matches), related = bySize(data.relatedMatches);
+  const render = (matchedHomes, relatedHomes) => {
+    const matched = matchedHomes.map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.bedroomLayout || home.beds)} bed · ${home.differences?.length ? escapeHtml(home.differences.join(" · ")) : `${escapeHtml(home.baths ?? "—")} bath`} · MLS ${escapeHtml(home.listingKey)}<br>${escapeHtml(home.listingOffice || "Listing office not reported")}</small></span><b>${money(home.asking)}</b></a>`).join("");
+    const context = relatedHomes.length ? `<h4>Related homes worth comparing</h4><p>Same community and home type, ${data.sizeRule==='same_condo_size_range'?'same interior size range':'similar size'}. Different bedroom layouts; excluded from the price signal.</p>${relatedHomes.map(home => `<a href="/?listingKey=${encodeURIComponent(home.listingKey)}#lookup"><span><strong>${escapeHtml(home.address)}</strong><small>${escapeHtml(home.size)} · ${escapeHtml(home.beds)} bed · ${escapeHtml(home.baths)} bath<br>${escapeHtml(home.difference)}<br>MLS ${escapeHtml(home.listingKey)} · ${escapeHtml(home.listingOffice || 'Listing office not reported')}</small></span><b>${money(home.asking)}</b></a>`).join('')}` : "";
+    return matched + context;
+  };
+  // Keep price comparables first, then fill the three visible places with related homes.
+  const visibleMatches = matches.slice(0, 3), relatedSlots = 3 - visibleMatches.length;
+  const remainingMatches = matches.slice(3), remainingRelated = related.slice(relatedSlots);
+  const remainingCount = remainingMatches.length + remainingRelated.length;
+  return render(visibleMatches, related.slice(0, relatedSlots)) + (remainingCount
+    ? `<details class="price-method price-more-comparisons"><summary>Show more comparisons (${remainingCount})</summary>${render(remainingMatches, remainingRelated)}</details>` : "");
+}
+function renderPriceCheck(data) {
+  const recognized = ["below", "inline", "above", "review"].includes(data.signal);
+  const available = data.available && recognized && data.count >= 3 && Number.isFinite(data.medianAsk) && data.medianAsk > 0 && Number.isFinite(data.differencePct);
+  $("priceCheckBadge").className = `price-check-badge${available ? ` is-${data.signal}` : ""}`;
+  $("priceCheckBadge").textContent = `${available && data.signal === "below" ? "✓ " : ""}${available ? data.label : data.count ? `${data.count} similar home${data.count===1?'':'s'}` : data.relatedMatches?.length ? `${data.relatedMatches.length} related home${data.relatedMatches.length===1?'':'s'} found` : "More evidence needed"}`;
+  syncPriceCheckQuickStatus();
+  const gap = Math.abs(data.differencePct);
+  $("priceCheckSummary").textContent = available
+    ? `${gap === 0 ? "At" : `${formatNumber(gap)}% ${data.differencePct < 0 ? "below" : "above"}`} the median asking price of ${data.count} matching active listings. ${data.signal === "review" ? data.reason : ""}`.trim()
+    : data.count ? data.observedAsking && data.asking > data.observedAsking.high ? `This home asks ${money(data.asking - data.observedAsking.high)} more than the highest of these ${data.count} similar home${data.count===1?'':'s'}. Check whether ${data.sizeRule==='same_condo_size_range'?'condition, floor or view':'lot, condition or upgrades'} explain the difference.` : `${data.count} similar home${data.count===1?'':'s'} found in ${data.community || "this community"}. ${data.count===1?'Its asking price gives':'Their asking prices give'} you a starting point for comparison.` : data.relatedMatches?.length ? `${data.relatedMatches.length} same-community homes with different bedroom layouts. Shown for context; excluded from the price rating.` : data.reason || "There is not enough verified comparison data to assign a price label.";
+  $("priceCheckNumbers").innerHTML = available ? `<div><span>MEDIAN ASKING PRICE</span><strong>${money(data.medianAsk)}</strong></div><div><span>SIMILAR HOMES</span><strong>${data.count}</strong></div>` : "";
+  renderAskingRange(data);
+  $("priceEvidence").textContent = data.count ? `${available && data.count >= 5 && !data.coverage?.partial ? "Broader asking-price sample" : "Limited asking-price sample"} · ${data.count} home${data.count===1?'':'s'}${data.community ? ` · ${data.community}` : ""}. ${available ? "This compares asking prices, not sale values." : "Too little consistent evidence for a price rating."}` : "No price rating yet. The listing highlights and showing checks are still useful.";
+  $("priceCheckCriteria").textContent = data.criteria ? data.criteria : "";
+  $("priceCheckMatches").innerHTML = renderComparisonHomes(data);
+  $("priceCheckCoverage").textContent = `${data.note || "Public IDX asking prices; not the entire market."}${data.coverage?.partial ? " The search reached its scan limit." : ""}${data.checkedAt ? ` Checked ${formatDate(data.checkedAt)}; may be cached for up to 5 minutes.` : ""}`;
+  $("priceCheckDetails").classList.toggle("hidden", !data.criteria);
+  $("priceCheckDetails").open = !!data.criteria;
+}
+async function loadPriceCheck(listing) {
+  if (!listing?.forSale || listing.displayRestricted || !listing.listingKey) return;
+  resetPriceCheck();
+  $("priceCheckPanel").classList.remove("hidden");
+  $("priceCheckJump").classList.remove("hidden");
+  const sequence = priceCheckSequence, listingKey = listing.listingKey;
+  priceCheckController = new AbortController();
+  const controller = priceCheckController, timer = window.setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(`/api/price-check?listingKey=${encodeURIComponent(listingKey)}`, { headers: { Accept: "application/json" }, signal: controller.signal });
+    const data = await response.json();
+    if (sequence !== priceCheckSequence || liveListing?.listingKey !== listingKey) return;
+    if (!response.ok || !data.ok || data.listingKey !== listingKey) throw new Error(data.error || "Price Check could not verify the comparison data.");
+    // Never attach a comparison based on a changed asking price to an old snapshot.
+    if (data.asking > 0 && data.asking !== listing.listPrice) throw new Error("The asking price has changed. Check this home again to refresh its snapshot.");
+    renderPriceCheck(data);
+  } catch (error) {
+    if (sequence !== priceCheckSequence) return;
+    $("priceCheckBadge").textContent = "Price Check unavailable";
+    syncPriceCheckQuickStatus();
+    $("priceCheckSummary").textContent = error.name === "AbortError" ? "The comparison took too long. The listing facts are still available; no price label has been assigned." : error.message;
+    $("priceCheckRetry").classList.remove("hidden");
+  } finally { window.clearTimeout(timer); }
+}
+$("priceCheckRetry").addEventListener("click", () => { if (!loading) loadPriceCheck(liveListing); });
+
+function resetHomeAssistant() {
+  homeAiSequence++;
+  homeAiController?.abort();
+  $("homeAiAnswer").innerHTML = "";
+  $("homeAiAnswer").classList.add("hidden");
+  $("homeAiStatus").textContent = "Choose a question. No sign-up needed.";
+  for (const button of document.querySelectorAll("[data-home-topic]")) { button.disabled = false; button.removeAttribute("aria-pressed"); }
+}
+async function loadHomeAssistant(topic, button = null) {
+    if (!liveListing?.listingKey || !liveListing.forSale || liveListing.displayRestricted) return;
+    resetHomeAssistant();
+    const sequence = homeAiSequence;
+    const listingKey = liveListing.listingKey;
+    homeAiController = new AbortController();
+    const controller = homeAiController;
+    const timer = window.setTimeout(() => controller.abort(), 25000);
+    button?.setAttribute("aria-pressed", "true");
+    for (const question of document.querySelectorAll("[data-home-topic]")) question.disabled = true;
+    $("homeAiStatus").textContent = "Preparing your property highlights…";
+    const p = liveListing;
+    $("homeAiAnswer").innerHTML = `<div><h4>The property</h4><p>${escapeHtml([p.propertySubType, p.livingAreaRange ? `${p.livingAreaRange} sq ft` : null, p.cityRegion].filter(Boolean).join(' · '))}</p></div><div><h4>At the showing</h4><p>We’re preparing the questions that matter for this listing.</p></div>`;
+    $("homeAiAnswer").classList.remove("hidden");
+    try {
+      const response = await fetch("/api/home-assistant", { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ listingKey, topic }), signal: controller.signal });
+      const data = await response.json();
+      if (sequence !== homeAiSequence || liveListing?.listingKey !== listingKey) return;
+      if (!response.ok || !data.ok || data.listingKey !== listingKey) throw new Error(data.error || "The assistant is temporarily unavailable. Your listing facts are still below.");
+      $("homeAiStatus").textContent = data.mode === "ai" ? "AI highlights · grounded in this listing" : "Listing highlights · AI unavailable";
+      const rows = (items) => (items || []).slice(0, 2).map(item => `<li><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.text)}</span></li>`).join("");
+      $("homeAiAnswer").innerHTML = `<div><h4>${topic === 'costs' ? 'Costs to plan for' : 'What matters here'}</h4><ul>${rows(data.facts)}</ul></div><div><h4>Ask at the showing</h4><ul>${rows(data.checks)}</ul></div>`;
+      $("homeAiAnswer").classList.remove("hidden");
+    } catch (error) {
+      if (sequence !== homeAiSequence) return;
+      $("homeAiStatus").textContent = error.name === "AbortError" ? "The assistant took too long. Try again, or review the listing facts below." : error.message;
+    } finally {
+      window.clearTimeout(timer);
+      if (sequence === homeAiSequence) for (const question of document.querySelectorAll("[data-home-topic]")) question.disabled = false;
+    }
+}
+for (const button of document.querySelectorAll("[data-home-topic]")) {
+  button.addEventListener("click", () => { if (!loading) loadHomeAssistant(button.dataset.homeTopic, button); });
+}
+
+// The latest turn stays open; prior turns collapse while AI context stays intact.
+let chatState = null;
+let chatController = null;
+let chatBusy = false;
+let chatGeneration = 0;
+const chatRoot = $('chatMessages');
+const chatScroll = $('chatScroll');
+function chatText(tag, className, text) {
+  const el=document.createElement(tag);el.className=className;el.textContent=text;return el;
+}
+function chatBottom(){requestAnimationFrame(()=>{chatScroll.scrollTo({top:chatScroll.scrollHeight,behavior:'smooth'});});}
+function chatCards(turn,data){
+  const section=document.createElement('section');section.className='chat-results';section.setAttribute('aria-label','Homes for this search');
+  const top=document.createElement('div');top.className='chat-results-top';
+  const filters=data.filters||{};
+  const label=[filters.area||filters.cities?.join(' & '),filters.brokerage,filters.types?.length?filters.types.join(' / ').replaceAll('_',' '):filters.type==='any'?'':filters.type?.replaceAll('_',' '),filters.minBeds?`${filters.minBeds}${filters.maxBeds===filters.minBeds?'':'+'} bed`:'',filters.maxPrice?`under ${money(filters.maxPrice)}`:''].filter(Boolean).join(' · ');
+  top.append(chatText('strong','chat-filter-label',label||'Your homes'));
+  const controls=document.createElement('div');controls.className='chat-carousel-controls';
+  const count=chatText('span','',`${data.listings.length} ${data.listings.length===1?'home':'homes'}`);
+  const prev=chatText('button','','←'),next=chatText('button','','→');
+  for(const [b,label]of [[prev,'Previous homes'],[next,'Next homes']]){b.type='button';b.setAttribute('aria-label',label);}
+  controls.append(count,prev,next);top.append(controls);section.append(top);
+  const row=document.createElement('div');row.className='chat-property-row';row.tabIndex=0;row.setAttribute('aria-label','Property cards. Scroll for more.');
+  row.innerHTML=data.listings.map((home,i)=>{
+    const key=encodeURIComponent(home.listingKey),facts=[home.bedroomLayout||home.beds?`${home.bedroomLayout||home.beds} bed`:null,home.baths?`${home.baths} bath`:null,home.livingAreaRange?`${home.livingAreaRange} sq ft`:null].filter(Boolean).join(' · ');
+    const photo=home.photoUrl?.startsWith('/api/discovery-photo?listingKey=')?`<img src="${escapeAttr(home.photoUrl + '&size=preview')}" alt="${escapeAttr(home.address)}" loading="${i<3?'eager':'lazy'}" decoding="async" width="420" height="280" />`:'';
+    return `<article class="discovery-home"><a class="discovery-photo" href="/?listingKey=${key}#lookup" data-open-listing="${escapeAttr(home.listingKey)}" aria-label="Explore ${escapeAttr(home.address)}"><span class="photo-fallback">THM · Property photo</span>${photo}${home.priceChange?.amount?'<span class="home-badge">Price reduced</span>':''}</a><div class="discovery-home-content"><strong class="home-price">${money(home.listPrice)}</strong><p class="chat-home-facts">${escapeHtml(facts)}</p><h3>${escapeHtml(home.address)}</h3><p class="chat-home-type">${escapeHtml(home.propertySubType||'')}</p><div class="chat-card-actions"><a href="/?listingKey=${key}#lookup" data-open-listing="${escapeAttr(home.listingKey)}">View home ↗</a><button type="button" data-ask-home="${escapeAttr(home.listingKey)}" aria-label="Ask about ${escapeAttr(home.address)}">Ask AI</button><button type="button" data-share-listing="${escapeAttr(home.listingKey)}" data-share-address="${escapeAttr(home.address)}" aria-label="Share ${escapeAttr(home.address)}">↗</button></div><small class="chat-attribution">${escapeHtml(home.listingOffice||'Listing brokerage not reported')} · MLS® ${escapeHtml(home.listingKey)}</small></div></article>`;
+  }).join('');
+  section.append(row);
+  const move=direction=>row.scrollBy({left:direction*(row.clientWidth+16),behavior:'smooth'});
+  prev.addEventListener('click',()=>move(-1));next.addEventListener('click',()=>move(1));
+  const sync=()=>{prev.disabled=row.scrollLeft<5;next.disabled=row.scrollLeft+row.clientWidth>=row.scrollWidth-5;};row.addEventListener('scroll',sync,{passive:true});requestAnimationFrame(sync);
+  if(data.hasMore){const more=chatText('button','chat-more','Find more homes →');more.type='button';more.addEventListener('click',()=>sendHomeChat('Show me more homes like these'));section.append(more);}
+  const details=document.createElement('details');details.className='chat-source-details';details.innerHTML='<summary>About these results</summary>';
+  details.append(chatText('p','',`A selection from public MLS® listings${data.checkedAt?' checked '+formatDate(data.checkedAt):''}. ${data.coverage?.partial?'This search covers a limited inventory window, not the entire market. ':''}Asking prices and availability may change. Open a home to recheck it.`));section.append(details);
+  turn.append(section);
+}
+async function sendHomeChat(message){
+  message=String(message||'').trim();if(!message||chatBusy)return;
+  const generation=chatGeneration;chatBusy=true;chatController=new AbortController();
+  $('homeSearchSubmit').disabled=true;$('homeSearchStatus').textContent='';$('homeSearchQuery').value='';
+  $('explore').classList.add('conversing');
+  for(const group of document.querySelectorAll('#explore .chat-followups, #explore .chat-more'))group.remove();
+  for(const previousTurn of chatRoot.querySelectorAll('.chat-turn')){previousTurn.open=false;$('chatHistoryTurns').append(previousTurn);}
+  const previousCount=$('chatHistoryTurns').children.length;$('chatHistory').hidden=!previousCount;$('chatHistory').open=false;$('chatHistoryLabel').textContent=`Earlier messages (${previousCount})`;
+  const turn=document.createElement('details');turn.className='chat-turn';turn.open=true;
+  turn.append(chatText('summary','chat-turn-title',message));
+  const status=chatText('p','chat-thinking','Understanding your search…');status.setAttribute('role','status');turn.append(status);chatRoot.append(turn);chatBottom();
+  const controller=chatController,timeout=setTimeout(()=>controller.abort(),45000);let received=false,gotAnswer=false;
+  try{
+    const response=await fetch('/api/home-chat',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/x-ndjson'},body:JSON.stringify({message,state:chatState}),signal:chatController.signal});
+    if(!response.ok){const d=await response.json().catch(()=>({}));throw Error(d.error||'The search is busy. Please try again.');}
+    const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
+    const event=data=>{
+      if(generation!==chatGeneration)return;
+      if(data.type==='status')status.textContent=data.message;
+      if(data.type==='error')throw Error(data.error);
+      if(data.type==='results'){
+        received=true;status.remove();
+        if(data.listings.length)chatCards(turn,data);
+        else {const f=data.filters||{};turn.append(chatText('p','chat-filter-label',[f.area||f.cities?.join(' & '),f.brokerage,f.minBeds?`${f.minBeds}+ bed`:'',f.maxPrice?`under ${money(f.maxPrice)}`:''].filter(Boolean).join(' · ')));if(data.note)turn.append(chatText('p','chat-empty',data.note));}
+        status.textContent='Reading the details for you…';turn.append(status);chatBottom();
+      }
+      if(data.type==='answer'){
+        const nearBottom=chatScroll.scrollHeight-chatScroll.scrollTop-chatScroll.clientHeight<120;
+        gotAnswer=true;status.remove();chatState=data.state;turn.append(chatText('p','chat-reply',data.reply));
+        const chips=document.createElement('div');chips.className='chat-followups';
+        for(const label of data.followups||[]){const b=chatText('button','',label);b.type='button';b.addEventListener('click',()=>sendHomeChat(label));chips.append(b);}turn.append(chips);
+        $('homeSearchQuery').placeholder='Ask about a home, change the area, or keep looking…';
+        if(!received||nearBottom)chatBottom();
+      }
+    };
+    while(true){const {done,value}=await reader.read();buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});let i;while((i=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);if(line.trim())event(JSON.parse(line));}if(done)break;}
+    if(!gotAnswer)throw Error('The reply was interrupted. Please try again.');
+  }catch(error){
+    if(generation!==chatGeneration)return;
+    status.className='chat-error';status.textContent=error.name==='AbortError'?'That took longer than expected. Your earlier homes are still here. Try again.':error.message;turn.append(status);
+    const retry=chatText('button','chat-retry','Try again');retry.type='button';retry.addEventListener('click',()=>{turn.remove();sendHomeChat(message);});turn.append(retry);chatBottom();
+  }finally{
+    clearTimeout(timeout);if(generation===chatGeneration){chatBusy=false;$('homeSearchSubmit').disabled=false;$('homeSearchQuery').focus({preventScroll:true});}
+  }
+}
+$('homeSearchForm').addEventListener('submit',event=>{event.preventDefault();if($('homeSearchForm').reportValidity())sendHomeChat($('homeSearchQuery').value);});
+for(const tile of document.querySelectorAll('[data-chat-prompt]'))tile.addEventListener('click',()=>sendHomeChat(tile.dataset.chatPrompt));
+$('chatNew').addEventListener('click',()=>{
+  chatGeneration++;chatController?.abort();chatBusy=false;chatState=null;chatRoot.replaceChildren();$('chatHistoryTurns').replaceChildren();$('chatHistory').hidden=true;$('chatHistory').open=false;$('explore').classList.remove('conversing');$('homeSearchQuery').value='';$('homeSearchStatus').textContent='';$('homeSearchSubmit').disabled=false;$('homeSearchQuery').placeholder='e.g., homes in Richmond Hill under $700K';chatScroll.scrollTop=0;$('homeSearchQuery').focus({preventScroll:true});
+});
+$('explore').addEventListener('error',event=>{if(event.target?.tagName==='IMG')event.target.style.display='none';},true);
+$('explore').addEventListener('click',event=>{
+  const ask=event.target.closest('[data-ask-home]');if(ask){sendHomeChat(`Tell me about MLS ${ask.dataset.askHome}. What should I check before viewing?`);return;}
+  const share=event.target.closest('[data-share-listing]');if(share){openListingShare({listingKey:share.dataset.shareListing,address:share.dataset.shareAddress,forSale:true});return;}
+  const link=event.target.closest('[data-open-listing]');if(!link||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+  event.preventDefault();if(loading)return;buyerAddressControl.set(link.dataset.openListing);analysisForm.requestSubmit();
+});
+const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SpeechRecognition){$('chatVoice').hidden=false;$('chatVoice').addEventListener('click',()=>{const recognition=new SpeechRecognition();recognition.lang='en-CA';recognition.interimResults=false;recognition.onstart=()=>{$('homeSearchStatus').textContent='Listening…';};recognition.onresult=event=>{$('homeSearchQuery').value=event.results[0][0].transcript;$('homeSearchStatus').textContent='Review your message, then send.';};recognition.onerror=()=>{$('homeSearchStatus').textContent='Voice input is unavailable. Please type your message.';};recognition.start();});}
+restorePreview({initial:true});
+
+// PUBLIC LISTING SHARING START
+function listingShareData(listing) {
+  const key = String(listing?.listingKey || '').toUpperCase();
+  if (!/^[A-Z]\d{7,9}$/.test(key) || listing.displayRestricted || !(listing.forSale || listing.forLease)) return null;
+  const url = new URL('/', 'https://torontohousemarket.com');
+  url.searchParams.set('listingKey', key);
+  url.hash = 'lookup';
+  const address = String(listing.address || `MLS ${key}`);
+  return { title: `${address} | Toronto House Market`, text: address, url: url.href };
+}
+let currentListingShare = null;
+function openListingShare(listing) {
+  const data = listingShareData(listing);
+  if (!data) return;
+  currentListingShare = data;
+  $('listingShareAddress').textContent = data.text;
+  $('listingShareLink').value = data.url;
+  $('copyListingLink').textContent = 'Copy link';
+  $('listingShareStatus').textContent = 'Anyone with the link can open this listing.';
+  $('shareWhatsApp').href = 'https://wa.me/?text=' + encodeURIComponent(data.text + '\n' + data.url);
+  $('shareEmail').href = 'mailto:?subject=' + encodeURIComponent(data.title) + '&body=' + encodeURIComponent('Take a look at this home:\n' + data.text + '\n' + data.url);
+  $('shareNative').hidden = typeof navigator.share !== 'function';
+  $('listingShareDialog').showModal();
+}
+async function copyListingShare() {
+  const data = currentListingShare;
+  if (!data) return;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(data.url);
+    if (currentListingShare !== data) return;
+    $('copyListingLink').textContent = 'Copied ✓';
+    $('listingShareStatus').textContent = 'Link copied. Paste it into a message or post.';
+  } catch {
+    if (currentListingShare !== data) return;
+    $('listingShareLink').focus();
+    $('listingShareLink').select();
+    $('listingShareStatus').textContent = 'Select and copy the link above to share it.';
+  }
+}
+async function shareListingNative() {
+  const data = currentListingShare;
+  if (!data || typeof navigator.share !== 'function') return;
+  try { await navigator.share(data); }
+  catch (error) {
+    if (currentListingShare === data && error.name !== 'AbortError') $('listingShareStatus').textContent = 'Use Copy link, WhatsApp or Email to share this home.';
+  }
+}
+// PUBLIC LISTING SHARING END
+$('shareListing').addEventListener('click', () => openListingShare(liveListing));
+$('copyListingLink').addEventListener('click', copyListingShare);
+$('shareNative').addEventListener('click', shareListingNative);
+$('closeListingShare').addEventListener('click', () => $('listingShareDialog').close());
+$('listingShareDialog').addEventListener('close', () => { currentListingShare = null; });
+$('listingShareLink').addEventListener('click', event => event.target.select());

@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="Get an AI buyer report for any GTA home. Understand comparable prices, explore the details and request a fast showing when you’re ready." />
+  <title>AI Home Insights | Toronto House Market</title>
+  <link rel="icon" type="image/svg+xml" href="/thm-mark.svg" />
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-44826VKX1E"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-44826VKX1E');
+  </script>
+  <link rel="stylesheet" href="/styles.css?v=7510" />
+<link rel="stylesheet" href="/interface.css?v=7506"></head>
+<body class="buyer-page">
+<header class="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="/" aria-label="Toronto House Market home">
+      <span class="brand-mark" aria-hidden="true">THM</span>
+      <span class="brand-name">Toronto<span>House Market</span></span>
+    </a>
+    <div class="nav-actions"><button id="headerReportButton" class="nav-cta" type="button">Get my AI report <span aria-hidden="true">→</span></button><a class="home-value-link" href="/seller.html"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 10 8-7 8 7v10H4V10Z"/><path d="M9 20v-7h6v7"/></svg><span>Home Value</span></a></div>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero" id="lookup">
+    <div class="wrap hero-inner">
+      <div class="speed-chip">AI PROPERTY REPORTS · FAST SHOWINGS</div>
+      <h1>Know the home.<br><span>Before your next move.</span></h1>
+      <p class="hero-copy">A clearer price. Real sold comparisons. Your AI buyer report, with a showing when you’re ready.</p>
+
+      <div class="address-search-anchor buyer-address-anchor">
+      <form id="analysisForm" class="search-box" novalidate>
+        <div class="search-input-wrap">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <input id="propertyInput" name="property" autocomplete="off" spellcheck="false" maxlength="300" aria-label="MLS number, street address, or listing URL" placeholder="MLS #, street address, or listing URL" required />
+        </div>
+        <button id="lookupButton" class="primary-btn hero-cta" type="submit">Preview this home →</button>
+      </form>
+      <div id="buyerSuggestions" class="address-suggestions" hidden><p role="status" class="address-suggestion-note"></p><ul id="buyerAddressOptions" role="listbox" aria-label="Suggested addresses"></ul><div class="address-attribution"><a href="/address-search.html" target="_blank" rel="noopener">Privacy &amp; terms</a><span translate="no">Google Maps</span></div></div>
+      </div>
+      <div id="inputStatus" class="input-status" aria-live="polite">Free property preview · No sign-up</div>
+      <p class="seller-entry">Thinking of selling? <a href="/seller.html">Explore your home’s price &amp; potential →</a></p>
+    </div>
+  </section>
+
+  <section id="snapshotSection" class="property-stage hidden">
+    <div class="wrap">
+      <div class="result-head">
+        <div>
+          <div id="resultEyebrow" class="eyebrow">HOME SNAPSHOT</div>
+          <h2 id="snapshotProperty">Selected property</h2>
+          <p id="snapshotLocality" class="snapshot-locality"></p>
+          <p id="snapshotMeta">Checking live MLS…</p>
+        </div>
+        <button id="snapshotThumb" class="snapshot-thumb hidden" type="button" aria-label="Open property photo gallery"><img id="snapshotThumbImg" alt="" /></button>
+        <div class="listing-header-actions"><button id="shareListing" class="listing-share-button" type="button" hidden><span aria-hidden="true">↗</span> Share listing</button><div id="linkValidationBadge" class="validation-badge hidden">✓ Verified</div></div>
+      </div>
+
+      <div class="listing-cockpit">
+        <section class="photo-panel" aria-label="Property photos">
+          <div id="photoPlaceholder" class="photo-placeholder">
+            <div class="photo-placeholder-mark">THM</div>
+            <strong id="photoPlaceholderTitle">Checking listing photos</strong>
+            <p id="photoPlaceholderText">If the MLS permits photo display, they will appear here.</p>
+          </div>
+          <button id="photoMainButton" class="photo-main hidden" type="button" aria-label="Open property photo gallery">
+            <img id="mainPhoto" alt="Property photo" fetchpriority="high" />
+            <span id="photoCountBadge" class="photo-count">View photos</span>
+          </button>
+          <div id="photoThumbs" class="photo-thumbs hidden"></div>
+        </section>
+
+        <aside class="action-rail">
+          <div class="status-row">
+            <span id="marketStatusPill" class="market-status-pill">STATUS</span>
+            <span id="mlsBadge" class="mls-badge">MLS</span>
+          </div>
+          <h3 id="liveAddress">—</h3>
+          <div id="livePrice" class="listing-price">—</div>
+          <div id="liveDetails" class="fact-line">—</div>
+          <a id="priceCheckJump" class="price-check-jump hidden" href="#homeAiPanel">
+            <span>YOUR BUYER BRIEF</span>
+            <strong id="priceCheckQuickStatus" class="price-check-badge">Checking similar asking prices…</strong>
+            <small>Price context + what to check ↓</small>
+          </a>
+
+          <div id="activeActionBox" class="speed-action-box hidden">
+            <div class="speed-action-top"><span>AI REPORT + OPTIONAL SHOWING</span></div>
+            <strong>Know more. Move confidently.</strong>
+            <p>Get your report first. Add a showing with one checkbox.</p>
+            <button id="seeHomeButton" class="showing-btn" type="button">Get my AI report</button>
+            <small class="ai-after">Your report is included. A showing is your choice.</small>
+          </div>
+
+          <div id="offMarketActionBox" class="offmarket-action-box hidden">
+            <span class="offmarket-label">PROPERTY REVIEW</span>
+            <strong id="offMarketTitle">Still interested in this home?</strong>
+            <p id="offMarketCopy">Request a deeper review using available MLS history and local market context.</p>
+            <button id="deepReportButton" class="deep-report-btn" type="button">Get Buyer Property Review →</button>
+            <button id="sellerReportButton" class="text-link-btn" type="button">I own it — request a Seller Value Review</button>
+          </div>
+        </aside>
+      </div>
+
+      <div class="quick-facts" id="quickFacts">
+        <div><span>BEDS</span><strong id="factBeds">—</strong></div>
+        <div><span>BATHS</span><strong id="factBaths">—</strong></div>
+        <div><span>KITCHENS</span><strong id="kitchenFact">—</strong></div>
+        <div><span>TYPE</span><strong id="factType">—</strong></div>
+        <div><span id="factLotLabel">LOT</span><strong id="factLot">—</strong></div>
+        <div><span>PARKING</span><strong id="factParking">—</strong></div>
+        <div><span>TAX</span><strong id="factTax">—</strong></div>
+      </div>
+
+      <section id="layoutEssentials" class="layout-essentials hidden" aria-label="Basement and entrance">
+        <div class="layout-essentials-head"><span class="panel-kicker">LAYOUT AT A GLANCE</span><small>As reported in the listing</small></div>
+        <div class="layout-essentials-grid">
+          <article id="basementFactCard"><span>BASEMENT</span><strong id="basementFact">Not reported</strong></article>
+          <article id="entranceFactCard"><span>SEPARATE ENTRANCE</span><strong id="entranceFact">Not reported</strong></article>
+        </div>
+      </section>
+
+
+
+      <section id="homeAiPanel" class="home-ai-panel hidden" aria-labelledby="homeAiTitle" tabindex="-1">
+        <div class="home-ai-head"><div><span class="home-ai-kicker">PRICE · PROPERTY · NEXT STEP</span><h3 id="homeAiTitle">Your buyer brief.</h3><p>A clearer view before you book a showing.</p></div><span class="home-ai-mark" aria-hidden="true">✦</span></div>
+      <section id="priceCheckPanel" class="price-check hidden" aria-labelledby="priceCheckTitle" tabindex="-1">
+        <div class="price-check-head">
+          <div><span class="panel-kicker">THE ASKING PRICE</span><h3 id="priceCheckTitle">How does it compare?</h3></div>
+          <span id="priceCheckBadge" class="price-check-badge" role="status" aria-live="polite">Checking similar asking prices…</span>
+        </div>
+        <p id="priceCheckSummary">Looking for similar homes in this exact community…</p>
+        <div id="priceCheckRange" class="asking-range"></div>
+        <p id="priceEvidence" class="price-evidence"></p>
+        <details id="priceCheckDetails" class="hidden" open>
+          <summary>See the homes behind the numbers</summary>
+          <div id="priceCheckNumbers" class="price-check-numbers"></div>
+          <p id="priceCheckCriteria"></p>
+          <div id="priceCheckMatches" class="price-check-matches"></div>
+          <details class="price-method"><summary>How comparisons work</summary><p>Exact MLS community and home type. Size leads the match; bedroom layout and verified lot size refine it. Parking and bathrooms are shown as differences.</p><p id="priceCheckMethod">Within 5% of the matched median: in line. More than 5% below or above: lower or higher. Gaps over 25% need review. At least 3 distinct matching listings are required.</p>
+          <p id="priceCheckCoverage"></p></details>
+        </details>
+        <button id="priceCheckRetry" class="text-link-btn hidden" type="button">Retry Price Check</button>
+        <p class="price-check-note">These are sellers’ asking prices. Your private report checks what similar homes actually sold for.</p>
+      </section>
+
+        <div class="brief-insights">
+          <p id="homeAiStatus" class="home-ai-status" role="status" aria-live="polite">Reading the listing…</p>
+          <div id="homeAiAnswer" class="home-ai-answer hidden"></div>
+          <div class="home-ai-questions" aria-label="Questions about the selected home">
+            <button type="button" data-home-topic="overview">Highlights</button>
+            <button type="button" data-home-topic="visit">At the showing</button>
+            <button type="button" data-home-topic="costs">Running costs</button>
+          </div>
+        </div>
+      <section id="buyerEssentials" class="buyer-essentials hidden" aria-label="Schools and ratings">
+        <article class="brief-schools"><span class="panel-kicker">SCHOOLS &amp; RATINGS</span><div class="brief-school-content"><strong id="schoolName">Finding a nearby school…</strong><p id="schoolDetails"></p><span id="schoolRating"></span><div class="school-links"><a href="https://www.compareschoolrankings.org/" target="_blank" rel="noopener noreferrer">School ratings ↗</a><a href="https://www.eqao.com/the-assessments/find-my-school/" target="_blank" rel="noopener noreferrer">Official test results ↗</a></div></div></article>
+      </section>
+        <div class="brief-next"><div><strong>Like what you see?</strong><span>Get the report. Choose a showing now or later.</span></div><button id="briefShowingButton" class="primary-btn" type="button">Get my AI report</button></div>
+      </section>
+
+      <details class="extra-facts"><summary>More listing details &amp; costs</summary>
+      <div class="content-grid">
+        <section class="intel-panel ai-panel">
+          <div class="panel-head">
+            <div><span class="panel-kicker">BEFORE YOU VISIT</span><h3>The useful details. Up front.</h3></div>
+            <span class="instant-pill">LISTING FACTS</span>
+          </div>
+          <div class="ai-grid">
+            <article><span>ASKING PRICE</span><strong id="priceSignal">—</strong><p id="priceSignalText"></p></article>
+            <article><span>LISTING TIMING</span><strong id="marketSignal">—</strong><p id="marketSignalText"></p></article>
+            <article><span>SPACE &amp; LAYOUT</span><strong id="flagSignal">—</strong><p id="flagSignalText"></p></article>
+            <article><span>CHECK AT THE SHOWING</span><strong id="showingSignal">—</strong><p id="showingSignalText"></p></article>
+          </div>
+        </section>
+
+        <section class="intel-panel market-panel">
+          <div class="panel-head compact"><div><span class="panel-kicker">PLAN AHEAD</span><h3>Costs &amp; practical details.</h3></div></div>
+          <div class="market-pulse-grid">
+            <div><span>PROPERTY TAX</span><strong id="snapshotTaxValue">—</strong><small id="snapshotTaxNote"></small></div>
+            <div><span>MAINTENANCE FEE</span><strong id="snapshotFeeValue">—</strong><small id="snapshotFeeNote"></small></div>
+            <div><span>POSSESSION</span><strong id="snapshotPossessionValue">—</strong><small id="snapshotPossessionNote"></small></div>
+            <div><span>COMMUNITY</span><strong id="snapshotCommunityValue">—</strong><small id="snapshotCommunityNote"></small></div>
+          </div>
+          <p class="report-note"><span class="panel-kicker">FULL BUYER REPORT</span><br>Want the sold evidence? Your private report follows your request. A value rating is shown only when the evidence supports one.</p>
+        </section>
+      </div>
+
+      <section class="details-panel">
+        <div class="panel-head compact"><div><span class="panel-kicker">PROPERTY DETAILS</span><h3>Key facts, clearly shown.</h3></div></div>
+        <div id="detailsGrid" class="details-grid"></div>
+        <button id="remarksToggle" class="remarks-toggle hidden" type="button">Read listing remarks ↓</button>
+        <p id="listingRemarks" class="listing-remarks hidden"></p>
+      </section>
+
+      </details>
+      <p id="snapshotFreshness" class="snapshot-freshness"></p>
+      <p class="disclaimer">Public listing facts, not an appraisal or a value rating. Measurements, fees, taxes, condition, legal use and availability require verification. Private sold evidence is not displayed here.</p>
+    </div>
+  </section>
+
+
+  <section class="chat-experience" id="explore" aria-labelledby="exploreTitle">
+    <div class="wrap finder-layout">
+      <aside class="finder-intro">
+        <span class="finder-kicker"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M5 27V13L16 4l11 9v14H5Z" stroke="currentColor" stroke-width="1.8"/><path d="m12 21 3-8 5 5-8 3Z" fill="currentColor"/></svg> THE HOME FINDER</span>
+        <h2 id="exploreTitle">A place that<br> feels like <em>you.</em></h2>
+        <p>A real conversation.<br>Homes worth a closer look.</p>
+        <span class="finder-live"><i aria-hidden="true"></i> Connected to MLS®</span>
+      </aside>
+      <div class="finder-workspace">
+        <div class="chat-section-bar"><span class="chat-brand">Your next move starts here</span><button id="chatNew" class="chat-new" type="button" aria-label="New chat">↺ <span>Start fresh</span></button></div>
+        <div class="chat-composer-wrap"><form id="homeSearchForm" class="home-search-form">
+          <label class="sr-only" for="homeSearchQuery">Message the AI home finder</label>
+          <input id="homeSearchQuery" type="text" autocomplete="off" maxlength="600" placeholder="e.g., homes in Richmond Hill under $700K" required />
+          <button class="chat-voice" id="chatVoice" type="button" aria-label="Search by voice" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v4M8 23h8"/></svg></button>
+          <button class="chat-send" id="homeSearchSubmit" type="submit" aria-label="Send home search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button>
+        </form><p id="homeSearchStatus" class="home-search-status" role="status" aria-live="polite"></p></div>
+        <div id="chatWelcome" class="chat-welcome">
+          <p class="finder-hint">Where would you love to live?</p>
+          <p class="finder-examples">Try: homes in Richmond Hill under $700K · luxury homes over $3M · condos in Toronto</p>
+          <nav class="finder-category-grid" aria-label="Home search categories">
+            <button type="button" data-chat-prompt="Show just listed homes in Toronto"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.3"/><path d="M12 7v5l3 2"/></svg></span><span>Just listed</span></button>
+            <button type="button" data-chat-prompt="Show price-reduced homes in Toronto"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 6 6 6 3-3 5 5"/><path d="M14 14h5v-5"/></svg></span><span>Price reduced</span></button>
+            <button type="button" data-chat-prompt="Show detached homes in Toronto"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 11 8-7 8 7v9H4z"/><path d="M9 20v-6h6v6"/></svg></span><span>Detached homes</span></button>
+            <button type="button" data-chat-prompt="Show luxury homes in Toronto over $3 million"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9z"/></svg></span><span>Luxury $3M+</span></button>
+            <button type="button" data-chat-prompt="Show homes in Toronto under $700K"><span class="category-icon" aria-hidden="true"><span>$</span></span><span>Under $700K</span></button>
+            <button type="button" data-chat-prompt="Show condos in Toronto"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 20V5h10v15M15 9h4v11M8 8h3M8 12h3M8 16h3"/></svg></span><span>Condos</span></button>
+            <button type="button" data-chat-prompt="Show homes in Toronto with 4 or more bedrooms"><span class="category-icon category-icon-beds" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 11 8-7 8 7v9H4z"/><path d="M8 20v-5h8v5"/></svg><b>4</b></span><span>4+ bedrooms</span></button>
+            <button type="button" data-chat-prompt="Show townhouses in Toronto"><span class="category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 11 5-5 5 5v9H3zM11 11l5-5 5 5v9h-9z"/><path d="M6 20v-5h4v5M14 20v-5h4v5"/></svg></span><span>Townhouses</span></button>
+          </nav>
+        </div>
+        <div class="chat-scroll" id="chatScroll" tabindex="0" aria-label="Home search conversation">
+          <details class="chat-history" id="chatHistory" hidden><summary id="chatHistoryLabel">Earlier messages</summary><div id="chatHistoryTurns"></div></details>
+          <div id="chatMessages" class="chat-messages" aria-label="Your home search conversation" role="log" aria-live="polite" aria-relevant="additions"></div>
+        </div>
+        <p class="chat-footnote">AI by OpenAI <span aria-hidden="true">·</span> MLS® listing data <span aria-hidden="true">·</span> <a href="#lookup">Have an address?</a></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="how buyer-path">
+    <div class="wrap buyer-path-inner">
+      <div><span class="section-label">AI INSIGHT. A REAL TEAM.</span><h2>Explore with clarity.<br><em>Move when you’re ready.</em></h2><p>Start with the report. We’re one call away when you want a second opinion or a closer look.</p><a class="team-call" href="tel:+16478904704">Contact the team</a></div>
+      <div class="buyer-path-options"><article><span aria-hidden="true">01</span><div><h3>Get the full picture</h3><p>Sold comparisons, a supported price range and the questions that matter.</p><small>Included in every report request</small></div></article><article><span aria-hidden="true">02</span><div><h3>See it for yourself</h3><p>Add a showing now, or choose a time from your email later.</p><small>Optional · confirmed by our team</small></div></article></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="team-footer professional-footer">
+  <div class="wrap footer-main">
+    <div class="footer-brand"><a href="/" class="footer-wordmark">Toronto House Market</a><p>Property reports. Fast showings.</p><span>Toronto · York · Peel · Durham · Halton</span></div>
+    <nav class="footer-links" aria-label="Footer navigation"><a href="/">Buyer reports</a><a href="/seller.html">Home value</a><a href="mailto:torontohousemarket@gmail.com">Contact the team</a></nav>
+  </div>
+  <div class="wrap footer-details"><p class="footer-team"><span class="footer-team-names">Alireza Golestan &amp; Mehrdad Golestan</span><span>Sales Representatives</span><span>CENTURY 21 Leading Edge Realty Inc., Brokerage</span></p><p class="footer-disclaimer">Property analysis is preliminary guidance, not an appraisal or a guaranteed sale price. Showing times are subject to confirmation and availability.</p></div>
+  <div class="wrap footer-bottom"><small>© 2026 Toronto House Market</small><div><a href="/address-search.html">Privacy &amp; terms</a><span class="footer-version" aria-label="Website version 7.5">Version 7.5</span></div></div>
+</footer>
+
+<div id="leadModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal-card">
+    <button class="close-btn" id="closeModal" type="button" aria-label="Close">×</button>
+    <div id="leadFormPanel">
+      <div id="modalEyebrow" class="eyebrow">SHOWING REQUEST</div>
+      <h2 id="modalTitle">See this home as soon as available.</h2>
+      <p id="modalCopy" class="modal-copy">Share your details once. We route the showing request and email your full Buyer Decision Report.</p>
+
+      <form id="leadForm" class="lead-form" novalidate>
+        <input type="hidden" name="property_input" id="modalProperty" />
+        <input type="hidden" name="lead_mode" id="leadMode" value="showing" />
+        <input type="text" name="website" class="honeypot" tabindex="-1" autocomplete="off" aria-hidden="true" />
+
+        <label>PROPERTY<input id="modalPropertyDisplay" readonly /></label>
+        <div class="two-col">
+          <label>NAME<input name="name" autocomplete="name" required maxlength="160" /></label>
+          <label>MOBILE<input id="leadMobile" name="mobile" type="tel" autocomplete="tel-national" inputmode="tel" required maxlength="24" aria-describedby="mobileHelp" /><small id="mobileHelp">10-digit number, with optional +1.</small></label>
+        </div>
+        <label>EMAIL<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required /></label>
+        <label id="showingChoiceWrap" class="showing-choice"><input id="showingChoice" type="checkbox" /><span class="showing-checkmark" aria-hidden="true"></span><span class="showing-choice-copy"><strong>Add a fast showing</strong><small>Optional · within 24 hours, subject to availability.</small></span></label>
+        <div id="showingOptions" class="hidden showing-options">
+          <label><span id="nextStepLabel">PREFERRED TIMING</span><select id="showingTiming" name="showing_timing"><option value="asap">Earliest available</option><option value="preferred_time">Choose a date &amp; time</option></select></label>
+          <div id="showingCalendarFields" class="two-col hidden"><label>DATE<input id="showingDate" type="date" /></label><label>TIME · TORONTO<select id="showingTime"></select></label></div>
+          <small>We’ll confirm the time with the listing side. It is not booked until confirmed.</small>
+        </div>
+        <div id="sellerTimelineWrap" class="hidden">
+          <label>SELLING TIMELINE
+            <select id="sellerTimeline">
+              <option value="seller_curious">Just curious</option>
+              <option value="seller_0_3">0–3 months</option>
+              <option value="seller_3_6">3–6 months</option>
+              <option value="seller_6_12">6–12 months</option>
+            </select>
+          </label>
+        </div>
+        <p id="leadError" class="form-error hidden" aria-live="polite"></p>
+        <button id="leadSubmit" class="primary-btn full" type="submit">Get my AI report</button>
+        <small id="serviceNote" class="service-note">Realtor response target: within 28 minutes, 9 AM–9 PM. Showing target: 1–24 hours, subject to availability.</small>
+      </form>
+    </div>
+
+    <div id="leadSuccessPanel" class="success-panel hidden">
+      <div class="success-check">✓</div>
+      <h2 id="successTitle">Request sent.</h2>
+      <p id="successCopy">A Realtor will confirm the earliest available appointment. Your Buyer Decision Report is being prepared for email.</p>
+      <div class="status-list">
+        <div><span>⚡</span><p><strong id="successStepOne">Showing request routed</strong><small id="successStepOneNote">We are working toward the earliest available appointment.</small></p></div>
+        <div><span>AI</span><p><strong>Your report is being prepared</strong><small>It will be emailed when ready.</small></p></div>
+      </div>
+      <button class="primary-btn full" type="button" id="doneButton">Continue reviewing this home</button>
+    </div>
+  </div>
+</div>
+
+<dialog id="listingShareDialog" class="listing-share-dialog" aria-labelledby="listingShareTitle">
+  <button id="closeListingShare" class="share-close" type="button" aria-label="Close sharing">×</button>
+  <p class="eyebrow">A HOME WORTH SHARING</p>
+  <h2 id="listingShareTitle">Share this home</h2>
+  <p id="listingShareAddress" class="share-address"></p>
+  <label for="listingShareLink">Your share link</label>
+  <div class="share-link-row"><input id="listingShareLink" type="url" readonly spellcheck="false" /><button id="copyListingLink" class="primary-btn" type="button">Copy link</button></div>
+  <div class="share-destinations"><a id="shareWhatsApp" target="_blank" rel="noopener noreferrer">WhatsApp ↗</a><a id="shareEmail">Email ↗</a><button id="shareNative" type="button" hidden>More options ↗</button></div>
+  <p id="listingShareStatus" class="share-status" role="status" aria-live="polite">Anyone with the link can open this listing.</p>
+</dialog>
+
+<div id="galleryModal" class="gallery-backdrop hidden" role="dialog" aria-modal="true" aria-label="Property photo gallery">
+  <button id="galleryClose" class="gallery-close" type="button" aria-label="Close gallery">×</button>
+  <button id="galleryPrev" class="gallery-nav gallery-prev" type="button" aria-label="Previous photo">‹</button>
+  <img id="galleryImage" alt="Property photo" />
+  <button id="galleryNext" class="gallery-nav gallery-next" type="button" aria-label="Next photo">›</button>
+  <div id="galleryCounter" class="gallery-counter"></div>
+</div>
+
+<div id="mobileShowing" class="mobile-showing hidden"><div><small>AI REPORT · SHOWING OPTIONAL</small><strong id="mobileAsking"></strong></div><button id="mobileShowingButton" class="primary-btn" type="button">Get my AI report</button></div>
+<script src="/form-inputs.js?v=129" defer></script><script src="/address-input.js?v=7508" defer></script><script src="/app.js?v=7509" defer></script>
+<script src="/select-controls.js?v=114" defer></script></body>
+</html>
