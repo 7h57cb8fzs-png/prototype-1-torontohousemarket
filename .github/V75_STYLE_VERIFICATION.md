@@ -80,3 +80,4 @@ User requested removal of the red inner search outlines; matching report and con
 - Agent names use regular-weight sans-serif at 13px desktop / 12px mobile. Brokerage and professional designations remain visible in a quiet credentials block.
 - Responsive lower bar stacks on small screens; keyboard focus and mobile showing-bar clearance are retained. Website release label is 7.5; backend version metadata is unchanged.
 - Scope gate pins c9a84f2fa4310f4052c80129dbda0832154bf74f and verifies all application/server logic and form controls remain unchanged. Existing six-width checks capture the footer and verify regular-weight names.
+- Preview 88a7ba4c-b521-4d9f-87bc-c845a5f705af passed workflow 35807437534 / job 107011291394. All six responsive widths, navigation/reset checks, focused regressions and live asset/listing checks passed. Mobile 375px and desktop 1280px footer screenshots visually reviewed. Worker module hash remains unchanged.
