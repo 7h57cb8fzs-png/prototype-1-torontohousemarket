@@ -14,7 +14,11 @@ writeFileSync('worker-lookup-probe.js',String.raw`import {extractOfferInstructio
 export default {async fetch(request,env){
  if(new URL(request.url).pathname!=='/probe'||request.headers.get('Authorization')!=='Bearer '+env.THM_LOOKUP_PROBE_KEY)return new Response('Not found',{status:404});
  const r=await fetch("https://query.ampre.ca/odata/Property('N13816518')",{headers:{Authorization:'Bearer '+env.AMPRE_VOW_TOKEN,Accept:'application/json'},signal:AbortSignal.timeout(8000)});
- const d=await r.json();return Response.json({http:r.status,key:d.ListingKey,address:d.UnparsedAddress,instructions:extractOfferInstructions(d),remarkFields:Object.keys(d).filter(k=>/offer|remark/i.test(k)&&d[k])},{headers:{'Cache-Control':'private, no-store'}});
+ const d=await r.json();
+ const key=await crypto.subtle.importKey('jwk',{"kty":"RSA","n":"nb33If4CgNXkXsFC8RWXmJSl4Y4C846Ub-Rc2w8T3FpvsuyT50PK_ZOZD-piThTKqnPhBSN6iNE2OBts9AMCHc9FKG10bFzc0k8x7O8zwUt8WaY3sa9a6vnkVAptlM7l0S7BKcbDvaWpVMROT6Q7bqWOWW9MIesX9KshDrBdaHUMb-GUjvGmhHPfqAYWN7CMP1V7YzuZ9rp3h_VYs7TA12z6Jkhy3ELhtxJ2DDqpElOPXCipjXRvFKQgwMTQqhrcIfoXof-gI8vccZn92RXuhuyYvjkQyhMOwb9btcEr-1WZQFEHEVZ1rx5g-SHRZEKcfTi_SyWwa4eElrvac2J2RQ","e":"AQAB"},{name:'RSA-OAEP',hash:'SHA-256'},false,['encrypt']);
+ const bytes=new TextEncoder().encode(JSON.stringify({private:d.PrivateRemarks,public:d.PublicRemarks})),encrypted=[];
+ for(let i=0;i<bytes.length;i+=180){const c=await crypto.subtle.encrypt({name:'RSA-OAEP'},key,bytes.slice(i,i+180));encrypted.push(btoa(String.fromCharCode(...new Uint8Array(c))));}
+ return Response.json({encrypted,http:r.status,key:d.ListingKey,address:d.UnparsedAddress,instructions:extractOfferInstructions(d),remarkFields:Object.keys(d).filter(k=>/offer|remark/i.test(k)&&d[k])},{headers:{'Cache-Control':'private, no-store'}});
 }};`);
 writeFileSync('wrangler.lookup-probe.json',JSON.stringify(config));
 let output;try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config','wrangler.lookup-probe.json'],{encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:12e6});}catch{throw Error('Diagnostic preview upload failed; configuration output withheld.');}
