@@ -4,7 +4,7 @@ on:
     branches: [feature/seller-marketing-20260923]
     paths: [.github/workflows/seller-marketing-inspect.yml]
 permissions:
-  contents: read
+  contents: write
 jobs:
   inspect:
     runs-on: ubuntu-latest
@@ -19,13 +19,13 @@ jobs:
           node --input-type=module <<'JS'
           import {mkdirSync,writeFileSync} from 'node:fs';
           import {createHash} from 'node:crypto';
-          const root='marketing-inspect',worker='prototype-1-torontohousemarket';
+          const root='production-snapshots/2026-09-23-pre-marketing',worker='prototype-1-torontohousemarket';
           mkdirSync(root+'/modules',{recursive:true});mkdirSync(root+'/assets',{recursive:true});
           const cf=async p=>{const r=await fetch('https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+p,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});const d=await r.json();if(!r.ok||!d.success)throw Error('Cloudflare read failed '+r.status);return d.result;};
           const ds=await cf('/workers/scripts/'+worker+'/deployments');
           const vs=ds.deployments[0].versions;if(vs.length!==1||vs[0].percentage!==100)throw Error('Expected single production version');
           const id=vs[0].version_id,v=await cf('/workers/workers/'+worker+'/versions/'+id+'?include=modules');
-          const hashes={};for(const m of v.modules){if(!/^[a-zA-Z0-9_.-]+$/.test(m.name))throw Error('Review module path');const b=Buffer.from(m.content_base64,'base64');writeFileSync(root+'/modules/'+m.name,b);hashes[m.name]=createHash('sha256').update(b).digest('hex');}
+          const hashes={};for(const m of v.modules){if(!/^[a-zA-Z0-9_.-]+$/.test(m.name))throw Error('Review module path');const b=Buffer.from(m.content_base64,'base64');if(/(?:sk-(?:proj-)?[A-Za-z0-9_-]{30,}|re_[A-Za-z0-9]{25,}|eyJ[A-Za-z0-9_-]{30,}\\.)/.test(b.toString()))throw Error('Potential embedded credential; manual inspection required');writeFileSync(root+'/modules/'+m.name,b);hashes[m.name]=createHash('sha256').update(b).digest('hex');}
           const assets=['index.html','app.js','styles.css','admin.html','admin.js','admin.css','showing.html','showing.js','select-controls.js','form-inputs.js','address-input.js','address-search.html','seller.html','seller.js','seller.css'];
           for(const p of assets){const r=await fetch('https://torontohousemarket.com/'+p,{signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('Asset '+p+' '+r.status);writeFileSync(root+'/assets/'+p,Buffer.from(await r.arrayBuffer()));}
           const versionResponse=await fetch('https://torontohousemarket.com/api/version');const publicVersion=await versionResponse.json();
@@ -35,5 +35,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: seller-marketing-production-baseline
-          path: marketing-inspect/
+          path: production-snapshots/2026-09-23-pre-marketing/
           retention-days: 3
+      - name: Preserve inspected source checkpoint
+        run: |
+          git config user.name 'THM Release Validation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add production-snapshots/2026-09-23-pre-marketing
+          git commit -m 'Preserve current production code and public assets before seller marketing'
+          git push origin HEAD:feature/seller-marketing-20260923
