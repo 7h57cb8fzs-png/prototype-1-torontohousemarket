@@ -3,3 +3,6 @@
 
 /* Keep lookup feedback available without an idle helper line. */
 #sellerLookupStatus:empty{display:none}
+
+/* Only show the report error box when there is a message. */
+.seller-page #sellerError:empty{display:none}

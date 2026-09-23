@@ -58,7 +58,7 @@ try{
   assert.equal(await optional.getAttribute('open'),null);
   assert(await page.locator('#sellerMobile').evaluate(e=>e.getBoundingClientRect().bottom<document.querySelector('.seller-optional-details').getBoundingClientRect().top));
   await page.locator('#sellerName').fill('Example Owner');await page.locator('#sellerEmail').fill('fixture@example.com');await page.locator('#sellerMobile').fill('6478904704');
-  for(const selector of ['#sellerOwnerConsent','#sellerContactConsent']){
+  for(const selector of ['#sellerOwnerConsent']){
    const metrics=await page.locator(selector).evaluate(e=>{const b=e.getBoundingClientRect(),r=e.nextElementSibling.getBoundingClientRect(),style=getComputedStyle(e.nextElementSibling);return {height:b.height,offset:b.y-r.y,line:Number.parseFloat(style.lineHeight)};});
    assert.equal(metrics.height,18);assert(Math.abs(metrics.offset+metrics.height/2-metrics.line/2)<3,'Checkbox first-line alignment');
    await page.locator(selector).check();

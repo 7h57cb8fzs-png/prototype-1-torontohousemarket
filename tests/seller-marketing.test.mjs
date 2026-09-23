@@ -21,7 +21,8 @@ test('form keeps required report permissions and leaves marketing optional and u
  const html=readFileSync(new URL('../seller.html',import.meta.url),'utf8');
  const input=html.match(/<input id="sellerMarketingConsent"[^>]*>/)[0];
  assert.doesNotMatch(input,/\brequired\b|\bchecked\b/);assert.match(input,/aria-describedby="sellerMarketingFooter"/);
- for(const key of ['sellerOwnerConsent','sellerContactConsent'])assert.match(html,new RegExp('<input id="'+key+'"[^>]*required'));
+ assert.equal((html.match(/type="checkbox"/g)||[]).length,2);
+ for(const key of ['sellerOwnerConsent'])assert.match(html,new RegExp('<input id="'+key+'"[^>]*required'));
  assert.match(html,/id="sellerMarketingFooter"/);assert.match(html,/1053 McNicoll Avenue/);
 });
 
