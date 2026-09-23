@@ -1,0 +1,41 @@
+name: Verify and publish admin insights and exports
+on:
+  push:
+    branches: [phase-6]
+permissions:
+  contents: read
+concurrency:
+  group: thm-v75-style-guarded-deployment
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: contains(github.event.head_commit.message, '[admin2-preview]') || contains(github.event.head_commit.message, '[admin2-release]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Guard admin-only scope
+        run: node scripts/admin-insights-scope.mjs
+      - name: Run five focused admin workflow tests
+        if: contains(github.event.head_commit.message, '[admin2-preview]')
+        env:
+          ADMIN_TEST_JSDOM_PATH: ${{ runner.temp }}/thm-admin-test/node_modules/jsdom/lib/api.js
+        run: |
+          npm install --prefix "$RUNNER_TEMP/thm-admin-test" --no-save --package-lock=false jsdom@27.0.0
+          node --test tests/admin-insights.test.mjs
+      - name: Prepare or promote the verified version
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          EXPECTED_ACTIVE_VERSION: bef45e90-5003-4ff7-a051-4d722102b909
+          EXPECTED_ACTIVE_SHA: 5ad6140a8c9d4aad9587c408ab3209adf107bf90615fe0dd4dfb3cec7e3256b7
+          CANDIDATE_VERSION_ID: ''
+          EXPECTED_CANDIDATE_SHA: ''
+          PUBLISH: ${{ contains(github.event.head_commit.message, '[admin2-release]') && 'true' || 'false' }}
+        run: node scripts/admin-insights-release.mjs

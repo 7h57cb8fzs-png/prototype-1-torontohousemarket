@@ -10,6 +10,13 @@ export async function adminOps(request,env){
  try{
   if(request.method==='GET'){
    if(path==='/counts')return json({ok:true,...await rpc(env,'admin_ops_counts',{})});
+   if(path==='/agents')return json({ok:true,...await rpc(env,'admin_ops_agents',{})});
+   if(path==='/analytics'){
+    const from=url.searchParams.get('from'),to=url.searchParams.get('to');
+    if(!validDate(from)||!validDate(to)||to<from||(Date.parse(to)-Date.parse(from))/86400000>365)return json({ok:false,error:'Choose valid dates covering up to 366 days.'},400);
+    return json({ok:true,...await rpc(env,'admin_ops_analytics',{p_from:from,p_to:to,p_include_tests:url.searchParams.get('tests')==='1'})});
+   }
+   if(path==='/marketing')return json({ok:true,...await rpc(env,'admin_ops_marketing_list',{p_page:Math.max(1,Math.min(100000,Math.floor(Number(url.searchParams.get('page')))||1)),p_query:String(url.searchParams.get('q')||'').slice(0,120),p_status:String(url.searchParams.get('status')||'')})});
    if(path==='/leads'||path==='/jobs')return await list(request,env,path==='/jobs');
    if(/^\/leads\/[0-9a-f-]+$/i.test(path)){
     const id=path.split('/')[2];if(!UUID.test(id))return json({ok:false,error:'Invalid lead.'},400);
@@ -21,6 +28,22 @@ export async function adminOps(request,env){
   if(request.method==='POST'){
    if(Number(request.headers.get('content-length')||0)>100000)return json({ok:false,error:'Selection is too large.'},413);
    const body=await request.json().catch(()=>null);if(!body)return json({ok:false,error:'Invalid request.'},400);
+   if(/^\/agents\/[0-9a-f-]+\/delete$/i.test(path)){
+    const id=path.split('/')[2];if(!UUID.test(id))return json({ok:false,error:'Invalid agent.'},400);
+    return json({ok:true,...await rpc(env,'admin_ops_delete_agent',{p_agent_id:id})});
+   }
+   if(path==='/leads/export'){
+    if(!validIds(body.ids,UUID))return json({ok:false,error:'Choose 1–1000 leads to export.'},400);
+    return json({ok:true,...await rpc(env,'admin_ops_export_leads',{p_ids:[...new Set(body.ids)]})});
+   }
+   if(path==='/leads/assign'){
+    if(!validIds(body.ids,UUID)||!(body.agent_id===null||UUID.test(body.agent_id||'')))return json({ok:false,error:'Choose leads and an agent, or choose unassigned.'},400);
+    return json({ok:true,...await rpc(env,'admin_ops_assign_leads',{p_ids:body.ids,p_agent_id:body.agent_id})});
+   }
+   if(path==='/marketing/unsubscribe'){
+    if(typeof body.email!=='string'||body.email.length>254||!body.email.includes('@'))return json({ok:false,error:'Choose a marketing contact.'},400);
+    return json({ok:true,unsubscribed:await rpc(env,'admin_ops_marketing_unsubscribe',{p_email:body.email})===true});
+   }
    if(/^\/leads\/[0-9a-f-]+\/marketing-unsubscribe$/i.test(path)){
     const id=path.split('/')[2];if(!UUID.test(id))return json({ok:false,error:'Invalid lead.'},400);
     return json({ok:true,unsubscribed:await rpc(env,'admin_seller_marketing_unsubscribe',{p_lead_id:id})===true});
@@ -44,6 +67,7 @@ export async function adminOps(request,env){
  }catch(e){return json({ok:false,error:e.message||'Unable to complete this admin request.'},e.status||502);}
 }
 function constantEqual(a,b){let diff=0;for(let i=0;i<a.length;i++)diff|=a.charCodeAt(i)^b.charCodeAt(i);return diff===0;}
+function validDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;}
 function validIds(ids,re){return Array.isArray(ids)&&ids.length>0&&ids.length<=1000&&ids.every(x=>re.test(String(x)));}
 async function rpc(env,name,body){return db(env,'rpc/'+name,{method:'POST',body:JSON.stringify(body)});}
 async function db(env,path,init={},raw=false){
