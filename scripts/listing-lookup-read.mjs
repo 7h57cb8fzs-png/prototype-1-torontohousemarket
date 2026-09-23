@@ -15,7 +15,7 @@ writeFileSync('worker-lookup-probe.js',`export default {async fetch(request,env)
  const results=[];
  for(const [feed,token] of [['IDX',env.AMPRE_TOKEN],['VOW',env.AMPRE_VOW_TOKEN]]) {
   const r=await fetch("https://query.ampre.ca/odata/Property('C13683220')",{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(8000)});
-  const d=await r.json();results.push({feed,http:r.status,key:d.ListingKey,address:d.UnparsedAddress,standard:d.StandardStatus,mls:d.MlsStatus,contract:d.ContractStatus,transaction:d.TransactionType,display:d.InternetEntireListingDisplayYN,addressDisplay:d.InternetAddressDisplayYN});
+  const d=await r.json().catch(()=>({}));results.push({feed,http:r.status,key:d.ListingKey,address:d.UnparsedAddress,standard:d.StandardStatus,mls:d.MlsStatus,contract:d.ContractStatus,transaction:d.TransactionType,display:d.InternetEntireListingDisplayYN,addressDisplay:d.InternetAddressDisplayYN});
  }
  return Response.json({results},{headers:{'Cache-Control':'private, no-store'}});
 }};`);
