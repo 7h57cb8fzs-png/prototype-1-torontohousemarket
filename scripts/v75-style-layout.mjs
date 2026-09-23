@@ -35,6 +35,9 @@ try{
   }
   await page.goto(root+'/?listingKey=N10000001');await page.locator('#snapshotSection:not(.hidden)').waitFor();
   await fits('buyer '+width);
+  assert.equal(await page.locator('.footer-team-names').evaluate(e=>getComputedStyle(e).fontWeight),'400');
+  await page.locator('.professional-footer').scrollIntoViewIfNeeded();
+  await page.screenshot({path:`mobile-qa/footer-${width}.png`,fullPage:false});
   assert.equal(await page.locator('#offerTimingValue,#offerTimingNote,.brief-schools summary').count(),0);
   assert(await page.locator('#schoolName').isVisible());
   assert(await page.locator('.school-links').isVisible());

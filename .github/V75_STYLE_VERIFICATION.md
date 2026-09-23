@@ -73,3 +73,10 @@ User requested removal of the red inner search outlines; matching report and con
 - Existing WebKit navigation checks now include a fresh-document logo reset at 390px and 1280px, unfinished contact/showing/chat state, and missing-feed wording. The four-listing live check includes the supplied Benson listing; together with Jules, no more than five distinct properties are checked.
 - Additional upstream visibility inspection confirmed the missing IDX record has InternetAddressDisplayYN and InternetEntireListingDisplayYN enabled in VOW. Those flags alone do not establish IDX participation or explain the feed gap. No VOW-to-public fallback was introduced.
 - Preview source 26e18c4ee1a1bd7da5d30c95b6b686d535442d35 passed all checks: workflow 35786345574 / job 106943968290. Candidate 7ea5e19c-de59-47dc-a8cf-3a64552f0dda retains the prior Worker module hash d4b29f2403a8ae76d09d36f2fdeaf84f447c4389254d82f39053e9c5cbad6dfc; only public assets change. Promotion retains rollback f0f7c1af-2786-45d8-a3d8-85989cc262a2.
+
+## Professional footer — September 23, 2026
+
+- Shared buyer, seller and showing footer with brand tagline, service areas, buyer/seller/contact links, existing privacy/terms link, copyright and website Version 7.5.
+- Agent names use regular-weight sans-serif at 13px desktop / 12px mobile. Brokerage and professional designations remain visible in a quiet credentials block.
+- Responsive lower bar stacks on small screens; keyboard focus and mobile showing-bar clearance are retained. Website release label is 7.5; backend version metadata is unchanged.
+- Scope gate pins c9a84f2fa4310f4052c80129dbda0832154bf74f and verifies all application/server logic and form controls remain unchanged. Existing six-width checks capture the footer and verify regular-weight names.

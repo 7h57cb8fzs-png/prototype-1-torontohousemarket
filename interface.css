@@ -166,3 +166,34 @@
   .seller-optional-details>summary>span{display:block;margin-left:18px}
   .seller-optional-details .seller-price-inputs{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 }
+
+/* Shared public footer: quiet credentials, useful links and release information. */
+body .professional-footer{padding:38px 0 24px;background:#f0f3ed;border-top:1px solid #dce3d7;color:#203b3c}
+.professional-footer .footer-main{display:flex;justify-content:space-between;align-items:start;gap:32px}
+.professional-footer .footer-wordmark{font:400 25px/1.3 Georgia,'Times New Roman',serif;letter-spacing:-.4px;color:#203b3c;text-decoration:none}
+body .professional-footer .footer-brand p{margin:9px 0 5px;font:400 14px/1.6 var(--body-font,Arial,sans-serif);color:#53655e}
+.professional-footer .footer-brand>span{font-size:12px;line-height:1.6;color:#64736c}
+.professional-footer .footer-links{display:flex;flex-wrap:wrap;gap:4px 24px;align-items:center}
+.professional-footer .footer-links a{display:inline-flex;align-items:center;min-height:44px;font-size:13px;font-weight:400;color:#53655e;text-decoration:none}
+.professional-footer a:hover{text-decoration:underline;text-underline-offset:4px}
+.professional-footer a:focus-visible{outline:2px solid #536961;outline-offset:4px;border-radius:2px}
+.professional-footer .footer-details{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:36px;margin-top:28px}
+body .professional-footer .footer-team,body .professional-footer .footer-disclaimer{margin:0;font:400 12px/1.8 var(--body-font,Arial,sans-serif);color:#64736c}
+.professional-footer .footer-team span{display:block}
+.professional-footer .footer-team .footer-team-names{font-size:13px;font-weight:400;color:#53655e}
+.professional-footer .footer-bottom{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:24px;padding-top:17px;border-top:1px solid #d6dfd5;color:#64736c}
+.professional-footer .footer-bottom>div{display:flex;align-items:center;flex-wrap:wrap;gap:20px}
+.professional-footer .footer-bottom small,.professional-footer .footer-bottom a,.professional-footer .footer-version{font-size:11px;font-weight:400;line-height:1.6;color:#64736c}
+.professional-footer .footer-bottom a{text-decoration:none;display:inline-flex;align-items:center;min-height:32px}
+.professional-footer .footer-version{border-left:1px solid #cbd6ca;padding-left:20px;white-space:nowrap}
+@media(max-width:640px){
+ body .professional-footer{padding:28px 0 24px}
+ .buyer-page .professional-footer{padding-bottom:100px}
+ .professional-footer .footer-main{flex-direction:column;gap:14px}
+ .professional-footer .footer-wordmark{font-size:23px}
+ .professional-footer .footer-links{gap:4px 24px}
+ .professional-footer .footer-details{grid-template-columns:minmax(0,1fr);gap:15px;margin-top:18px}
+ .professional-footer .footer-team .footer-team-names{font-size:12px;font-weight:400}
+ body .professional-footer .footer-disclaimer{font-size:11px;line-height:1.7}
+ .professional-footer .footer-bottom{flex-direction:column;align-items:flex-start;gap:7px;margin-top:20px;padding-top:14px}
+}
