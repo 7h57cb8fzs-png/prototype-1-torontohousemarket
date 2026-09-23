@@ -32,7 +32,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           EXPECTED_ACTIVE_VERSION: beed29ff-b1ce-450f-8b6e-26459bc17820
           EXPECTED_ACTIVE_SHA: d578cbbba133acf0130bf2fc76e777b93e368c5a20ba39749ee797aca2a2356e
-          CANDIDATE_VERSION_ID: ''
-          EXPECTED_CANDIDATE_SHA: ''
+          CANDIDATE_VERSION_ID: '0666a0bf-3900-445b-b57d-97ed18673402'
+          EXPECTED_CANDIDATE_SHA: '5ad6140a8c9d4aad9587c408ab3209adf107bf90615fe0dd4dfb3cec7e3256b7'
           PUBLISH: ${{ contains(github.event.head_commit.message, '[marketing-release]') && 'true' || 'false' }}
         run: node scripts/seller-marketing-release.mjs
