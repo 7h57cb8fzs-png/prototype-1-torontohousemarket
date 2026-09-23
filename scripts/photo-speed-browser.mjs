@@ -39,6 +39,7 @@ export async function verifyPhotoBrowser(base,listings){
     assert.equal(await page.locator('#snapshotProperty').textContent(),expected.address.split(',')[0]);
     const geometry=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth}));assert(geometry.scroll<=width+1,'Horizontal overflow');
     await page.locator('.listing-cockpit').screenshot({path:`mobile-qa/photos-${key}-${width}.png`});
+    await page.locator('#photoMainButton').evaluate(el=>el.scrollIntoView({behavior:'instant',block:'center'}));
     await page.locator('#photoMainButton').click();
     assert.equal(await page.locator('#galleryImage').getAttribute('src'),cover.url);
     await page.waitForFunction(()=>document.querySelector('#galleryImage').naturalWidth>0);
