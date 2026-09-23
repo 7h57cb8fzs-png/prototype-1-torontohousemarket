@@ -917,5 +917,5 @@ input[aria-invalid=true],select[aria-invalid=true],textarea[aria-invalid=true],.
  .buyer-page #lookup,.buyer-page #snapshotSection{scroll-margin-top:120px}
 }
 
-/* Keep the photo frame stable when its loading placeholder is removed in Safari. */
-.photo-panel{width:100%;min-width:0}
+/* Retain the photo frame’s dimensions while the loaded image overlays it. */
+.photo-placeholder.is-ready{visibility:hidden;pointer-events:none}

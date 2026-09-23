@@ -20,5 +20,5 @@ let app=now('app.js').replace('let photoController = null;\n','').replace('apiUr
 const omitPhotos=s=>['loadListingPhotos','setPhotoSource','renderPhotos','usePhotoFallback','renderGallery'].reduce((v,name)=>v.replace(new RegExp('(?:async )?function '+name+'\\([^]*?\\n}\\n\\n'),'').trim(),s);
 assert.equal(omitPhotos(app),omitPhotos(old('app.js')),'Non-photo client behavior changed');
 assert.equal(now('index.html').replace('/app.js?v=7509','/app.js?v=7502').replace('/styles.css?v=7510','/styles.css?v=7502'),old('index.html'));
-assert.equal(now('styles.css').replace('\n/* Keep the photo frame stable when its loading placeholder is removed in Safari. */\n.photo-panel{width:100%;min-width:0}\n',''),old('styles.css'));
+assert.equal(now('styles.css').replace('\n/* Retain the photo frame’s dimensions while the loaded image overlays it. */\n.photo-placeholder.is-ready{visibility:hidden;pointer-events:none}\n',''),old('styles.css'));
 console.log('PASS: Address matching, report generation, offer instructions, valuation, forms, seller flow, navigation and design are unchanged; changes are confined to photo loading and size selection.');

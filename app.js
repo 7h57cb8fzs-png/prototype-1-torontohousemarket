@@ -403,7 +403,7 @@ function renderPhotos(items, listing) {
   if (!photos.length) {
     snapshotThumb.classList.add("hidden");
     snapshotThumbImg.removeAttribute("src");
-    photoPlaceholder.classList.remove("hidden");
+    photoPlaceholder.classList.remove("hidden", "is-ready");
     photoMainButton.classList.add("hidden");
     photoThumbs.classList.add("hidden");
 
@@ -426,7 +426,7 @@ function renderPhotos(items, listing) {
     return;
   }
 
-  photoPlaceholder.classList.add("hidden");
+  photoPlaceholder.classList.add("is-ready");
   photoMainButton.classList.remove("hidden");
   photoThumbs.classList.remove("hidden");
 

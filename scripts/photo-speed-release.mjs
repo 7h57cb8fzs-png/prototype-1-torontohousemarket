@@ -25,6 +25,7 @@ if(!candidate){
   let output;try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config','wrangler.v74.json'],{encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:12e6});}catch{throw Error('Preview upload failed; CLI output withheld to protect configuration.');}
   candidate=output.match(/Worker Version ID:\s*([a-f0-9-]{36})/i)?.[1];preview=output.match(/Version Preview URL:\s*(https:\/\/[^\s]+)/i)?.[1];assert(candidate&&preview,'Missing preview identity');
 }else{assert.equal(priorHash,process.env.EXPECTED_ACTIVE_SHA,'Production changed after preview');preview=`https://${candidate.slice(0,8)}-${worker}.7h57cb8fzs.workers.dev`;}
+console.log(JSON.stringify({stage:'preview-ready',candidate,preview}));
 const after=await version(candidate);
 // This release changes only deferred photo loading and image variant selection.
 // Scope is checked against the accepted commit before upload; promotion pins the reviewed preview hash.
