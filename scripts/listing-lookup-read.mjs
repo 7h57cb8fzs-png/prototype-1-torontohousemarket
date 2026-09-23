@@ -10,21 +10,16 @@ const nonce=randomBytes(32).toString('hex'),config=JSON.parse(readFileSync('wran
 delete config.secrets;delete config.assets;delete config.triggers;
 config.main='worker-lookup-probe.js';config.vars=Object.fromEntries(version.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));config.vars.THM_LOOKUP_PROBE_KEY=nonce;
 // No customer data, reports, database changes or emails. Never deploy this version.
-writeFileSync('worker-lookup-probe.js',`export default {async fetch(request,env){
+writeFileSync('worker-lookup-probe.js',`import worker,{resolveSellerSubject,buildSellerEvidence} from './worker-v11.js';
+export default {async fetch(request,env){
  if(new URL(request.url).pathname!=='/probe'||request.headers.get('Authorization')!=='Bearer '+env.THM_LOOKUP_PROBE_KEY)return new Response('Not found',{status:404});
- const results=[];
- for(const [feed,token]of [['IDX',env.AMPRE_TOKEN],['VOW',env.AMPRE_VOW_TOKEN]]){
-  if(!token){results.push({feed,configured:false});continue;}
-  for(const key of ['N13816334','N13815978'])for(const mode of ['direct','collection']){
-   const url=new URL('https://query.ampre.ca/odata/Property'+(mode==='direct'?"('"+key+"')":''));
-   if(mode==='collection')url.searchParams.set('$select','ListingKey,InternetEntireListingDisplayYN,InternetAddressDisplayYN');
-   if(mode==='collection'){url.searchParams.set('$filter',"ListingKey eq '"+key+"'");url.searchParams.set('$top','1');}
-   try{const r=await fetch(url.href.replaceAll('+','%20'),{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(8000)}),d=await r.json().catch(()=>null),rows=Array.isArray(d?.value)?d.value:d?.ListingKey?[d]:[];
-    results.push({feed,key,mode,status:r.status,count:rows.length,exactMatch:rows.some(p=>p.ListingKey===key),displayAllowed:rows.length?rows.every(p=>p.InternetEntireListingDisplayYN!==false&&p.InternetAddressDisplayYN!==false):null,...key==='N13816334'&&mode==='direct'&&rows.length?{visibilityFlags:Object.fromEntries(Object.entries(rows[0]).filter(([k,v])=>/IDX|Internet|Syndicat|Recip|OriginalEntryTimestamp|ModificationTimestamp/i.test(k)&&['string','boolean','number'].includes(typeof v)))}:{}});
-   }catch(e){results.push({feed,key,mode,error:e.name});}
-  }
- }
- return Response.json({results},{headers:{'Cache-Control':'private, no-store'}});
+ const protectedEnv={...env,AMPRE_TOKEN:env.AMPRE_VOW_TOKEN};
+ const preflight=await worker.fetch(new Request("https://torontohousemarket.com/api/property?validate_only=1&q=111%20Saint%20Clair%20Avenue%20West%2C%20Toronto"),env,{});
+ const unitPrompt=(await preflight.json()).unitRequired===true;
+ const diagnostics={};
+ const subject=await resolveSellerSubject('111 Saint Clair Avenue West Unit 1227, Toronto',{city:'Toronto'},protectedEnv,diagnostics);
+ const evidence=subject?await buildSellerEvidence(subject,protectedEnv):null;
+ return Response.json({unitPrompt,subjectMatched:!!subject,unit:subject?.UnitNumber||null,queries:diagnostics.queries?.map(q=>({rows:q.rows,exactMatches:q.exactMatches,complete:q.complete})),comparableCount:evidence?.comps?.length??evidence?.comparables?.length??null,evidenceAvailable:evidence?.available??false,basis:evidence?.basis||null},{headers:{'Cache-Control':'private, no-store'}});
 }};`);
 writeFileSync('wrangler.lookup-probe.json',JSON.stringify(config));
 let output;try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config','wrangler.lookup-probe.json'],{encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:12e6});}catch{throw Error('Diagnostic preview upload failed; configuration output withheld.');}

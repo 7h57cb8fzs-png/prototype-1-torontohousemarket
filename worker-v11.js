@@ -3012,6 +3012,7 @@ function normalizeUnitAddress(raw) {
   value = value.replace(/^\s*(?:unit|suite|apt|apartment|#)\s*([A-Za-z0-9-]+)\s*,?\s+(\d+[A-Za-z]?)\s+(.+)$/i, (_, unit, number, street) => `${number} ${street} Unit ${unit}`);
   value = value.replace(/,\s*((?:unit|suite|apt|apartment|#)\s*[A-Za-z0-9-]+)/i, " $1");
   value = value.replace(/,\s*([A-Za-z0-9-]+)\s*$/i, " Unit $1");
+  value = value.replace(/^(\d+[a-z]?\s+)(?:saint\s+clair|st\.\s*clair|st\s+clair)\b/i, "$1St Clair");
   return value + (parts.city ? `, ${parts.city}` : "");
 }
 __name(normalizeUnitAddress, "normalizeUnitAddress");
@@ -3463,6 +3464,15 @@ async function publicProperty(request, env, ctx) {
     addressEntry = validateAddressEntry(query2);
     if (!addressEntry.ok) return json7({ ok: false, error: addressEntry.error, inputError: true }, 400);
     publicUrl.searchParams.set("q", addressEntry.address);
+  }
+  if (publicUrl.searchParams.get("validate_only") === "1" && addressEntry && !addressEntry.parsed.unit && addressEntry.city && env.AMPRE_TOKEN) {
+    // Public IDX only. An unavailable or ambiguous check must not block an address.
+    const p = addressEntry.parsed;
+    const street = canonicalLookupStreet(p.name) === "st clair" ? "Clair" : p.name.split(" ").map(displayToken2).join(" ");
+    const result = await queryPropertiesDetailed([`contains(StreetName,'${escapeOData2(street)}')`, `contains(StreetNumber,'${escapeOData2(p.number)}')`, `contains(City,'${escapeOData2(addressEntry.city)}')`], env, 100, "");
+    const exact = result.rows.filter(row => row.InternetEntireListingDisplayYN !== false && row.InternetAddressDisplayYN !== false && sellerExactHistoryMatch({...p, unit: row.UnitNumber || null}, row, addressEntry.city));
+    const buildings = new Set(exact.map(row => [canonicalStreetType(row.StreetSuffix), canonicalDirection(row.StreetDirSuffix || row.StreetDirPrefix)].join("|")));
+    if (result.meta.status === 200 && !result.nextLink && buildings.size === 1 && exact.length && exact.every(row => row.UnitNumber && isCondominiumProperty(row))) return json7({ok:false,inputError:true,unitRequired:true,error:"Please add your unit number."},400,{"Cache-Control":"no-store"});
   }
   if (publicUrl.searchParams.get("validate_only") === "1") return addressEntry ? json7({ ok: true, normalizedAddress: addressEntry.address, city: addressEntry.city, unit: addressEntry.parsed.unit }, 200, { "Cache-Control": "no-store" }) : json7({ ok: false, inputError: true, error: "Enter the street number and street name." }, 400);
   publicUrl.searchParams.set("mode", "public_snapshot");
@@ -6167,10 +6177,13 @@ function sellerSameHome(subject, record) {
   return !!a && a === b;
 }
 __name(sellerSameHome, "sellerSameHome");
+function canonicalLookupStreet(value) {
+  return normalizeText(value).replace(/^(?:saint\s+clair|st\.\s*clair|st\s+clair)$/, "st clair");
+}
 function sellerExactHistoryMatch(parsed, row, city) {
   const candidate = sellerParsedAddress(row.UnparsedAddress || buildAddress(row));
   const unit = normalizeText(Object.hasOwn(row, "UnitNumber") ? row.UnitNumber || "" : candidate.unit || "");
-  return normalizeText(parsed.number) === normalizeText(row.StreetNumber || candidate.number || "") && normalizeText(parsed.name) === normalizeText(row.StreetName || candidate.name || "") && (!parsed.suffix || parsed.suffix === (canonicalStreetType(row.StreetSuffix) || candidate.suffix)) && (!parsed.direction || parsed.direction === (canonicalDirection(row.StreetDirSuffix || row.StreetDirPrefix) || candidate.direction)) && normalizeText(parsed.unit || "") === unit && (!city || sellerCityMatches(city, row.City));
+  return normalizeText(parsed.number) === normalizeText(row.StreetNumber || candidate.number || "") && canonicalLookupStreet(parsed.name) === canonicalLookupStreet(row.StreetName || candidate.name || "") && (!parsed.suffix || parsed.suffix === (canonicalStreetType(row.StreetSuffix) || candidate.suffix)) && (!parsed.direction || parsed.direction === (canonicalDirection(row.StreetDirSuffix || row.StreetDirPrefix) || candidate.direction)) && normalizeText(parsed.unit || "") === unit && (!city || sellerCityMatches(city, row.City));
 }
 __name(sellerExactHistoryMatch, "sellerExactHistoryMatch");
 function splitAddressCity(address) {
@@ -6252,7 +6265,7 @@ async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
   // Query every listing status and age. The feed rejects some equality and
   // multiword-address filters; narrow with individual tokens before pagination.
   const cityWord = escapeOData2(city.split(/[\s-]+/).sort((a,b)=>b.length-a.length)[0] || "");
-  const streetFilter = `contains(StreetName,'${street}')`;
+  const streetFilter = `contains(StreetName,'${canonicalLookupStreet(parsed.name) === "st clair" ? "Clair" : street}')`;
   const exactQueries = [...new Set([
     cityWord ? `${streetFilter} and contains(City,'${cityWord}') and contains(StreetNumber,'${number}')` : null,
     `${streetFilter} and contains(StreetNumber,'${number}')`,
@@ -6708,7 +6721,7 @@ function sellerReportEmail(address, report) {
   const expectedNote = hasExpected ? String(expected.note || "Your expectations are saved for your review.").replace(/AI value range/g, "sold-based range") : null;
   const expectedHtml = hasExpected ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:18px;border-top:1px solid #d9dfd6"><tr><td style="padding-top:17px"><p style="${label}">Your expected range</p><p style="margin:0 0 6px;font-family:Arial,Helvetica,sans-serif;font-size:22px;line-height:1.4;font-weight:500;color:#203b3c">${html(range(expected.low, expected.high))}</p><p style="${small}">${html(expectedNote)} Your expectation does not set the estimate.</p></td></tr></table>` : "";
   const pendingTitle = "Let\u2019s take a closer look at your home.";
-  const pendingBasis = v.dataUnavailable ? "We couldn\u2019t complete the market check this time, so we haven\u2019t estimated a price." : !(seller.evidence?.subjectMatched ?? seller.evidence?.listingMatched) ? "We couldn\u2019t confidently match your home to our property records, so we haven\u2019t estimated a price." : "We found your home, but not enough closely matching sales to give you a useful price estimate yet.";
+  const pendingBasis = v.dataUnavailable ? "We couldn\u2019t complete the market check this time, so we haven\u2019t estimated a price." : !(seller.evidence?.subjectMatched ?? seller.evidence?.listingMatched) ? (sellerParsedAddress(address).unit ? "We couldn\u2019t verify this unit\u2019s listing history, so we haven\u2019t estimated a price." : "We couldn\u2019t confidently match your home to our property records, so we haven\u2019t estimated a price.") : "We found your home, but not enough closely matching sales to give you a useful price estimate yet.";
   const pendingQuestion = "Reply to this email to contact the team. Let\u2019s discuss your home and the next step together.";
   const priceHtml = available ? `<tr><td class="pad" style="padding:28px 30px 30px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #d9dfd6;border-top:4px solid #536961"><tr><td class="price-pad" style="padding:25px 24px"><p style="${label}">${midpoint ? "Preliminary estimated value" : "Preliminary price range"}</p><p class="hero-price" style="margin:0 0 9px;font-family:Arial,Helvetica,sans-serif;font-size:40px;font-weight:500;line-height:1.2;letter-spacing:-1px;color:#203b3c">${html(midpoint ? cad(midpoint) : range(v.low, v.high))}</p>${midpoint ? `<p class="price-range" style="margin:0 0 18px;font-family:Arial,Helvetica,sans-serif;font-size:22px;font-weight:500;line-height:1.4;color:#203b3c">${html(range(v.low, v.high))}<br><span style="font-size:12px;color:#53655e">Preliminary selling range \xB7 CAD</span></p>` : ""}<p style="margin:0 0 9px;font-size:13px;font-weight:700;line-height:1.5;color:#203b3c">${html(confidence)} \xB7 ${comps.length} selected sales</p><p style="${small}">A preliminary guide. Confirm current condition and the closest comparable sales before pricing.</p><p style="${small}margin-top:12px">A starting point for your selling plan, not an appraisal or a promised sale price.</p>${valueRangeGraphic(report)}${expectedHtml}</td></tr></table></td></tr>` : `<tr><td class="pad" style="padding:28px 30px"><p style="${label}">Your review is started</p><h2 style="margin:0 0 15px;font-family:Georgia,'Times New Roman',serif;font-size:29px;line-height:1.25;font-weight:400;color:#203b3c">${html(pendingTitle)}</h2>${paragraph(pendingBasis)}${paragraph(pendingQuestion)}<p style="${small}">No valuation has been produced yet. Your details are saved; you do not need to submit another request.</p>${expectedHtml}</td></tr>`;
   const soldRows = comps.map((c) => `<tr><td class="comp-info" valign="top" style="padding:16px 13px 16px 0;border-top:1px solid #dce3dc"><p style="margin:0 0 5px;font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:500;line-height:1.45;color:#203b3c">${html(c.address || "Address unavailable")}</p><p style="${small}">${html(compDetails(c))}</p>${c.geographyNote ? `<p style="${small}">${html(c.geographyNote)}</p>` : ""}${c.timeAdjustmentPct ? `<p style="${small}">Time-adjusted indication: ${html(cad(c.adjustedPrice))} (${html(c.timeAdjustmentPct)}%). Actual sale price shown at right.</p>` : ""}</td><td class="comp-price" align="right" valign="top" width="132" style="padding:16px 0;border-top:1px solid #dce3dc"><p style="margin:0 0 5px;font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:500;line-height:1.4;white-space:nowrap;color:#203b3c">${html(cad(c.soldPrice) || "Not recorded")}</p><p style="${small}">Sold${shortDate(c.soldDate) ? "<br>" + html(shortDate(c.soldDate)) : ""}</p></td></tr>`).join("");
