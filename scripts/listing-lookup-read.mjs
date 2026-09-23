@@ -10,12 +10,13 @@ const nonce=randomBytes(32).toString('hex'),config=JSON.parse(readFileSync('wran
 delete config.secrets;delete config.assets;delete config.triggers;
 config.main='worker-lookup-probe.js';config.vars=Object.fromEntries(version.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));config.vars.THM_LOOKUP_PROBE_KEY=nonce;
 // No customer data, reports, database changes or emails. Never deploy this version.
-writeFileSync('worker-lookup-probe.js',`export default {async fetch(request,env){
+writeFileSync('worker-lookup-probe.js',String.raw`import {detectOfferTiming} from './worker-v11.js';
+export default {async fetch(request,env){
  if(new URL(request.url).pathname!=='/probe'||request.headers.get('Authorization')!=='Bearer '+env.THM_LOOKUP_PROBE_KEY)return new Response('Not found',{status:404});
  const results=[];
  for(const [feed,token] of [['IDX',env.AMPRE_TOKEN],['VOW',env.AMPRE_VOW_TOKEN]]) {
-  const r=await fetch("https://query.ampre.ca/odata/Property('C13683220')",{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(8000)});
-  const d=await r.json().catch(()=>({}));results.push({feed,http:r.status,key:d.ListingKey,address:d.UnparsedAddress,standard:d.StandardStatus,mls:d.MlsStatus,contract:d.ContractStatus,transaction:d.TransactionType,display:d.InternetEntireListingDisplayYN,addressDisplay:d.InternetAddressDisplayYN});
+  const r=await fetch("https://query.ampre.ca/odata/Property('N13786784')",{headers:{Authorization:'Bearer '+token,Accept:'application/json'},signal:AbortSignal.timeout(8000)});
+  const d=await r.json().catch(()=>({}));results.push({feed,http:r.status,key:d.ListingKey,address:d.UnparsedAddress,modified:d.ModificationTimestamp,publicTiming:detectOfferTiming(d),offerFields:Object.entries(d).filter(([k,v])=>/remark|offer|presentation/i.test(k)&&typeof v==='string'&&v).map(([field,value])=>({field,timing:detectOfferTiming({PublicRemarks:value}),dates:value.match(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?\b|\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b/gi),times:value.match(/\b\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b/gi),mentionsOffers:/offers?/i.test(value),mentionsPreemptive:/pre.?emptive|bully/i.test(value)}))});
  }
  return Response.json({results},{headers:{'Cache-Control':'private, no-store'}});
 }};`);
