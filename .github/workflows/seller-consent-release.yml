@@ -33,8 +33,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           EXPECTED_ACTIVE_VERSION: 0666a0bf-3900-445b-b57d-97ed18673402
           EXPECTED_ACTIVE_SHA: 5ad6140a8c9d4aad9587c408ab3209adf107bf90615fe0dd4dfb3cec7e3256b7
-          CANDIDATE_VERSION_ID: ''
-          EXPECTED_CANDIDATE_SHA: ''
+          CANDIDATE_VERSION_ID: 'bef45e90-5003-4ff7-a051-4d722102b909'
+          EXPECTED_CANDIDATE_SHA: '5ad6140a8c9d4aad9587c408ab3209adf107bf90615fe0dd4dfb3cec7e3256b7'
           PUBLISH: ${{ contains(github.event.head_commit.message, '[consent-fix-release]') && 'true' || 'false' }}
         run: node scripts/seller-consent-release.mjs
       - uses: actions/upload-artifact@v4
