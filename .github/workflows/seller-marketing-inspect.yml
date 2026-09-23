@@ -1,0 +1,39 @@
+name: Inspect production for seller marketing
+on:
+  push:
+    branches: [feature/seller-marketing-20260923]
+    paths: [.github/workflows/seller-marketing-inspect.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Export current source and public assets without modifying production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+        run: |
+          node --input-type=module <<'JS'
+          import {mkdirSync,writeFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          const root='marketing-inspect',worker='prototype-1-torontohousemarket';
+          mkdirSync(root+'/modules',{recursive:true});mkdirSync(root+'/assets',{recursive:true});
+          const cf=async p=>{const r=await fetch('https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+p,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});const d=await r.json();if(!r.ok||!d.success)throw Error('Cloudflare read failed '+r.status);return d.result;};
+          const ds=await cf('/workers/scripts/'+worker+'/deployments');
+          const vs=ds.deployments[0].versions;if(vs.length!==1||vs[0].percentage!==100)throw Error('Expected single production version');
+          const id=vs[0].version_id,v=await cf('/workers/workers/'+worker+'/versions/'+id+'?include=modules');
+          const hashes={};for(const m of v.modules){if(!/^[a-zA-Z0-9_.-]+$/.test(m.name))throw Error('Review module path');const b=Buffer.from(m.content_base64,'base64');writeFileSync(root+'/modules/'+m.name,b);hashes[m.name]=createHash('sha256').update(b).digest('hex');}
+          const assets=['index.html','app.js','styles.css','admin.html','admin.js','admin.css','showing.html','showing.js','select-controls.js','form-inputs.js','address-input.js','address-search.html','seller.html','seller.js','seller.css'];
+          for(const p of assets){const r=await fetch('https://torontohousemarket.com/'+p,{signal:AbortSignal.timeout(20000)});if(!r.ok)throw Error('Asset '+p+' '+r.status);writeFileSync(root+'/assets/'+p,Buffer.from(await r.arrayBuffer()));}
+          const versionResponse=await fetch('https://torontohousemarket.com/api/version');const publicVersion=await versionResponse.json();
+          const manifest={activeVersion:id,mainModule:v.main_module,hashes,bindings:v.bindings.map(b=>({name:b.name,type:b.type})),schedules:await cf('/workers/scripts/'+worker+'/schedules'),publicVersion};
+          writeFileSync(root+'/manifest.json',JSON.stringify(manifest,null,2));console.log(JSON.stringify(manifest));
+          JS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: seller-marketing-production-baseline
+          path: marketing-inspect/
+          retention-days: 3
