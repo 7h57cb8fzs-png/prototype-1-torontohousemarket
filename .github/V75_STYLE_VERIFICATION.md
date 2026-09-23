@@ -99,3 +99,5 @@ Reviewed candidate e859eb93-c9c3-42f8-9e28-977ebc61ba39; module hash 05feaf71af7
 Reported: 761 Bay St 2809 and 2809-761 Bay St worked, but 2809 761 Bay St was misread as street number 2809. Added numeric unit-first recognition to the shared browser address control and server normalizer. All three resolve to 761 Bay Street Unit 2809. Numbered streets and ordinary addresses retain their prior parse. No form, comparable-selection, matching strictness, email, or queue changes. Scope gate now pins accepted baseline 061c6cad74858c795fd3afbf7b5312ec141e4c76 and allows only the two parsing locations plus asset cache-version updates.
 
 27 focused local regression tests passed. Release preflight checks all three reported formats without creating reports or sending emails.
+
+Preview workflow 35812637815 succeeded: responsive/navigation checks, 14 assets, four existing listing checks, and all three Bay Street format checks. Candidate 5778b355-72fc-4b5a-8ef4-91e4033c49d8; source hash 5530ff0ef9f69abc8eebd15c097d702521cd40f0dc6e7f34117679bf2585a94e.
