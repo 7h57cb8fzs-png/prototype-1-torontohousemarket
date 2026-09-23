@@ -28,3 +28,8 @@ test('below-range explanation is conditional; rendering never changes numbers or
  r.facts.list_price=1050000;assert.doesNotMatch(offerEmailLines(r).join(' '),/below the range/);
  r.facts.list_price=900000;r.valuation.available=false;assert.doesNotMatch(offerEmailLines(r).join(' '),/below the range/);
 });
+
+test('presentation time is separate from earlier registration deadline',()=>{
+ const result=extract(record('Offers (If Any) Will Be Reviewed On October 6 at 7:00 pm (EMAIL), register by 5:00 pm. Seller reserves the right to accept pre emptive offers.'),now);
+ assert.equal(result.type,'scheduled');assert.equal(result.date,'October 6');assert.equal(result.time,'7:00 PM');assert.equal(result.past,false);
+});

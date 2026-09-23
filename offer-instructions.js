@@ -17,6 +17,7 @@ export function extractOfferInstructions(record,now=new Date()){
   for(let clause of value.split(/;|\n|[.!?]\s+(?=[A-Z])/)){
    // Exclude acceptance-expiry instructions, even when appended to an offer sentence.
    clause=clause.split(/\birrevocab\w*\b/i)[0];
+   clause=clause.split(/\b(?:register|registration)\s+(?:by|before|no later)/i)[0];
    if(!/\boffers?\b|presentation/i.test(clause)||!/present|review|consider|accept|submit|register|deadline|offers?\s+(?:on|date|by|at|due|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(clause))continue;
    const dates=[...clause.matchAll(datePattern)];if(!dates.length)continue;
    if(dates.length>1){ambiguous=true;continue;}
