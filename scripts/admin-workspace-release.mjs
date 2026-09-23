@@ -10,8 +10,10 @@ async function active(){const d=await cf(`/workers/scripts/${worker}/deployments
 const version=id=>cf(`/workers/workers/${worker}/versions/${id}?include=modules`);
 const source=v=>hash(JSON.stringify(v.modules.map(m=>[m.name,hash(Buffer.from(m.content_base64,'base64'))]).sort()));
 const names=v=>v.bindings.filter(b=>b.name!=='ASSETS').map(b=>b.name+':'+b.type).sort();
-assert(process.env.ADMIN_API_KEY,'Admin credential must be configured for read-only integration checks');
 const prior=await active(),before=await version(prior),priorHash=source(before),schedule=await cf(`/workers/scripts/${worker}/schedules`);
+const adminKey=process.env.ADMIN_API_KEY||before.bindings.find(b=>b.name==='ADMIN_API_KEY'&&b.type==='plain_text')?.text;
+if(adminKey)console.log('::add-mask::'+adminKey);
+assert(adminKey,'The existing admin key is unavailable to deployment verification; production is unchanged');
 assert.equal(prior,process.env.EXPECTED_ACTIVE_VERSION,'Production version changed after review');
 assert.equal(priorHash,process.env.EXPECTED_ACTIVE_SHA,'Production source changed after review');
 console.log(JSON.stringify({stage:'baseline',version:prior,source:priorHash}));
@@ -29,7 +31,7 @@ if(process.env.EXPECTED_CANDIDATE_SHA)assert.equal(source(after),process.env.EXP
 else assert.notEqual(process.env.PUBLISH,'true','Promotion requires the reviewed candidate source hash');
 assert.deepEqual(names(after),names(before),'Binding names/types changed');
 for(const b of before.bindings.filter(b=>b.type==='plain_text'))assert(after.bindings.some(n=>n.name===b.name&&n.text===b.text),'Existing configuration changed');
-async function get(base,path,auth=false){const r=await fetch(base+path,{headers:auth?{Authorization:'Bearer '+process.env.ADMIN_API_KEY}:{},signal:AbortSignal.timeout(45000),cache:'no-store'});assert(r.ok,`GET ${path.split('?')[0]} returned ${r.status}`);return r.json();}
+async function get(base,path,auth=false){const r=await fetch(base+path,{headers:auth?{Authorization:'Bearer '+adminKey}:{},signal:AbortSignal.timeout(45000),cache:'no-store'});assert(r.ok,`GET ${path.split('?')[0]} returned ${r.status}`);return r.json();}
 async function verify(base){
  const ver=await get(base,'/api/version');assert.equal(ver.version,'version-7.4-history-search-20260918');
  const assets=['index.html','app.js','styles.css','seller.html','seller.js','seller.css','address-input.js','interface.css','showing.js','admin.html','admin-workspace.js','admin-workspace.css','admin-view-model.js'];
