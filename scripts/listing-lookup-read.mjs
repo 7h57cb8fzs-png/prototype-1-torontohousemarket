@@ -10,19 +10,17 @@ const nonce=randomBytes(32).toString('hex'),config=JSON.parse(readFileSync('wran
 delete config.secrets;delete config.assets;delete config.triggers;
 config.main='worker-lookup-probe.js';config.vars=Object.fromEntries(version.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));config.vars.THM_LOOKUP_PROBE_KEY=nonce;
 // No customer data, reports, database changes or emails. Never deploy this version.
-writeFileSync('worker-lookup-probe.js',`import worker,{resolveSellerSubject,buildSellerEvidence,sellerQueryRows} from './worker-v11.js';
+writeFileSync('worker-lookup-probe.js',`import {resolveSellerSubject,sellerQueryRows} from './worker-v11.js';
 export default {async fetch(request,env){
  if(new URL(request.url).pathname!=='/probe'||request.headers.get('Authorization')!=='Bearer '+env.THM_LOOKUP_PROBE_KEY)return new Response('Not found',{status:404});
- const protectedEnv={...env,AMPRE_TOKEN:env.AMPRE_VOW_TOKEN};
- const preflight=await worker.fetch(new Request("https://torontohousemarket.com/api/property?validate_only=1&q=111%20Saint%20Clair%20Avenue%20West%2C%20Toronto"),env,{});
- const unitPrompt=(await preflight.json()).unitRequired===true;
- const diagnostics={};
- const subject=await resolveSellerSubject('111 Saint Clair Avenue West Unit 1227, Toronto',{city:'Toronto'},protectedEnv,diagnostics);
- const rows=await sellerQueryRows(["contains(StreetName,'Clair') and contains(StreetNumber,'111') and contains(City,'Toronto')"],protectedEnv,300);
- const unitRows=rows.rows.filter(r=>String(r.UnitNumber||'').includes('1227')||String(r.UnparsedAddress||'').includes('1227')).map(r=>({number:r.StreetNumber,street:r.StreetName,suffix:r.StreetSuffix,direction:r.StreetDirSuffix,prefix:r.StreetDirPrefix,unit:r.UnitNumber,city:r.City,address:r.UnparsedAddress,postal:r.PostalCode}));
- const buildingDirections=[...new Set(rows.rows.filter(r=>String(r.StreetNumber)==='111'&&r.StreetDirSuffix).map(r=>JSON.stringify({street:r.StreetName,suffix:r.StreetSuffix,direction:r.StreetDirSuffix,postal:r.PostalCode})))].map(x=>JSON.parse(x));
- const evidence=subject?await buildSellerEvidence(subject,protectedEnv):null;
- return Response.json({buildingDirections,unitRows,unitPrompt,subjectMatched:!!subject,unit:subject?.UnitNumber||null,queries:diagnostics.queries?.map(q=>({rows:q.rows,exactMatches:q.exactMatches,complete:q.complete})),comparableCount:evidence?.comps?.length??evidence?.comparables?.length??null,evidenceAvailable:evidence?.available??false,basis:evidence?.basis||null},{headers:{'Cache-Control':'private, no-store'}});
+ const results=[];
+ for(const [feed,token] of [['IDX',env.AMPRE_TOKEN],['VOW',env.AMPRE_VOW_TOKEN]]) {
+  const scoped={...env,AMPRE_TOKEN:token},diagnostics={};
+  const rows=await sellerQueryRows(["contains(StreetName,'Bastion') and contains(StreetNumber,'35') and contains(UnitNumber,'1720')"],scoped,300);
+  const subject=await resolveSellerSubject('35 Bastion Street Unit 1720, Toronto',{city:'Toronto'},scoped,diagnostics);
+  results.push({feed,complete:rows.complete,statuses:rows.audit.map(a=>a.status),matches:rows.rows.map(r=>({key:r.ListingKey,address:r.UnparsedAddress,number:r.StreetNumber,street:r.StreetName,suffix:r.StreetSuffix,unit:r.UnitNumber,city:r.City,status:r.StandardStatus,mlsStatus:r.MlsStatus,transaction:r.TransactionType,display:r.InternetEntireListingDisplayYN,addressDisplay:r.InternetAddressDisplayYN})),subjectMatched:!!subject,queries:diagnostics.queries?.map(q=>({filter:q.filter,rows:q.rows,exactMatches:q.exactMatches,complete:q.complete}))});
+ }
+ return Response.json({results},{headers:{'Cache-Control':'private, no-store'}});
 }};`);
 writeFileSync('wrangler.lookup-probe.json',JSON.stringify(config));
 let output;try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config','wrangler.lookup-probe.json'],{encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:12e6});}catch{throw Error('Diagnostic preview upload failed; configuration output withheld.');}
