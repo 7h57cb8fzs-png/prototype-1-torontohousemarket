@@ -35,7 +35,7 @@ jobs:
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           EXPECTED_ACTIVE_VERSION: bef45e90-5003-4ff7-a051-4d722102b909
           EXPECTED_ACTIVE_SHA: 5ad6140a8c9d4aad9587c408ab3209adf107bf90615fe0dd4dfb3cec7e3256b7
-          CANDIDATE_VERSION_ID: ''
-          EXPECTED_CANDIDATE_SHA: ''
+          CANDIDATE_VERSION_ID: 'b696da17-c413-425b-9d22-fa783ecd5a0c'
+          EXPECTED_CANDIDATE_SHA: '00cea2171a8c2f082035a56537f8a6948acd12e0748949f3927fad9f052c669c'
           PUBLISH: ${{ contains(github.event.head_commit.message, '[admin2-release]') && 'true' || 'false' }}
         run: node scripts/admin-insights-release.mjs
