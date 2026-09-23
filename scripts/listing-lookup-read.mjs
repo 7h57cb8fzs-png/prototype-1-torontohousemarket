@@ -19,9 +19,10 @@ export default {async fetch(request,env){
  const diagnostics={};
  const subject=await resolveSellerSubject('111 Saint Clair Avenue West Unit 1227, Toronto',{city:'Toronto'},protectedEnv,diagnostics);
  const rows=await sellerQueryRows(["contains(StreetName,'Clair') and contains(StreetNumber,'111') and contains(City,'Toronto')"],protectedEnv,300);
- const unitRows=rows.rows.filter(r=>String(r.UnitNumber||'').includes('1227')||String(r.UnparsedAddress||'').includes('1227')).map(r=>({number:r.StreetNumber,street:r.StreetName,suffix:r.StreetSuffix,direction:r.StreetDirSuffix,prefix:r.StreetDirPrefix,unit:r.UnitNumber,city:r.City,address:r.UnparsedAddress}));
+ const unitRows=rows.rows.filter(r=>String(r.UnitNumber||'').includes('1227')||String(r.UnparsedAddress||'').includes('1227')).map(r=>({number:r.StreetNumber,street:r.StreetName,suffix:r.StreetSuffix,direction:r.StreetDirSuffix,prefix:r.StreetDirPrefix,unit:r.UnitNumber,city:r.City,address:r.UnparsedAddress,postal:r.PostalCode}));
+ const buildingDirections=[...new Set(rows.rows.filter(r=>String(r.StreetNumber)==='111'&&r.StreetDirSuffix).map(r=>JSON.stringify({street:r.StreetName,suffix:r.StreetSuffix,direction:r.StreetDirSuffix,postal:r.PostalCode})))].map(x=>JSON.parse(x));
  const evidence=subject?await buildSellerEvidence(subject,protectedEnv):null;
- return Response.json({unitRows,unitPrompt,subjectMatched:!!subject,unit:subject?.UnitNumber||null,queries:diagnostics.queries?.map(q=>({rows:q.rows,exactMatches:q.exactMatches,complete:q.complete})),comparableCount:evidence?.comps?.length??evidence?.comparables?.length??null,evidenceAvailable:evidence?.available??false,basis:evidence?.basis||null},{headers:{'Cache-Control':'private, no-store'}});
+ return Response.json({buildingDirections,unitRows,unitPrompt,subjectMatched:!!subject,unit:subject?.UnitNumber||null,queries:diagnostics.queries?.map(q=>({rows:q.rows,exactMatches:q.exactMatches,complete:q.complete})),comparableCount:evidence?.comps?.length??evidence?.comparables?.length??null,evidenceAvailable:evidence?.available??false,basis:evidence?.basis||null},{headers:{'Cache-Control':'private, no-store'}});
 }};`);
 writeFileSync('wrangler.lookup-probe.json',JSON.stringify(config));
 let output;try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config','wrangler.lookup-probe.json'],{encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:12e6});}catch{throw Error('Diagnostic preview upload failed; configuration output withheld.');}
