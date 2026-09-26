@@ -42,9 +42,14 @@ const oldMls=new Set();
 const inspect=value=>{if(Array.isArray(value))return value.forEach(inspect);if(value&&typeof value==='object'){for(const [key,v] of Object.entries(value)){if(/address/i.test(key)&&typeof v==='string')excluded.add(hash(norm(v)));if(/listingKey|mls/i.test(key)&&typeof v==='string'&&/^[A-Z]\d{7,9}$/.test(v))oldMls.add(v);inspect(v);}}};
 for(const f of fs.readdirSync('tests').filter(f=>f.endsWith('.json')))inspect(JSON.parse(fs.readFileSync('tests/'+f,'utf8')));
 const randomSeed=randomBytes(16).toString('hex');
-const wanted=round==='initial'?{seller:20,buyer:0}:round==='mixed'?{seller:10,buyer:10}:{seller:5,buyer:5};
+const wanted=round==='buyer_retry'?{seller:0,buyer:0}:round==='initial'?{seller:20,buyer:0}:round==='mixed'?{seller:10,buyer:10}:{seller:5,buyer:5};
 const cases=round==='initial'?baseline.reports.map((r,i)=>({id:'recent-'+(i+1),mode:'seller',address:r.report_payload.facts.address,originalReportId:r.id,group:'recent'})):[];
 const catalogAll=[];
+if(round==='buyer_retry'){
+  for(let city=0;city<7;city++)catalogAll.push(...(await call(candidateAdapter,'/catalog?city='+city+'&mode=buyer')).rows);
+  for(const target of JSON.parse(fs.readFileSync('scripts/lookup-qa-retry.json','utf8'))){const c=catalogAll.find(c=>hash(norm(c.address))===target.hash);assert(c,'Exact prior Buyer retry case missing');cases.push({...c,id:target.id,lookup:target.lookup,group:'buyer_retry'});}
+  assert.equal(cases.length,10);
+}
 for(const mode of ['seller','buyer']){
   if(!wanted[mode])continue;
   const pools=[];

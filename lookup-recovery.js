@@ -16,7 +16,7 @@ export async function chooseLookupPlans(env, purpose, facts, plans) {
         text:{format:{type:'json_schema',name:'thm_lookup_plans',strict:true,schema:{type:'object',additionalProperties:false,properties:{ids:{type:'array',items:{type:'string',enum:plans.map(p=>p.id)}}},required:['ids']}}}})
     });
     const data=await response.json().catch(()=>null);
-    if(runtime)(runtime.aiUsage ||= []).push({purpose:'lookup_'+purpose,model:audit.model,http_status:response.status,usage:data?.usage||null});
+    if(runtime)(runtime.aiUsage ||= []).push({purpose:'lookup_'+purpose,model:audit.model,resolved_model:data?.model||null,request_id:data?.id||null,http_status:response.status,usage:data?.usage||null});
     if(!response.ok)throw Error('OpenAI HTTP '+response.status);
     const output=data.output_text || data.output?.flatMap(o=>o.content||[]).filter(c=>c.type==='output_text').map(c=>c.text).join('');
     const ids=[...new Set(JSON.parse(output).ids)].slice(0,3);

@@ -481,7 +481,14 @@ export function applyExpertRecovery(report, expert) {
     sourceUrl: c.sourceUrl || null,
   }));
   const indications = comps.map(c => Number(c.adjustedIndication)).filter(n => Number.isFinite(n) && n > 0).sort((a,b)=>a-b);
-  if (indications.length < 3) return report;
+  if (indications.length < 3) {
+    if(report.valuation?.available || !comps.length)return report;
+    return {...report,comparables:comps,
+      valuation:{...(report.valuation||{}),available:false,low:null,midpoint:null,high:null,confidence:'Limited',basis:`${comps.length} genuine sold comparison${comps.length===1?' was':'s were'} recovered, but at least three sufficiently relevant sales are needed for a price estimate.`},
+      comparable_policy:{...(report.comparable_policy||{}),expertMode:true,evidenceOnly:true,windowDays:365},
+      expert_comp_mode:{used:true,evidence_only:true,selectedCount:comps.length},
+      value_rating:{available:false,score:null,label:'More evidence needed',reason:'Too few sufficiently relevant sales for an automated valuation.'}};
+  }
   const midpoint = median(indications);
   const spread = Math.max(...indications) - Math.min(...indications);
   const margin = Math.max(midpoint * (indications.length >= 4 ? 0.06 : 0.09), spread * 0.35);
@@ -602,7 +609,7 @@ async function openAiJson(env, name, schema, input, webSearch) {
       body: JSON.stringify(body),
     });
     const data = await response.json().catch(() => null);
-    if (env.THM_REPORT_RUNTIME) (env.THM_REPORT_RUNTIME.aiUsage ||= []).push({ model: body.model, purpose: name, http_status:response.status, usage: data?.usage || null });
+    if (env.THM_REPORT_RUNTIME) (env.THM_REPORT_RUNTIME.aiUsage ||= []).push({ model: body.model, resolved_model:data?.model||null, request_id:data?.id||null, purpose: name, http_status:response.status, usage: data?.usage || null });
     if (!response.ok) throw new Error(`OpenAI ${response.status}: ${clean(data?.error?.message || "request failed")}`);
     const text = responseOutputText(data);
     if (!text) throw new Error("OpenAI returned no structured output.");

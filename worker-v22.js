@@ -3,8 +3,8 @@ import { adminOps } from './admin-api.js';
 import { homeChat } from './home-chat.js';
 import { homeSearch } from './discovery-search.js';
 import legacyApp, { deliverEmailJob } from './worker-v11.js';
-import reportCore, { processV7ReportJobs } from './worker-v12.js';
-import { reportFetch } from './report-runtime.js';
+import reportCore, { processV7ReportJobs, buildVersion7Report } from './worker-v12.js';
+import { reportFetch, createReportRuntime, reportStage } from './report-runtime.js';
 
 const VERSION='version-7.6-luna-lookup-history-20260926';
 const LUNA='gpt-5.6-luna';
@@ -19,6 +19,12 @@ export default {
     if(url.pathname.startsWith('/api/admin/ops/')) return adminOps(request,env);
     if(url.pathname==='/api/home-chat' && request.method==='POST') return homeChat(request,env,ctx,legacyApp);
     if(url.pathname==='/api/home-search' && request.method==='GET') return homeSearch(request,env,ctx,legacyApp);
+    if(url.pathname==='/api/admin/seller-preview' && request.method==='GET'){
+      const runtime=createReportRuntime({id:'admin-preview-'+crypto.randomUUID(),attempts:1});
+      const scoped={...coreEnv(env),THM_REPORT_RUNTIME:runtime,
+        THM_BUILD_PREVIEW_REPORT:(e,lead,property,id)=>reportStage(e,'analysis',55000,x=>buildVersion7Report(x,lead,property,id))};
+      return legacyApp.fetch(request,scoped,ctx);
+    }
     if(url.pathname==='/api/version') return json({
       ok:true,version:VERSION,release:'7.6',chat_model:LUNA,chat_search:'neighbourhood and brokerage scoped MLS queries',
       valuation:'Estimated Market Value + Likely Market Range',
@@ -122,7 +128,7 @@ function complexity(p){
 async function terra(env,p){
   const schema={type:'object',additionalProperties:false,properties:{estimated_market_value:{type:'number'},range_low:{type:'number'},range_high:{type:'number'},confidence:{type:'string',enum:['Moderate','Low','Limited']},market_read:{type:'string'},strategy:{type:'string'}},required:['estimated_market_value','range_low','range_high','confidence','market_read','strategy']};
   const r=await reportFetch(env,OPENAI,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${env.OPENAI_API_KEY}`},signal:AbortSignal.timeout(22000),body:JSON.stringify({model:TERRA,reasoning:{effort:'medium'},input:[{role:'system',content:'Final adjudication only for an exceptionally complex residential valuation. Use only supplied genuine MLS evidence. Never invent sales. Determine Estimated Market Value first, then uncertainty range. Return JSON only.'},{role:'user',content:JSON.stringify({subject:p.facts,evidence_quality:p.evidence_quality,comparables:(p.comparables||[]).slice(0,8)})}],text:{format:{type:'json_schema',name:'thm_v73_terra',strict:true,schema}}})});
-  const d=await r.json();if(!r.ok)throw new Error(`Terra ${r.status}`);const text=d.output_text||(d.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('');return JSON.parse(text);
+  const d=await r.json();if(env.THM_REPORT_RUNTIME)(env.THM_REPORT_RUNTIME.aiUsage ||= []).push({model:TERRA,resolved_model:d.model||null,request_id:d.id||null,purpose:'complexity_review',http_status:r.status,usage:d.usage||null});if(!r.ok)throw new Error(`Terra ${r.status}`);const text=d.output_text||(d.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('');return JSON.parse(text);
 }
 function applyTerra(p,t,c){const mv=round(Number(t.estimated_market_value)),low=round(Number(t.range_low)),high=round(Number(t.range_high));if(!(low>0&&mv>=low&&high>=mv&&p.comparables?.length>=3))return p;p.valuation={...(p.valuation||{}),available:true,estimated_market_value:mv,market_value:mv,midpoint:mv,low,high,likely_market_range:{low,high},confidence:t.confidence};p.decision_summary={...(p.decision_summary||{}),estimated_market_value:mv,likely_market_range:{low,high},evidence_confidence:t.confidence,market_read:t.market_read,strategy:t.strategy};p.model_policy={primary:LUNA,terra_review:true,terra_model:TERRA,terra_reason:c.flags,complexity_score:c.score};return p;}
 

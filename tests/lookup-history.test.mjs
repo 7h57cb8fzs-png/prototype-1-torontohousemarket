@@ -28,7 +28,7 @@ test('recovery rejects undated, conditional, stale, other-city and duplicate-hom
 test('duplicate model choices cannot manufacture three sales; three unique indications have finite ranges',()=>{
   const candidates=[1,2,3].map(n=>({id:String(n),listingKey:'C0000000'+n,soldPrice:1000000+n*10000,address:`${n} Example` }));
   const one=normalizeExpertResult({comparables:[{id:'1'},{id:'1'},{id:'1'}]},candidates,'ampre_vow');
-  const base={valuation:{available:false}};assert.equal(applyExpertRecovery(base,one),base);
+  const base={valuation:{available:false}};const partial=applyExpertRecovery(base,one);assert.equal(partial.valuation.available,false);assert.equal(partial.comparables.length,1);
   const three=normalizeExpertResult({comparables:candidates.map(c=>({id:c.id}))},candidates,'ampre_vow');
   const report=applyExpertRecovery(base,three);assert.equal(report.valuation.available,true);assert(Number.isFinite(report.valuation.low));assert(report.valuation.high>report.valuation.low);
 });

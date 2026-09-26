@@ -6412,8 +6412,8 @@ async function sellerPreview(request, env) {
   if (lead?.lead_mode !== "seller" || !lead.property_snapshot?.sellerProfile) return json7({ ok: false, error: "Seller details not found." }, 404);
   try {
     const property2 = await loadSellerPropertyForReport(env, lead, "seller-preview");
-    const report = await buildSellerReport({ ...env, AI: null }, lead, property2, "seller-preview");
-    return json7({ ok: true, readOnly: true, address: property2.address, facts: report.facts, valuation: report.valuation, history: report.seller.evidence.history, comparables: report.comparables, policy: report.comparable_policy, activeComparables: report.active_comparables, diagnostics: property2.sellerEvidence.diagnostics, ...address ? { emailPreview: sellerReportEmail(property2.address, report) } : {} }, 200, { "Cache-Control": "private, no-store" });
+    const report = env.THM_BUILD_PREVIEW_REPORT ? await env.THM_BUILD_PREVIEW_REPORT(env,lead,property2,"seller-preview") : await buildSellerReport({ ...env, AI: null }, lead, property2, "seller-preview");
+    return json7({ ok: true, readOnly: true, address: property2.address, facts: report.facts, valuation: report.valuation, history: report.seller.evidence.history, propertyHistory:report.property_history||property2.propertyHistory, aiUsage:env.THM_REPORT_RUNTIME?.aiUsage||[], comparables: report.comparables, policy: report.comparable_policy, activeComparables: report.active_comparables, diagnostics: property2.sellerEvidence.diagnostics, ...address ? { emailPreview: sellerReportEmail(property2.address, report) } : {} }, 200, { "Cache-Control": "private, no-store" });
   } catch {
     return json7({ ok: false, error: "The evidence check could not be completed. No email was sent." }, 502);
   }

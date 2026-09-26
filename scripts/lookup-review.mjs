@@ -7,6 +7,7 @@ export function review(d){
   const report=d?.report, comps=report?.comparables||[],v=report?.valuation||{},f=report?.facts||{};
   if(!report)return {completed:false,available:false,issues:['report_failed'],error:d?.error};
   const issues=[];
+  if(!f.property_type || f.property_type==='unknown')issues.push('unresolved_subject');
   const ids=comps.map(c=>c.listingKey).filter(Boolean),addresses=comps.map(c=>norm(c.address));
   if(new Set(ids).size<ids.length||new Set(addresses).size<addresses.length)issues.push('duplicate_comparable');
   if(addresses.includes(norm(f.address)) || comps.some(c=>(report.seller?.evidence?.history||[]).some(h=>h.listingKey===c.listingKey)))issues.push('subject_used_as_comparable');

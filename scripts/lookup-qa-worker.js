@@ -61,7 +61,8 @@ export default {async fetch(request,env){
       property=await reportStage(scoped,'mls_evidence',50000,e=>loadPropertyForReport(e,lead,'lookup-qa-'+c.id));
       report=await reportStage(scoped,'analysis',55000,e=>buildVersion7Report(e,lead,property,'lookup-qa-'+c.id));
     }catch(e){error=String(e?.message||e);}
-    const rendered=report?(c.mode==='seller'?sellerReportEmail(c.address,report):propertyReportEmail(c.address,report)):null;
-    return Response.json({case:c,report,error,telemetry:runtimeSummary(runtime),diagnostics:property?.sellerEvidence?.diagnostics||property?.comparableContext?.diagnostics||null,html:rendered?.html||null,text:rendered?.text||null},{headers:{'Cache-Control':'private, no-store','X-Robots-Tag':'noindex'}});
+    let rendered=null,renderError=null;
+    if(report)try{rendered=c.mode==='seller'?sellerReportEmail(c.address,report):propertyReportEmail(c.address,{},report);}catch(e){renderError=String(e?.message||e);}
+    return Response.json({case:c,report,error,renderError,telemetry:runtimeSummary(runtime),diagnostics:property?.sellerEvidence?.diagnostics||property?.comparableContext?.diagnostics||null,html:rendered?.html||null,text:rendered?.text||null},{headers:{'Cache-Control':'private, no-store','X-Robots-Tag':'noindex'}});
   }catch(e){return Response.json({error:String(e?.message||e)},{status:500,headers:{'Cache-Control':'no-store'}});}
 }};
