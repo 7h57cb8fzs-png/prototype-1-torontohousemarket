@@ -39,12 +39,12 @@ await verify(preview);
 // is a non-exportable Cloudflare secret. It can reach this exact preview only.
 const cases=['1469 Venta Avenue, Mississauga','4 Alma Court, Richmond Hill','60 Disera Drive Unit 1404, Vaughan','8 The Esplanade Unit 5403, Toronto'];
 let adapter=null,nonce=null;
-if(!configuredAdmin){
+if(!configuredAdmin && process.env.PUBLISH!=='true'){
  nonce=randomBytes(32).toString('hex');console.log('::add-mask::'+nonce);
  const expires=Date.now()+600000;
  const code=`export default {async fetch(req,env){const u=new URL(req.url);if(req.method!=='GET'||u.pathname!=='/check'||Date.now()>${expires}||req.headers.get('Authorization')!=='Bearer '+env.THM_SELLER_QA_NONCE)return new Response('Not found',{status:404});const cases=${JSON.stringify(cases)};const i=Number(u.searchParams.get('case'));if(!Number.isInteger(i)||i<0||i>=cases.length)return new Response('Not found',{status:404});const r=await fetch(${JSON.stringify(preview)}+'/api/admin/seller-preview?address='+encodeURIComponent(cases[i]),{headers:{Authorization:'Bearer '+env.ADMIN_API_KEY},signal:AbortSignal.timeout(110000)});const d=await r.json();return Response.json({http:r.status,ok:d.ok,readOnly:d.readOnly,facts:d.facts,valuation:d.valuation,policy:d.policy,history:d.history,comparableCount:d.comparables?.length||0,activeComparableCount:d.activeComparables?.length||0,error:d.error},{headers:{'Cache-Control':'private, no-store','X-Robots-Tag':'noindex'}});}};`;
  fs.writeFileSync('worker-seller-mls-acceptance.js',code);
- const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));delete c.secrets;delete c.assets;delete c.triggers;c.main='worker-seller-mls-acceptance.js';c.vars={...plain,THM_SELLER_QA_NONCE:nonce};adapter=upload(c,'wrangler.seller-mls-acceptance.json');
+ const c=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));delete c.secrets;delete c.assets;delete c.triggers;c.main='worker-seller-mls-acceptance.js';c.compatibility_flags=[...new Set([...(c.compatibility_flags||[]),'global_fetch_strictly_public'])];c.vars={...plain,THM_SELLER_QA_NONCE:nonce};adapter=upload(c,'wrangler.seller-mls-acceptance.json');
  assert.notEqual(adapter.id,candidate,'Never promote the diagnostic adapter');
 }
 async function evidence(i,base=preview){
