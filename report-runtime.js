@@ -21,7 +21,7 @@ export function runtimeSummary(runtime) {
     processing_ms: Date.now() - runtime.started, queue_wait_ms: runtime.queueWaitMs,
     request_count: runtime.requests, requests_by_service: runtime.byService,
     candidate_rows_retained: runtime.rawRows.size, stages: runtime.stages,
-    ai_usage: runtime.aiUsage || [] };
+    ai_usage: runtime.aiUsage || [], lookup_recovery: runtime.lookupRecovery || [] };
 }
 export async function reportFetch(env, input, init = {}, lifecycle = false) {
   // AMPRE's OData query parser needs RFC 3986 spaces. Form-style '+' makes

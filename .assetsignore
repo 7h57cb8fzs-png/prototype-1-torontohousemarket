@@ -37,3 +37,7 @@ seller-marketing.js
 seller-marketing-template.js
 
 seller-mls-input.js
+
+lookup-recovery.js
+property-history.js
+.qa*

@@ -1,0 +1,35 @@
+name: Read-only Luna lookup and report comparison
+on:
+  push:
+    branches: [fix/luna-lookup-history-20260926]
+    paths: [.github/workflows/lookup-qa.yml]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify lookup and historical evidence safeguards
+        run: node --test tests/lookup-history.test.mjs tests/seller-mls-only.test.mjs tests/seller-v73-policy.test.mjs
+      - name: Compare protected reports without database writes or emails
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          EXPECTED_ACTIVE_VERSION: 5fd52d27-0890-401b-a771-54e590d3177a
+          EXPECTED_ACTIVE_SHA: e72af43addf85b4c04b3ea92e3daa34b272c2ca15d3c3785b93f4405359b3957
+          QA_ROUND: initial
+        run: node scripts/lookup-qa.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lookup-qa-initial
+          path: qa-output/
+          retention-days: 2
+          if-no-files-found: ignore

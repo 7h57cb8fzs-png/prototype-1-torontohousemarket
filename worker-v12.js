@@ -4,12 +4,15 @@ import legacyApp, {
   deliverEmailJob,
   loadPropertyForReport,
   startReportHeartbeat,
+  sellerHistoryParsedAddress, sellerHistoryMatches, sellerHomeKey, sellerSameHome, exactComparableType, sellerComparableGeography,
 } from "./worker-v11.js";
+import {chooseLookupPlans} from './lookup-recovery.js';
+import {historyEvent, summarizePropertyHistory} from './property-history.js';
 
 const VERSION = "version-7-openai-expert-v120-20260916";
 const AMPRE = "https://query.ampre.ca/odata";
 const OPENAI_RESPONSES = "https://api.openai.com/v1/responses";
-const DEFAULT_OPENAI_MODEL = "gpt-5.6-terra";
+const DEFAULT_OPENAI_MODEL = "gpt-5.6-luna";
 
 export default {
   async fetch(request, env, ctx) {
@@ -189,6 +192,9 @@ async function processV7ReportJobs(env, limit = 1) {
 
 async function buildVersion7Report(env, lead, property, requestId) {
   let report = await buildPhase6Report(env, lead, property, requestId);
+  const historyParsed=sellerHistoryParsedAddress(property.address||'');
+  const historyRows=[...(env.THM_REPORT_RUNTIME?.rawRows?.values()||[])].filter(r=>sellerHistoryMatches(historyParsed,r,historyParsed.city||property.city));
+  report.property_history=property.propertyHistory || summarizePropertyHistory(historyRows.map(historyEvent));
   const sellerVerified = lead.lead_mode !== "seller" || (report.seller?.evidence?.subjectMatched ?? report.seller?.evidence?.listingMatched) === true;
   const needsExpert = sellerVerified && shouldUseExpertComp(report);
 
@@ -277,6 +283,15 @@ async function collectBroadSoldPool(env, property, seller = false) {
     rows.push(...batch);
     if (soldCandidates(property, rows).length >= 35) break;
   }
+  if (soldCandidates(property, rows).length < 8) {
+    const plans=[];
+    const street=sellerHistoryParsedAddress(property.address||'');
+    if(street.number&&street.name)plans.push({id:'same_building',filter:`contains(StreetName,'${odata(street.name.split(/\s+/).sort((a,b)=>b.length-a.length)[0])}') and contains(StreetNumber,'${odata(street.number)}')`,reason:'Find verified same-building sales, preserving condo unit identities.'});
+    for(const [i,name] of [...new Set([community.toUpperCase(),community.toLowerCase(),...community.split(/[ -]/).filter(s=>s.length>4)])].entries())if(name)plans.push({id:'community_'+i,filter:`contains(CityRegion,'${odata(name)}')`,reason:'Recover alternate community field case or compound labels; locality checked after retrieval.'});
+    const recovery=await chooseLookupPlans(env,'comparables',{address:property.address,community,city,postal,eligibleCount:soldCandidates(property,rows).length},plans.filter(p=>!searches.includes(p.filter)));
+    if(env.THM_REPORT_RUNTIME)(env.THM_REPORT_RUNTIME.lookupRecovery ||= []).push(recovery.audit);
+    for(const plan of recovery.plans){rows.push(...await tailQuery(plan.filter,token,300,env));if(soldCandidates(property,rows).length>=12)break;}
+  }
   return soldCandidates(property, rows).slice(0, 60);
 }
 
@@ -306,24 +321,27 @@ async function tailQuery(filter, token, limit, env = {}) {
   return rows;
 }
 
-function soldCandidates(subject, rows) {
+export function soldCandidates(subject, rows) {
   const seen = new Set();
+  const parsed=sellerHistoryParsedAddress(subject.address||'');
+  const subjectRaw={UnparsedAddress:subject.address,StreetNumber:parsed.number,StreetName:parsed.name,StreetSuffix:parsed.suffix,StreetDirSuffix:parsed.direction,UnitNumber:parsed.unit,City:subject.city,CityRegion:subject.cityRegion,PostalCode:subject.postalCode,PropertySubType:subject.propertySubType,PropertyType:subject.propertyType};
   const subjectCondo = /condo|condominium/i.test(`${subject.propertyType || ""} ${subject.propertySubType || ""}`);
   const subjectAddress = normalizeAddress(subject.address);
-  return (rows || []).filter(r => {
-    const key = r?.ListingKey || `${r?.UnparsedAddress}|${r?.PurchaseContractDate}|${r?.ClosePrice}`;
+  return [...(rows || [])].sort((a,b)=>Date.parse(b.PurchaseContractDate||b.SoldDate||b.CloseDate||0)-Date.parse(a.PurchaseContractDate||a.SoldDate||a.CloseDate||0)).filter(r => {
+    const key = sellerHomeKey(r) || r?.ListingKey;
     if (!key || seen.has(key)) return false;
-    seen.add(key);
     const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""} ${r?.TransactionType || ""}`;
-    if (!/sold|closed|deal firm/i.test(status) || /lease|rent/i.test(status)) return false;
+    if (!/sold|closed|deal firm/i.test(status) || /lease|rent|conditional|sold cond/i.test(status)) return false;
     const price = money(r?.ClosePrice || r?.SoldPrice || r?.SalePrice || r?.FinalSalePrice);
-    const sold = new Date(r?.PurchaseContractDate || r?.SoldDate || r?.CloseDate || r?.ModificationTimestamp || "");
+    const sold = new Date(r?.PurchaseContractDate || r?.SoldDate || r?.CloseDate || "");
     if (!(price > 50000) || !Number.isFinite(sold.getTime())) return false;
     const age = (Date.now() - sold.getTime()) / 864e5;
-    if (age < 0 || age > 900) return false;
+    if (age < 0 || age > 365) return false;
     if (normalizeAddress(r?.UnparsedAddress) === subjectAddress) return false;
+    if (sellerSameHome(subjectRaw,r) || !exactComparableType(subjectRaw,r) || !sellerComparableGeography(subjectRaw,r)) return false;
     const condo = /condo|condominium/i.test(`${r?.PropertyType || ""} ${r?.PropertySubType || ""}`);
     if (condo !== subjectCondo) return false;
+    seen.add(key);
     return true;
   }).map(r => ({
     id: String(r.ListingKey || crypto.randomUUID()),
@@ -335,7 +353,7 @@ function soldCandidates(subject, rows) {
     propertyType: clean(r.PropertyType) || null,
     propertySubType: clean(r.PropertySubType) || null,
     soldPrice: money(r.ClosePrice || r.SoldPrice || r.SalePrice || r.FinalSalePrice),
-    soldDate: new Date(r.PurchaseContractDate || r.SoldDate || r.CloseDate || r.ModificationTimestamp).toISOString().slice(0, 10),
+    soldDate: new Date(r.PurchaseContractDate || r.SoldDate || r.CloseDate).toISOString().slice(0, 10),
     beds: number(r.BedroomsTotal),
     aboveGradeBeds: number(r.BedroomsAboveGrade),
     baths: number(r.BathroomsTotalInteger),
@@ -405,12 +423,14 @@ function mergeExpertResults(local, external) {
   };
 }
 
-function normalizeExpertResult(result, candidates, sourceType) {
+export function normalizeExpertResult(result, candidates, sourceType) {
   const byId = new Map(candidates.map(c => [String(c.id), c]));
   const rows = [];
+  const seen = new Set();
   for (const chosen of Array.isArray(result?.comparables) ? result.comparables : []) {
     const base = byId.get(String(chosen.id));
-    if (!base) continue;
+    if (!base || seen.has(String(base.id))) continue;
+    seen.add(String(base.id));
     rows.push({
       ...base,
       sourceType,
@@ -424,7 +444,7 @@ function normalizeExpertResult(result, candidates, sourceType) {
   return { comparables: rows.slice(0, 6), market_read: clean(result?.market_read), confidence: clean(result?.confidence) || "Limited" };
 }
 
-function applyExpertRecovery(report, expert) {
+export function applyExpertRecovery(report, expert) {
   const comps = expert.comparables.map(c => ({
     listingKey: c.listingKey || null,
     address: c.address,
@@ -449,9 +469,9 @@ function applyExpertRecovery(report, expert) {
     sourceUrl: c.sourceUrl || null,
   }));
   const indications = comps.map(c => Number(c.adjustedIndication)).filter(n => Number.isFinite(n) && n > 0).sort((a,b)=>a-b);
-  if (indications.length < 2) return report;
+  if (indications.length < 3) return report;
   const midpoint = median(indications);
-  const spread = indications.length >= 3 ? Math.max(indications) - Math.min(indications) : midpoint * 0.16;
+  const spread = Math.max(...indications) - Math.min(...indications);
   const margin = Math.max(midpoint * (indications.length >= 4 ? 0.06 : 0.09), spread * 0.35);
   const low = roundMarket(midpoint - margin);
   const high = roundMarket(midpoint + margin);
@@ -496,6 +516,7 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
   const payload = {
     subject: report.facts,
     historicalSubjectSource: report.seller?.evidence?.archiveSubject || null,
+    propertyHistory: report.property_history,
     valuation: report.valuation,
     soldComparables: report.comparables,
     activeCompetition: report.active_comparables,
@@ -545,7 +566,7 @@ async function openAiBuyerNarrative(env, report, property) {
   const system = `Write like an approachable, experienced GTA buyer Realtor speaking directly to the buyer: natural Canadian English, short sentences, contractions, and concrete next steps. Avoid robotic headings inside prose and jargon such as \"subject property\" or \"evidence reconciliation\". Never imply you toured the home. Write a concise GTA buyer decision narrative grounded only in the supplied property facts and real sold evidence. If Expert Comp Mode was used, explain in plain language that a wider set of sold homes was needed and meaningful differences were allowed for; do not mention engines, technical modes, or imply a human has already reviewed it. Never invent a sale or property fact. Use the final valuation numbers and confidence exactly as supplied; do not recompute them. Distinguish above-grade and basement bedrooms. Executive summary at most 55 words; market read and strategy at most 80 words each; bullets at most 22 words. Do not call this an appraisal. Return JSON only.`;
   return openAiJson(env, "thm_buyer_narrative", schema, [
     { role: "system", content: system },
-    { role: "user", content: JSON.stringify({ facts: report.facts, valuation: report.valuation, comparables: report.comparables, expert: report.expert_comp_mode, remarks: property?.remarks }) },
+    { role: "user", content: JSON.stringify({ facts: report.facts, propertyHistory: report.property_history, valuation: report.valuation, comparables: report.comparables, expert: report.expert_comp_mode, remarks: property?.remarks }) },
   ], false);
 }
 
