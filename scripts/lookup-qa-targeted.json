@@ -1,0 +1,38 @@
+[
+  {
+    "id": "targeted-final-seller-1",
+    "mode": "seller",
+    "lookup": null,
+    "hash": "81a973bf47c0e3278cba5b921a98dd55125c747feabd1d9f780c3c93baf35f2c"
+  },
+  {
+    "id": "targeted-final-buyer-5",
+    "mode": "buyer",
+    "lookup": "address",
+    "hash": "8a17ac2bb37876a4ab976b5a76ae9ca9a75b63615ebb8d510a591411e0aead0d"
+  },
+  {
+    "id": "targeted-final-recheck-mixed-buyer-6",
+    "mode": "buyer",
+    "lookup": "mls",
+    "hash": "4fa464f9340284d01f4e975de099f0d8de99d4fab7fec119c5bf7976fa30d1b6"
+  },
+  {
+    "id": "targeted-final-recheck-mixed-buyer-9",
+    "mode": "buyer",
+    "lookup": "address",
+    "hash": "00e1e68c9c65f041aa74337f6870331fcfdb273e55e1ea9d978121712ac6af33"
+  },
+  {
+    "id": "targeted-mixed-seller-2",
+    "mode": "seller",
+    "lookup": null,
+    "hash": "a3c05d8eae5c4362c20c7c27e941b9658839644286fbee9f90466e43b716695c"
+  },
+  {
+    "id": "targeted-mixed-seller-8",
+    "mode": "seller",
+    "lookup": null,
+    "hash": "06c6bb2985e417bad01c304dab4c85648f77107fc321db1dce62b3f2c07e86aa"
+  }
+]

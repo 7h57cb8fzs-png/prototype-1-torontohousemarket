@@ -4,7 +4,7 @@ import {historyEvent,summarizePropertyHistory,reviewRecentSale,reviewSpecialUse}
 import {chooseLookupPlans,addressRecoveryPlans} from '../lookup-recovery.js';
 import {soldCandidates,normalizeExpertResult,applyExpertRecovery} from '../worker-v12.js';
 import {sellerHistoryMatches,sellerHistoryParsedAddress,isSoldWithinDays} from '../worker-v11.js';
-import {finalizePayload} from '../worker-v22.js';
+import app,{finalizePayload} from '../worker-v22.js';
 test('history counts MLS IDs once, excludes lease listings, never treats update time as sale date',()=>{
   const year=new Date().getUTCFullYear();
   const row={ListingKey:'C00000001',ListingContractDate:`${year}-01-01`,StandardStatus:'Closed',MlsStatus:'Terminated',ModificationTimestamp:`${year}-02-01`};
@@ -54,8 +54,24 @@ test('a large gap from a recent subject sale flags review without using its pric
 });
 test('advertised development rights cannot become an ordinary residential valuation',async t=>{
   const base={facts:{property_type:'Detached'},comparables:[1,2,3].map(i=>({soldPrice:1000000+i*10000,propertySubType:'Detached'})),valuation:{available:true,low:1000000,midpoint:1100000,high:1200000}};
+  assert.equal(reviewSpecialUse(base,{remarks:'Fantastic Re-Development Opportunity. Ready For The Permit Submission.'}).valuation.available,false);
   const r=reviewSpecialUse(base,{remarks:'Approved zoning for four-unit townhomes.'});assert.equal(r.valuation.available,false);assert.equal(r.valuation.midpoint,null);
   t.mock.method(globalThis,'fetch',()=>{throw Error('A model must not reprice a withheld specialised valuation');});
   assert.equal((await finalizePayload(r,{OPENAI_API_KEY:'synthetic'})).valuation.available,false);
   assert.equal(reviewSpecialUse(base,{remarks:'Renovated home near a new condo development.'}).valuation.available,true);
+});
+test('authenticated admin preview uses Luna and history without saving or sending anything',async t=>{
+  const date=new Date(Date.now()-15*864e5).toISOString();
+  const subject={ListingKey:'C00000001',UnparsedAddress:'101 Example Avenue, Toronto',StreetNumber:'101',StreetName:'Example',StreetSuffix:'Avenue',City:'Toronto',CityRegion:'Example',PropertySubType:'Detached',PropertyType:'Residential Freehold',LivingAreaRange:'1500-2000',BedroomsAboveGrade:3,BedroomsTotal:3,BathroomsTotalInteger:2,LotWidth:30,LotDepth:100,OriginalEntryTimestamp:date,StandardStatus:'Closed',MlsStatus:'Sold',TransactionType:'For Sale',PurchaseContractDate:date,ClosePrice:1000000};
+  const rows=[subject,...[2,3,4].map(n=>({...subject,ListingKey:'C0000000'+n,StreetNumber:String(100+n),UnparsedAddress:`${100+n} Example Avenue, Toronto`,ClosePrice:1000000+n*10000}))];
+  let ai=0;
+  t.mock.method(globalThis,'fetch',async(input,init={})=>{
+    const u=new URL(String(input));
+    if(u.hostname==='api.openai.com'){ai++;assert.equal(JSON.parse(init.body).model,'gpt-5.6-luna');return Response.json({model:'gpt-5.6-luna',id:'synthetic-response',usage:{total_tokens:1},output_text:JSON.stringify({independent_market_read:'Recent local sales provide preliminary guidance.',listing_strategy:'Confirm current condition.',value_drivers:[],preparation_priorities:[],expectation_comparison:''})});}
+    assert.equal(u.hostname,'query.ampre.ca','No email or database calls are permitted');assert.equal(init.method||'GET','GET');
+    const direct=rows.find(r=>decodeURIComponent(u.pathname).includes("('"+r.ListingKey+"')"));
+    return Response.json(direct||(u.searchParams.get('$count')==='true'?{'@odata.count':rows.length,value:[]}:{value:rows}));
+  });
+  const r=await app.fetch(new Request('https://thm.test/api/admin/seller-preview?address='+encodeURIComponent(subject.UnparsedAddress),{headers:{Authorization:'Bearer synthetic-admin-key-at-least-24-characters'}}),{ADMIN_API_KEY:'synthetic-admin-key-at-least-24-characters',AMPRE_VOW_TOKEN:'synthetic-vow',OPENAI_API_KEY:'synthetic-api'},{});
+  assert.equal(r.status,200);const d=await r.json();assert.equal(d.readOnly,true);assert(d.comparables.length>=3);assert.equal(d.propertyHistory.counts.listed,1);assert(ai>0);assert(d.aiUsage.some(a=>a.model==='gpt-5.6-luna'));assert.match(d.emailPreview.html,/Previous MLS activity/);
 });

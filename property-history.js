@@ -42,7 +42,7 @@ export function reviewRecentSale(report){
 
 export function reviewSpecialUse(report,property={}){
   const remarks=String(property.remarks||'');
-  const specialised=/\b(?:land assembly|development site|redevelopment opportunity|severance approved|approved severance|tear[ -]?down)\b/i.test(remarks)||/\b(?:approved|zoned|rezoning)\b[^.!?]{0,110}\b(?:townhomes?|townhouses?|four[ -]unit|\d+[ -]unit|multiplex|mixed[ -]use|commercial|redevelopment)\b/i.test(remarks);
+  const specialised=/\b(?:land assembly|development site|re[ -]?development opportunity|severance approved|approved severance|tear[ -]?down)\b/i.test(remarks)||/\b(?:approved|zoned|rezoning)\b[^.!?]{0,110}\b(?:townhomes?|townhouses?|four[ -]unit|\d+[ -]unit|multiplex|mixed[ -]use|commercial|redevelopment)\b/i.test(remarks);
   if(!specialised)return report;
   const note='The listing describes development or zoning potential. Ordinary residential sales do not establish the value of those rights. Verify the planning claims and obtain a specialist pricing review.';
   return {...report,review_flags:[...(report.review_flags||[]),{code:'special_use_review',note}],
