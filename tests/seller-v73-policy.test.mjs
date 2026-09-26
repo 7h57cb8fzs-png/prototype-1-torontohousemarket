@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { buildSellerReport, sellerReportEmail } from "../worker-v11.js";
 
-test("seller report preserves renovation slider context", async () => {
+test("seller questionnaire renovation context is excluded from the valuation report", async () => {
   const property={
     address:"38 Oak Avenue, Richmond Hill",
     marketStatus:"Listing status unconfirmed",
@@ -25,11 +25,11 @@ test("seller report preserves renovation slider context", async () => {
     sellerEvidence:{listingMatched:false,listingFactsAgree:false,history:[],diagnostics:{}}
   };
   const report=await buildSellerReport({}, {lead_mode:"seller"}, property, "test");
-  assert.equal(report.seller.profile.condition,"owner_reported");
-  assert.equal(report.seller.profile.renovationPct,50);
+  assert.equal(report.seller.profile.condition,"unknown");
+  assert.equal(report.seller.profile.renovationPct,null);
   const email=sellerReportEmail(property.address,report);
   assert.doesNotMatch(email.html,/THM_RENOVATION_PCT/);
-  assert.match(email.html,/Owner-reported renovation context: 50%/);
+  assert.doesNotMatch(email.html,/Owner-reported renovation context: 50%/);
 });
 
 test("seller history is exact-address-first and bounded", () => {
@@ -46,11 +46,11 @@ test("seller V7 policy has no mechanical condition multiplier", () => {
   const src=fs.readFileSync("worker-v12.js","utf8");
   assert.doesNotMatch(src,/condition_adjustment_pct/);
   assert.doesNotMatch(src,/Number\(base\.low\) \* \(1 \+ adjustment\)/);
-  assert.match(src,/treatment: "context_only"/);
+  assert.match(src,/treatment: "not_used"/);
 });
 
 
-test("seller report loader preserves owner-reported slider profile and broad recovery uses City", () => {
+test("seller report loader separates owner profile and broad recovery uses City", () => {
   const v11=fs.readFileSync("worker-v11.js","utf8");
   const v12=fs.readFileSync("worker-v12.js","utf8");
   assert.doesNotMatch(v11,/lead\.property_snapshot\.sellerProfile, upgrades: \[\], condition: "unknown"/);

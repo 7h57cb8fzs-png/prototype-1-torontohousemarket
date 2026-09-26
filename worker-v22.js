@@ -25,7 +25,8 @@ export default {
       candidate_policy:'broad VOW evidence when strict evidence is insufficient; structural attributes are relevance signals',
       openai_policy:'Luna first; Terra only for compound severe complexity',
       scheduler:'single report pipeline; no duplicate nested scheduler',
-      seller_condition:'native 0-100 renovation context; no fixed renovation markup',
+      seller_condition:'questionnaire saved for team verification; not valuation input',
+      seller_input:'address_and_historical_mls_only',
       address_input:'shared buyer/seller touch-first suggestions; condo unit-first input preserved'
     });
 

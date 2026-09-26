@@ -4,6 +4,7 @@ import { normalizeListingPhotos, loadListingMedia } from './mls-photos.js';
 import {valueRangeGraphic,soldComparisonGraphic} from './report-graphics.js';
 import {queryListingInventory,brokerageMatches,canonicalArea} from './listing-query.js';
 import {sellerArchiveKey,validatedArchive} from './seller-archive.js';
+import { historicalSellerProfile, historicalSellerProperty } from './seller-mls-input.js';
 // Keep the historical standalone bundle compatible with existing consumers.
 // The report owner supplies scoped operations; public requests use native fetch.
 function reportFetch(env, input, init = {}, lifecycle = false) {
@@ -4702,9 +4703,9 @@ async function createBuyerRequest(request, env, ctx, manual = false) {
   if (intent.lead_mode === "seller" && input.seller_profile) {
     try {
       const profile = validateSellerProfile(input.seller_profile);
-      const checked = validateAddressEntry(data.property_input, { city: profile.city, requireUnit: /condo/i.test(profile.homeType) });
+      // Questionnaire fields are saved for the team, never used to identify the home.
+      const checked = validateAddressEntry(data.property_input);
       if (!checked.ok) throw new Error(checked.error);
-      profile.city = checked.city;
       data.property_input = checked.address;
       data.resolved_address = checked.address;
       data.listing_key = null;
@@ -5161,7 +5162,7 @@ async function loadLeadForReport(env, id) {
 __name(loadLeadForReport, "loadLeadForReport");
 __name2(loadLeadForReport, "loadLeadForReport");
 async function loadPropertyForReport(env, lead, requestId = null) {
-  if (lead.lead_mode === "seller" && lead.property_snapshot?.sellerProfile) return loadSellerPropertyForReport(env, lead, requestId);
+  if (lead.lead_mode === "seller") return loadSellerPropertyForReport(env, lead, requestId);
   const url = new URL("https://torontohousemarket.com/api/property");
   const capturedSnapshot = Object.keys(lead.property_snapshot || {}).length ? lead.property_snapshot : lead.metadata?.property_snapshot || {};
   const listingKey = capturedSnapshot?.listingKey || lead.metadata?.listing_key || lead.metadata?.listingKey || null;
@@ -6265,75 +6266,87 @@ async function sellerQueryRows(filters, env, limit = 1e3) {
   return { rows: dedupe(rows).slice(0, limit), audit, capped: !complete, complete, sorted };
 }
 __name(sellerQueryRows, "sellerQueryRows");
-async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
+// Historic MLS compound street names may store the suffix as part of StreetName.
+// This normalization is used only by the Seller history resolver.
+function sellerHistoryParsedAddress(address) {
   const parsed = sellerParsedAddress(address);
+  if (parsed.name === "the" && parsed.suffix) return { ...parsed, name: `the ${parsed.suffix}`, suffix: null };
+  return parsed;
+}
+function sellerHistoryMatches(parsed, row, city) {
+  const candidate = sellerHistoryParsedAddress(row.UnparsedAddress || buildAddress(row));
+  const norm = value => normalizeText(value || "");
+  const suffix = value => /^(?:n\/?a|none|unknown)$/i.test(String(value || "")) ? "" : canonicalStreetType(value) || "";
+  const fullStreet = (name, type) => [canonicalLookupStreet(name), suffix(type)].filter(Boolean).join(" ");
+  const expected = fullStreet(parsed.name, parsed.suffix);
+  const actual = fullStreet(row.StreetName || candidate.name, Object.hasOwn(row, "StreetSuffix") ? row.StreetSuffix : candidate.suffix);
+  const unit = norm(Object.hasOwn(row, "UnitNumber") ? row.UnitNumber || "" : candidate.unit || "");
+  const streetMatches = parsed.suffix ? expected === actual : canonicalLookupStreet(parsed.name) === canonicalLookupStreet(row.StreetName || candidate.name) || expected === actual;
+  const direction = canonicalDirection(row.StreetDirSuffix || row.StreetDirPrefix) || candidate.direction || null;
+  return norm(parsed.number) === norm(row.StreetNumber || candidate.number) && streetMatches && norm(parsed.unit) === unit && (!parsed.direction || parsed.direction === direction) && (!city || sellerCityMatches(city, row.City || candidate.city));
+}
+async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
+  const parsed = sellerHistoryParsedAddress(address);
   if (!parsed.number || !parsed.name) return null;
   diagnostics.parsed = parsed;
   diagnostics.queries = [];
-  const city = profile.city || parsed.city || "";
-  const street = escapeOData2(parsed.name.split(" ").map(displayToken2).join(" "));
+  const city = parsed.city || "";
+  // No date/status restriction: old MLS records identify the home, not its value.
+  // An HTTP-200 empty combined filter is NOT proof of absent MLS history.
+  const names = [...new Set([parsed.name.split(" ").map(displayToken2).join(" "), parsed.name.toUpperCase(), parsed.name.toLowerCase()])];
   const number = escapeOData2(parsed.number);
-  const exactAddressToken = escapeOData2([parsed.number, parsed.name].filter(Boolean).map(displayToken2).join(" "));
-  const token = parsed.name.split(" ").sort((a, b) => b.length - a.length)[0];
-  const cityToken = escapeOData2(city);
-  // Query every listing status and age. The feed rejects some equality and
-  // multiword-address filters; narrow with individual tokens before pagination.
   const cityWord = escapeOData2(city.split(/[\s-]+/).sort((a,b)=>b.length-a.length)[0] || "");
-  const streetFilter = `contains(StreetName,'${canonicalLookupStreet(parsed.name) === "st clair" ? "Clair" : street}')`;
-  const exactQueries = [...new Set([
-    cityWord ? `${streetFilter} and contains(City,'${cityWord}') and contains(StreetNumber,'${number}')` : null,
-    `${streetFilter} and contains(StreetNumber,'${number}')`,
-    cityWord ? `${streetFilter} and contains(City,'${cityWord}')` : null,
-    `StreetName eq '${street}'`,
-    `contains(UnparsedAddress,'${exactAddressToken}')`
-  ].filter(Boolean))];
-  const fallbackQueries = [streetFilter];
+  const queryToken = name => name.split(/\s+/).filter(w=>!/^the$|^st$|^saint$/i.test(w)).sort((a,b)=>b.length-a.length)[0] || name;
+  const streetFilters = [...new Set(names.map(name => `contains(StreetName,'${escapeOData2(queryToken(name))}')`))];
+  const streetFilter = streetFilters[0];
+  const exactQueries = streetFilters.map(filter => `${filter} and contains(StreetNumber,'${number}')${cityWord ? ` and contains(City,'${cityWord}')` : ""}`);
+  const fallbackQueries = [...streetFilters, ...names.map(name=>`contains(UnparsedAddress,'${escapeOData2(parsed.number+" "+name)}')`)];
   const candidates = /* @__PURE__ */ new Map(), streetRecords = /* @__PURE__ */ new Map(), audit = [];
   let complete = true;
   const runFilters = async (queries, limit) => {
     for (const filter of queries) {
       const result2 = await sellerQueryRows([filter], env, limit);
     audit.push(...result2.audit);
-    diagnostics.queries.push({ filter, complete: result2.complete, rows: result2.rows.length, audit: result2.audit, exactMatches: result2.rows.filter((r) => sellerExactHistoryMatch(parsed, r, city)).length, sample: result2.rows.slice(0, 2).map((r) => ({ address: r.UnparsedAddress, number: r.StreetNumber, street: r.StreetName, suffix: r.StreetSuffix, unit: r.UnitNumber, city: r.City, status: r.StandardStatus, recordedAt: r.OriginalEntryTimestamp })) });
+    diagnostics.queries.push({ filter, complete: result2.complete, rows: result2.rows.length, audit: result2.audit, exactMatches: result2.rows.filter((r) => sellerHistoryMatches(parsed, r, city)).length, sample: result2.rows.slice(0, 2).map((r) => ({ address: r.UnparsedAddress, number: r.StreetNumber, street: r.StreetName, suffix: r.StreetSuffix, unit: r.UnitNumber, city: r.City, status: r.StandardStatus, recordedAt: r.OriginalEntryTimestamp })) });
       for (const row of result2.rows) {
         if (row.ListingKey) streetRecords.set(row.ListingKey, row);
-        if (sellerExactHistoryMatch(parsed, row, city) && row.ListingKey) candidates.set(row.ListingKey, row);
+        if (sellerHistoryMatches(parsed, row, city) && row.ListingKey) candidates.set(row.ListingKey, row);
       }
       complete &&= result2.complete;
-      if (candidates.size) break;
-      if (result2.complete && filter.includes('StreetNumber') && filter.includes('StreetName') && (!city || filter.includes('City'))) { diagnostics.exactSearchComplete=true;complete=true;break; }
+      // Finish the narrow case variants, including when the first one is empty.
+      if (candidates.size && queries === fallbackQueries) break;
     }
   };
   await runFilters(exactQueries, 300);
-  if (!candidates.size && !diagnostics.exactSearchComplete) await runFilters(fallbackQueries, 500);
+  if (!candidates.size) await runFilters(fallbackQueries, 500);
+  diagnostics.exactSearchComplete = complete;
   if (!candidates.size && diagnostics.queries.some(q=>q.filter===streetFilter && !q.complete)) {
     const counted=await queryPropertyCount([streetFilter],env);
     diagnostics.totalStreetRecords=counted.count;
     if (counted.count>500) {
       const tail=await queryPropertiesDetailed([streetFilter],env,100,"",Math.max(500,counted.count-100));
       audit.push({...tail.meta,scope:streetFilter,position:"tail"});
-      for(const row of tail.rows) if(sellerExactHistoryMatch(parsed,row,city)&&row.ListingKey)candidates.set(row.ListingKey,row);
+      for(const row of tail.rows) if(sellerHistoryMatches(parsed,row,city)&&row.ListingKey)candidates.set(row.ListingKey,row);
       complete=false;
     }
   }
-  const exactChecksCompleted = diagnostics.queries.some(q => q.complete && q.filter.includes("StreetName") && !q.filter.includes("UnparsedAddress"));
-  if (!complete && !diagnostics.exactSearchComplete && !candidates.size && audit.some((a) => a.status === 200)) throw new Error("The exact-address MLS history search is incomplete; retry required.");
+  if (!complete && !candidates.size && audit.some((a) => a.status === 200)) throw new Error("The exact-address MLS history search is incomplete; retry required.");
   if (!audit.some((a) => a.status === 200)) throw new Error("Historical MLS lookup could not be completed.");
   const rows = [...candidates.values()];
   if (!city && new Set(rows.map((r) => normalizeText(r.City).replace(/^toronto\s+[cew]\d{2}$/, "toronto"))).size !== 1) return null;
   if ((!parsed.suffix || !parsed.direction) && new Set(rows.map((r) => {
-    const p = sellerParsedAddress(r.UnparsedAddress || buildAddress(r));
+    const p = sellerHistoryParsedAddress(r.UnparsedAddress || buildAddress(r));
     return [canonicalStreetType(r.StreetSuffix) || p.suffix, canonicalDirection(r.StreetDirSuffix || r.StreetDirPrefix) || p.direction].join("|");
   })).size > 1) return null;
   const recent = rows.filter((r) => sellerListingTime(r) > 0).sort((a, b) => sellerListingTime(b) - sellerListingTime(a) || String(b.ListingKey).localeCompare(String(a.ListingKey))), records = [];
   for (const row of recent.slice(0, 3)) {
     const full = await fetchPropertyByKey(row.ListingKey, env, false);
-    const record = full && sellerExactHistoryMatch(parsed, full, city) ? full : row;
+    const record = full && sellerHistoryMatches(parsed, full, city) ? full : row;
     records.push(record);
   }
   if (!records.length) return null;
   const result = { ...records[0] }, sources = {};
-  const fields = ["PropertySubType", "PropertyType", "LivingAreaRange", "BuildingAreaTotal", "BuildingAreaUnits", "BedroomsTotal", "BedroomsAboveGrade", "BedroomsBelowGrade", "Basement", "KitchensTotal", "KitchensAboveGrade", "CityRegion", "PostalCode", "LotWidth", "LotDepth"];
+  const fields = ["PropertySubType", "PropertyType", "ArchitecturalStyle", "BathroomsTotalInteger", "LotSizeUnits", "ParkingTotal", "LivingAreaRange", "BuildingAreaTotal", "BuildingAreaUnits", "BedroomsTotal", "BedroomsAboveGrade", "BedroomsBelowGrade", "Basement", "KitchensTotal", "KitchensAboveGrade", "CityRegion", "PostalCode", "LotWidth", "LotDepth"];
   for (const field of fields) {
     const source = records.find((r) => r[field] !== void 0 && r[field] !== null && r[field] !== "");
     if (source) {
@@ -6583,53 +6596,70 @@ async function buildSellerEvidence(subject, env) {
 }
 __name(buildSellerEvidence, "buildSellerEvidence");
 async function loadSellerPropertyForReport(env, lead, requestId) {
-  const profile = { ...lead.property_snapshot.sellerProfile, upgrades: [] };
   const address = lead.resolved_address || lead.metadata?.property_input || "";
+  const parsed = sellerHistoryParsedAddress(address);
   const protectedEnv = { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN };
   let raw = null, lookupError = null;
   const lookupDiagnostics = {};
   if (env.AMPRE_VOW_TOKEN) try {
-    raw = await resolveSellerSubject(address, profile, protectedEnv, lookupDiagnostics);
+    raw = await resolveSellerSubject(address, {}, protectedEnv, lookupDiagnostics);
   } catch (e) {
     lookupError = "Historical MLS lookup could not be completed.";
     lookupDiagnostics.error = clean5(e.message, 180);
   }
+  // A server-side previous-MLS hint is only a lookup aid; exact identity still wins.
   const previousMls = clean5(lead.metadata?.previous_mls_number || lead.metadata?.previousMlsNumber || "", 40).toUpperCase();
   if (!raw && /^[A-Z]\d{7,9}$/.test(previousMls) && env.AMPRE_VOW_TOKEN) {
     const byKey = await fetchPropertyByKey(previousMls, protectedEnv, false).catch(() => null);
-    const parsedAddress = sellerParsedAddress(address);
-    const requestedCity = profile.city || parsedAddress.city || "";
-    if (byKey && sellerExactHistoryMatch(parsedAddress, byKey, requestedCity)) {
-      raw = { ...byKey, _sellerHistory: [{ listingKey: byKey.ListingKey, status: byKey.StandardStatus || byKey.MlsStatus || byKey.ContractStatus || "Recorded listing", recordedAt: new Date(sellerListingTime(byKey)).toISOString() }], _sellerFactSources: {}, _sellerLookupAudit: lookupDiagnostics.queries || [], _sellerHistoryComplete: true };
+    if (byKey && sellerHistoryMatches(parsed, byKey, parsed.city)) {
+      const at = sellerListingTime(byKey);
+      raw = { ...byKey, _sellerHistory: [{ listingKey: byKey.ListingKey, status: byKey.StandardStatus || byKey.MlsStatus || byKey.ContractStatus || "Recorded listing", recordedAt: at ? new Date(at).toISOString() : null }], _sellerFactSources: Object.fromEntries(Object.keys(byKey).filter(k=>byKey[k] != null).map(k=>[k,byKey.ListingKey])), _sellerLookupAudit: [], _sellerHistoryComplete: false };
       lookupDiagnostics.previousMlsMatch = previousMls;
       lookupError = null;
-    } else {
-      lookupDiagnostics.previousMlsMiss = previousMls;
-    }
+    } else lookupDiagnostics.previousMlsMiss = previousMls;
   }
+  // Reviewed archived MLS documents may be used; generic public portal profiles
+  // and the seller questionnaire must never silently become property evidence.
   if (!raw && env.SUPABASE_SERVICE_ROLE_KEY) {
-    const parsed=sellerParsedAddress(address),city=profile.city||parsed.city;
-    const r=await supabase(env,`/rest/v1/seller_subject_archives?address_key=eq.${encodeURIComponent(sellerArchiveKey(parsed,city))}&select=*&limit=1`);
-    const rows=await r.json().catch(()=>[]);
-    if(r.ok && rows[0]) raw=validatedArchive(rows[0],parsed,city,sellerExactHistoryMatch);
-    if(raw)lookupError=null;
+    const r = await supabase(env, `/rest/v1/seller_subject_archives?address_key=eq.${encodeURIComponent(sellerArchiveKey(parsed, parsed.city))}&select=*&limit=1`);
+    const rows = await r.json().catch(() => []);
+    const row = r.ok ? rows[0] : null;
+    if (row?.facts?._provenance?.kind === "reviewed_mls" && /^[A-Z]\d{7,9}$/.test(row.facts._provenance.listingKey || "")) raw = validatedArchive(row, parsed, parsed.city, sellerHistoryMatches);
+    if (raw) lookupError = null;
   }
-  const verifiedCommunity = raw && hasExactCommunity(raw.CityRegion) ? raw.CityRegion : null;
-  const community = verifiedCommunity || profile.community || null;
-  const parsed = sellerParsedAddress(address);
-  const homeType = String(raw?.PropertySubType || (profile.homeType !== "unknown" ? profile.homeType : "unknown")).trim();
-  const city = raw?.City || profile.city || parsed.city || "";
-  const size = raw?.LivingAreaRange || (profile.sizeBand !== "unknown" ? profile.sizeBand : null);
-  const beds = profile.beds ?? raw?.BedroomsAboveGrade ?? raw?.BedroomsTotal ?? null;
-  const subject = { ...raw, ListingKey: raw?.ListingKey || "owner-subject", UnparsedAddress: address, StreetNumber: parsed.number, StreetName: parsed.name, StreetSuffix: parsed.suffix, StreetDirSuffix: parsed.direction, UnitNumber: parsed.unit, City: city, CityRegion: community, PostalCode: raw?.PostalCode || profile.postal, PropertySubType: homeType, PropertyType: /condo/i.test(homeType) ? "Residential Condo & Other" : "Residential Freehold", LivingAreaRange: size, BuildingAreaTotal: size ? null : raw?.BuildingAreaTotal ?? null, BedroomsTotal: beds, BedroomsAboveGrade: beds, BedroomsBelowGrade: profile.belowBeds, ListPrice: null, ClosePrice: null, SoldPrice: null, SalePrice: null, _sellerReport: true };
+  const historical = historicalSellerProperty(raw, address, parsed);
+  const subject = { ...(raw || {}), ListingKey: raw?.ListingKey || null, UnparsedAddress: address,
+    StreetNumber: raw?.StreetNumber || parsed.number, StreetName: raw?.StreetName || parsed.name,
+    StreetSuffix: raw?.StreetSuffix ?? parsed.suffix, StreetDirSuffix: raw?.StreetDirSuffix ?? parsed.direction,
+    UnitNumber: raw?.UnitNumber ?? parsed.unit, City: historical.city, CityRegion: historical.cityRegion,
+    PostalCode: historical.postalCode, PropertySubType: historical.propertySubType,
+    LivingAreaRange: historical.livingAreaRange, ListPrice: null, ClosePrice: null, SoldPrice: null,
+    SalePrice: null, PurchaseContractPrice: null, FinalSalePrice: null, _sellerReport: true };
   let comp = calculateSellerEvidence(subject, []);
-  if (!comp.missingFacts && env.AMPRE_VOW_TOKEN) comp = await buildSellerEvidence(subject, protectedEnv).catch(() => ({ ...unavailableComp("The sold-data check could not be completed. The team will retry it."), dataUnavailable: true }));
-  if (lookupError && !raw) comp = { ...comp, available: false, basis: lookupError + " We need to retry the data check.", dataUnavailable: true };
-  if (!env.AMPRE_VOW_TOKEN) comp = { ...comp, basis: "The historical and sold-data service is not configured.", dataUnavailable: true };
-  if (!raw && !lookupError && env.AMPRE_VOW_TOKEN) comp = { ...comp, basis: "The connected MLS feed did not return an exact historical record for this address. Confirm the street number, city and unit, or provide the previous MLS number." };
-  if (!raw && comp.available) comp = { ...comp, available: false, basis: "The exact property could not be verified in MLS history. Confirm the address, city and unit before pricing." };
-  const listingFactsAgree = !!raw && sameText(raw.PropertySubType, homeType) && comparableHasCompatibleSize(subject, raw);
-  return { address, baths: raw?.BathroomsTotalInteger ?? null, lotWidth: raw?.LotWidth ?? null, lotDepth: raw?.LotDepth ?? null, lotSizeUnits: raw?.LotSizeUnits ?? null, listingKey: raw?.ListingKey || null, propertySubType: homeType, cityRegion: community, city, postalCode: subject.PostalCode, livingAreaRange: subject.LivingAreaRange, beds, basement: profile.basement === "unknown" ? raw?.Basement || "unknown" : profile.basement, kitchens: profile.kitchens ?? raw?.KitchensTotal ?? raw?.KitchensAboveGrade ?? null, forSale: raw ? isActiveForSale(raw) : null, marketStatus: raw ? isActiveForSale(raw) ? "Currently listed for sale" : /closed|sold|expired|terminated|withdrawn|cancel|suspend|leased|rented|unavailable/i.test(`${raw.StandardStatus || ""} ${raw.MlsStatus || ""} ${raw.ContractStatus || ""}`) ? "Not currently listed for sale" : "Listing status unconfirmed" : "Listing status unconfirmed", reportOfferInstructions: raw ? extractOfferInstructions(raw) : null, sellerProfile: profile, comparableContext: comp, sellerEvidence: { listingMatched: !!raw && !raw._sellerArchive, subjectMatched: !!raw, archiveSubject: raw?._sellerArchive || null, listingFactsAgree, communitySource: raw?._sellerArchive ? "Reviewed archived listing" : verifiedCommunity ? "MLS record" : "owner reported", factsSource: raw?._sellerArchive ? "Public archived listing facts; current condition requires confirmation" : raw ? "Owner input and matched listing history" : "Owner reported", history: raw?._sellerHistory || [], diagnostics: { historyLookup: lookupDiagnostics, historyQuery: raw?._sellerLookupAudit || [], comparisons: comp.diagnostics || null }, fieldSources: raw?._sellerFactSources || {}, communityConflict: !!verifiedCommunity && !!profile.community && !sameText(verifiedCommunity, profile.community) } };
+  // No matched home means no comparable search based on owner-supplied guesses.
+  if (raw && !comp.missingFacts && env.AMPRE_VOW_TOKEN) comp = await buildSellerEvidence(subject, protectedEnv).catch(() => ({ ...unavailableComp("The sold-data check could not be completed. The team will retry it."), dataUnavailable: true }));
+  if (!raw) comp = { ...comp, available: false, comparables: [], activeComparables: [],
+    basis: !env.AMPRE_VOW_TOKEN ? "The historical and sold-data service is not configured." : lookupError ? lookupError + " We need to retry the data check." : "No exact historical MLS record was recovered for this address. The team needs to verify the lookup or the previous MLS number; seller answers are saved separately and do not replace MLS facts.",
+    dataUnavailable: !!lookupError || !env.AMPRE_VOW_TOKEN };
+  comp.policy = { ...comp.policy, subjectFactsSource: "historical_mls", sellerAnswersUsed: false };
+  if (raw && raw._sellerHistoryComplete === false) comp.policy.retrievalCapped = true;
+  const matched = !!raw;
+  const property = { ...historical,
+    forSale: raw && raw._sellerHistoryComplete !== false && !raw._sellerArchive ? isActiveForSale(raw) : null,
+    marketStatus: raw && raw._sellerHistoryComplete !== false && !raw._sellerArchive ? isActiveForSale(raw) ? "Currently listed for sale" : /closed|sold|expired|terminated|withdrawn|cancel|suspend|leased|rented|unavailable/i.test(`${raw.StandardStatus || ""} ${raw.MlsStatus || ""} ${raw.ContractStatus || ""}`) ? "Not currently listed for sale" : "Listing status unconfirmed" : "Listing status unconfirmed",
+    reportOfferInstructions: raw ? extractOfferInstructions(raw) : null,
+    comparableContext: comp,
+    sellerEvidence: { listingMatched: matched && !raw._sellerArchive, subjectMatched: matched,
+      archiveSubject: raw?._sellerArchive || null, listingFactsAgree: matched,
+      communitySource: historical.cityRegion ? "Historical MLS record" : "Unresolved",
+      factsSource: matched ? "Historical MLS records; current condition not verified" : "Unresolved historical MLS lookup",
+      valuationInputPolicy: "address_and_historical_mls_only", sellerAnswersUsed: false,
+      history: raw?._sellerHistory || [],
+      diagnostics: { historyLookup: lookupDiagnostics, historyQuery: raw?._sellerLookupAudit || [], comparisons: comp.diagnostics || null },
+      fieldSources: raw?._sellerFactSources || {}, communityConflict: false }
+  };
+  property.sellerProfile = historicalSellerProfile(property);
+  return property;
 }
 __name(loadSellerPropertyForReport, "loadSellerPropertyForReport");
 function sellerTargetPosition(target, valuation) {
@@ -6663,8 +6693,8 @@ function estimateSellerUpgrades(profile, valuation, homeType) {
 }
 __name(estimateSellerUpgrades, "estimateSellerUpgrades");
 async function buildSellerReport(env, lead, property2, requestId) {
-  const profile = { ...property2.sellerProfile, upgrades: [] }, comp = property2.comparableContext || {}, comparables = (comp.comparables || []).slice(0, 8);
-  const valid = comp.available === true && comparables.length >= 3 && Number.isFinite(comp.rangeLow) && comp.rangeLow > 0 && Number.isFinite(comp.rangeHigh) && comp.rangeHigh >= comp.rangeLow;
+  const profile = historicalSellerProfile(property2), comp = property2.comparableContext || {}, comparables = (comp.comparables || []).slice(0, 8);
+  const valid = (property2.sellerEvidence?.subjectMatched ?? property2.sellerEvidence?.listingMatched) === true && comp.available === true && comparables.length >= 3 && Number.isFinite(comp.rangeLow) && comp.rangeLow > 0 && Number.isFinite(comp.rangeHigh) && comp.rangeHigh >= comp.rangeLow;
   const evidence = property2.sellerEvidence || {};
   const confidence = valid ? evidence.listingFactsAgree && comp.confidence === "High" ? "Medium" : comp.confidence === "Medium" && evidence.listingFactsAgree ? "Medium" : "Low" : "Unavailable";
   const valuation = { available: valid, low: valid ? comp.rangeLow : null, midpoint: valid ? comp.midpoint : null, high: valid ? comp.rangeHigh : null, confidence, basis: valid ? `${comparables.length} matching sold homes \xB7 ${property2.cityRegion || "same building"} \xB7 up to ${comp.policy?.windowDays || 300} days.` : comp.basis || "More matched sales are needed.", methodology: "Same community, home type and interior size. Condos in the same verified building may qualify despite a different community label. We start with 100 days, widen to 300 if needed, then screen and weight matching sold prices. Owner target and renovation spending do not change the calculated window." };
@@ -6684,7 +6714,7 @@ async function buildSellerReport(env, lead, property2, requestId) {
   if (!checks.length) checks.push("Prepare a recent floor plan and photos so the team can compare condition and presentation.");
   const narrative = { executive_summary: first, preparation_checks: [...new Set(checks)].slice(0, 5) };
   const aiNote = null;
-  return { report_type: "THM Seller Price Perspective", schema_version: 2, generated_at: (/* @__PURE__ */ new Date()).toISOString(), facts: { address: property2.address, market_status: property2.marketStatus || "Listing status unconfirmed", offer_instructions: property2.reportOfferInstructions || null, property_type: property2.propertySubType, neighbourhood: property2.cityRegion, city: property2.city, living_area: property2.livingAreaRange, beds: property2.beds ?? profile.beds, baths: property2.baths ?? null, lot_width: property2.lotWidth ?? null, lot_depth: property2.lotDepth ?? null, lot_units: property2.lotSizeUnits ?? null, below_grade_beds: profile.belowBeds, basement: property2.basement ?? profile.basement, separate_entrance: profile.entrance, kitchens: property2.kitchens ?? profile.kitchens, postal_code: property2.postalCode, checked_at: (/* @__PURE__ */ new Date()).toISOString() }, valuation, comparables, active_comparables: comp.activeComparables || [], comparable_policy: comp.policy || {}, seller: { profile, upgrades, target: profile.targetPrice, target_position: position, target_range: position, upgrade_estimates: upgradeEstimates, evidence }, narrative, ai_note: aiNote, analysis_mode: aiNote ? "AI-assisted preparation with calculated market evidence" : "Calculated market evidence with preparation guidance" };
+  return { report_type: "THM Seller Price Perspective", schema_version: 2, generated_at: (/* @__PURE__ */ new Date()).toISOString(), facts: { address: property2.address, market_status: property2.marketStatus || "Listing status unconfirmed", offer_instructions: property2.reportOfferInstructions || null, property_type: property2.propertySubType, neighbourhood: property2.cityRegion, city: property2.city, living_area: property2.livingAreaRange, beds: property2.beds ?? null, baths: property2.baths ?? null, lot_width: property2.lotWidth ?? null, lot_depth: property2.lotDepth ?? null, lot_units: property2.lotSizeUnits ?? null, below_grade_beds: property2.belowGradeBeds ?? null, basement: property2.basement ?? "unknown", separate_entrance: property2.separateEntrance ?? "unknown", kitchens: property2.kitchens ?? null, architectural_style: property2.architecturalStyle ?? null, mls_fact_source: property2.sellerEvidence?.factsSource || "Unresolved", postal_code: property2.postalCode, checked_at: (/* @__PURE__ */ new Date()).toISOString() }, valuation, comparables, active_comparables: comp.activeComparables || [], comparable_policy: comp.policy || {}, seller: { profile, upgrades, target: profile.targetPrice, target_position: position, target_range: position, upgrade_estimates: upgradeEstimates, evidence }, narrative, ai_note: aiNote, analysis_mode: aiNote ? "AI-assisted preparation with calculated market evidence" : "Calculated market evidence with preparation guidance" };
 }
 __name(buildSellerReport, "buildSellerReport");
 function sellerTiming(value) {
@@ -6747,7 +6777,7 @@ function sellerReportEmail(address, report) {
   const competitionNote = active2.length ? "Similar active listings recovered in this check. These are asking prices, not completed sales, and do not set your estimated value." : "No sufficiently similar active homes were recovered in this check. This does not establish that none are for sale.";
   const competitionHtml = available || active2.length ? section("02 / On the market", "Your current competition.", paragraph(competitionNote) + (activeRows ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${activeRows}</table>` : "")) : "";
   const archive=seller.evidence?.archiveSubject;
-  const historyNote = archive ? `Home specifications recovered from ${archive.sourceLabel}, dated ${archive.recordedAt}. These are historic facts, not a current survey; confirm present layout, size and condition. The estimate uses licensed sold comparisons, not historic asking or rental prices.` : latestText ? "Past listings help identify the home. Historical asking prices do not set this estimate." : "We can review the address and available records together.";
+  const historyNote = archive ? `Home specifications recovered from ${archive.sourceLabel}, dated ${archive.recordedAt}. These are historical MLS facts and may not reflect current layout, size or condition. Seller questionnaire answers are kept separately for the team to verify, not used as valuation evidence. The estimate uses recent licensed sold comparisons, not historical asking or sale prices.` : latestText ? "Property characteristics are based on historical MLS records and may not reflect changes since that listing. Seller answers are saved separately for the team to verify; they do not select comparables or set this estimate. Historical asking prices do not set the value." : "We can review the address and available records together.";
   const communityNote = seller.evidence?.communityConflict ? "The matched listing has a different community label from your entry. We used the recorded community; please ask us to confirm it." : "";
   const historyHtml = `${latestText ? `<p style="${label}">Latest matched MLS listing</p>${paragraph(latestText)}` : ""}<p style="${small}">${html(historyNote)}${archive?.sourceUrl ? ` <a href="${html(archive.sourceUrl)}" style="color:#536961;text-decoration:underline">View archived listing</a>.` : ""}</p>${communityNote ? `<p style="${small}margin-top:9px">${html(communityNote)}</p>` : ""}`;
   const checks = (report.narrative?.preparation_checks || []).slice(0, 3);
