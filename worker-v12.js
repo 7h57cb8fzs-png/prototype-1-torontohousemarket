@@ -7,7 +7,7 @@ import legacyApp, {
   sellerHistoryParsedAddress, sellerHistoryMatches, sellerHomeKey, sellerSameHome, exactComparableType, sellerComparableGeography,
 } from "./worker-v11.js";
 import {chooseLookupPlans} from './lookup-recovery.js';
-import {historyEvent, summarizePropertyHistory, reviewRecentSale, reviewSpecialUse} from './property-history.js';
+import {historyEvent, summarizePropertyHistory, reviewRecentSale, reviewSpecialUse, reviewElevationAdjustments} from './property-history.js';
 
 const VERSION = "version-7-openai-expert-v120-20260916";
 const AMPRE = "https://query.ampre.ca/odata";
@@ -210,7 +210,7 @@ async function buildVersion7Report(env, lead, property, requestId) {
 
   // Establish one final numeric result before asking a model to explain it.
   if (typeof env.THM_FINALIZE_REPORT === 'function') report = await reportStage(env, 'decision_summary', 24000, e => env.THM_FINALIZE_REPORT(report, e));
-  report=reviewRecentSale(report);
+  report=reviewElevationAdjustments(reviewRecentSale(report));
   if (lead.lead_mode === "seller" && sellerVerified && report.comparables?.length >= 3) {
     report = await enhanceSellerReport(env, lead, property, report, requestId).catch(error => {
       console.warn(JSON.stringify({ event: "v7_seller_ai_failed", request_id: requestId, error: String(error?.message || error).slice(0, 240) }));

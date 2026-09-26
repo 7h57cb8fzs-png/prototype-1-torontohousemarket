@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {historyEvent,summarizePropertyHistory,reviewRecentSale,reviewSpecialUse} from '../property-history.js';
+import {historyEvent,summarizePropertyHistory,reviewRecentSale,reviewSpecialUse,reviewElevationAdjustments} from '../property-history.js';
 import {chooseLookupPlans,addressRecoveryPlans} from '../lookup-recovery.js';
 import {soldCandidates,normalizeExpertResult,applyExpertRecovery} from '../worker-v12.js';
 import {sellerHistoryMatches,sellerHistoryParsedAddress,isSoldWithinDays} from '../worker-v11.js';
@@ -74,4 +74,10 @@ test('authenticated admin preview uses Luna and history without saving or sendin
   });
   const r=await app.fetch(new Request('https://thm.test/api/admin/seller-preview?address='+encodeURIComponent(subject.UnparsedAddress),{headers:{Authorization:'Bearer synthetic-admin-key-at-least-24-characters'}}),{ADMIN_API_KEY:'synthetic-admin-key-at-least-24-characters',AMPRE_VOW_TOKEN:'synthetic-vow',OPENAI_API_KEY:'synthetic-api'},{});
   assert.equal(r.status,200);const d=await r.json();assert.equal(d.readOnly,true);assert(d.comparables.length>=3);assert.equal(d.propertyHistory.counts.listed,1);assert(ai>0);assert(d.aiUsage.some(a=>a.model==='gpt-5.6-luna'));assert.match(d.emailPreview.html,/Previous MLS activity/);
+});
+
+test('unsupported relative floor adjustments retain recorded sales but cannot issue a price',async()=>{
+  const base={comparables:[{listingKey:'C1',soldPrice:1000000,adjustedIndication:1100000,expertSelectionReason:'Same building.',expertAdjustmentReason:'The subject is on a higher floor.'}],valuation:{available:true,low:1000000,midpoint:1100000,high:1200000}};
+  const r=reviewElevationAdjustments(base);assert.equal(r.valuation.available,false);assert.equal(r.comparables[0].soldPrice,1000000);assert.equal(r.comparables[0].adjustedIndication,null);assert.equal(r.review_flags[0].code,'unverified_elevation_adjustment');assert.doesNotMatch(r.comparables[0].expertAdjustmentReason,/subject is on a higher floor/);assert.equal((await finalizePayload(r,{})).valuation.available,false);
+  assert.equal(reviewElevationAdjustments({...base,comparables:[{expertAdjustmentReason:'The larger interior requires a downward adjustment.'}]}).valuation.available,true);
 });

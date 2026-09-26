@@ -29,7 +29,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lookup-qa-narrative
+          name: lookup-qa-elevation
           path: qa-output/
           retention-days: 2
           if-no-files-found: ignore
@@ -38,3 +38,5 @@ jobs:
 # Respect 100000-row MLS result-set cap with community-scoped sampling
 
 # Verify narrative grounding on the previously reviewed high-floor condo.
+
+# Hard guard for unsupported relative-floor model adjustments.

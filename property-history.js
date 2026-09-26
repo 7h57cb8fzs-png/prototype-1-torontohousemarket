@@ -50,3 +50,20 @@ export function reviewSpecialUse(report,property={}){
     value_rating:{available:false,score:null,label:'Specialist review',reason:note},
     narrative:{...(report.narrative||{}),executive_summary:note,market_read:note,buyer_strategy:'Ask the listing team for the planning documents, permitted uses and development-specific evidence before making a pricing decision.'}};
 }
+
+// Relative condo elevation is not established by a unit number or a penthouse
+// label. The current comparable payload has no verified relative-floor field.
+// Preserve real transactions, but prevent unsupported model claims pricing them.
+export function reviewElevationAdjustments(report){
+  const unsupported=/\b(?:higher[ -]floor|lower[ -]floor|lower recorded unit position|(?:more advantageous|superior)[^.!?]{0,50}(?:floor|elevation))\b/i;
+  const hasClaim=c=>unsupported.test(String(c.expertAdjustmentReason||'')+' '+String(c.expertSelectionReason||''));
+  if(!(report.comparables||[]).some(hasClaim))return report;
+  const note='Some model adjustments rely on floor or elevation differences that the supplied records do not establish. Verify the relevant unit floors and views before a price estimate is issued.';
+  const cleanReason=value=>String(value||'').split(/(?<=[.!?])\s+/).filter(s=>!unsupported.test(s)).join(' ');
+  const comparables=report.comparables.map(c=>hasClaim(c)?{...c,adjustedIndication:null,subject_indication:null,adjustmentRequiresReview:true,expertSelectionReason:cleanReason(c.expertSelectionReason)||'Recorded sale retained for context.',expertAdjustmentReason:note,why_it_matters:cleanReason(c.expertSelectionReason)||'Recorded sale retained for context.'}:c);
+  return {...report,comparables,review_flags:[...(report.review_flags||[]),{code:'unverified_elevation_adjustment',note}],
+    valuation:{...(report.valuation||{}),available:false,low:null,midpoint:null,high:null,estimated_market_value:null,market_value:null,likely_market_range:{low:null,high:null},confidence:'Limited',requiresReview:true,basis:note},
+    value_rating:{available:false,score:null,label:'Verify unit differences',reason:note},
+    narrative:{...(report.narrative||{}),executive_summary:note},
+    expert_comp_mode:{...(report.expert_comp_mode||{}),marketRead:note,evidence_only:true}};
+}
