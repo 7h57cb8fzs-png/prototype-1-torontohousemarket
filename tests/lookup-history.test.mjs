@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {historyEvent,summarizePropertyHistory} from '../property-history.js';
+import {historyEvent,summarizePropertyHistory,reviewRecentSale,reviewSpecialUse} from '../property-history.js';
 import {chooseLookupPlans,addressRecoveryPlans} from '../lookup-recovery.js';
 import {soldCandidates,normalizeExpertResult,applyExpertRecovery} from '../worker-v12.js';
 import {sellerHistoryMatches,sellerHistoryParsedAddress,isSoldWithinDays} from '../worker-v11.js';
@@ -45,4 +45,17 @@ test('final presentation cannot invent a valuation from evidence-only rows or na
   assert.equal((await finalizePayload(base,{})).valuation.available,false);
   const valid=await finalizePayload({...base,valuation:{available:true,low:800000,midpoint:1000000,high:1200000,confidence:'Low'}},{});
   assert(valid.valuation.low<=800000);assert(valid.valuation.high>=1200000);
+});
+test('a large gap from a recent subject sale flags review without using its price to recalculate value',()=>{
+  const date=new Date(Date.now()-20*864e5).toISOString().slice(0,10);
+  const report={valuation:{available:true,low:1100000,midpoint:1250000,high:1400000},property_history:{lastSold:{date,price:900000}}};
+  const r=reviewRecentSale(report);assert.equal(r.valuation.midpoint,1250000);assert.equal(r.valuation.requiresReview,true);assert.equal(r.value_rating.available,false);assert.equal(r.review_flags[0].differencePct,39);
+  assert.equal(reviewRecentSale({...report,property_history:{lastSold:{date:'2020-01-01',price:900000}}}).review_flags,undefined);
+});
+test('advertised development rights cannot become an ordinary residential valuation',async t=>{
+  const base={facts:{property_type:'Detached'},comparables:[1,2,3].map(i=>({soldPrice:1000000+i*10000,propertySubType:'Detached'})),valuation:{available:true,low:1000000,midpoint:1100000,high:1200000}};
+  const r=reviewSpecialUse(base,{remarks:'Approved zoning for four-unit townhomes.'});assert.equal(r.valuation.available,false);assert.equal(r.valuation.midpoint,null);
+  t.mock.method(globalThis,'fetch',()=>{throw Error('A model must not reprice a withheld specialised valuation');});
+  assert.equal((await finalizePayload(r,{OPENAI_API_KEY:'synthetic'})).valuation.available,false);
+  assert.equal(reviewSpecialUse(base,{remarks:'Renovated home near a new condo development.'}).valuation.available,true);
 });

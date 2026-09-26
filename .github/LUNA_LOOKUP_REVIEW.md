@@ -72,3 +72,19 @@ not evidence that a property was never listed or sold.
 Do not infer valuation accuracy or attribute earlier deployed fixes to this
 revision from before/after report availability alone. Follow-up and final release
 results are recorded after their respective runs finish.
+
+## Second review
+
+Mixed run `36226603267`: all ten new Seller cases returned comparisons. Exact-unit
+rechecks recovered three townhouse comparisons for Pine Grove and eight comparisons
+for Eglinton in 15 seconds. Dixie requires insufficient-evidence handling after
+large model adjustments are excluded. The QA Buyer renderer had an incorrect
+argument signature; those ten Buyer properties were rerun unchanged in
+`36227167620`. All ten then returned reports, comparisons and history.
+
+Review found two additional issues: large differences from a recent recorded
+subject sale, and generic home valuations for advertised development opportunities.
+The first produces an explicit review flag without recalculating the value from
+the prior transaction. The second withholds the generic estimate and requests
+specialist review; claimed planning rights are not treated as verified approvals.
+These safeguards apply to both Buyer and Seller reports.

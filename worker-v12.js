@@ -7,7 +7,7 @@ import legacyApp, {
   sellerHistoryParsedAddress, sellerHistoryMatches, sellerHomeKey, sellerSameHome, exactComparableType, sellerComparableGeography,
 } from "./worker-v11.js";
 import {chooseLookupPlans} from './lookup-recovery.js';
-import {historyEvent, summarizePropertyHistory} from './property-history.js';
+import {historyEvent, summarizePropertyHistory, reviewRecentSale, reviewSpecialUse} from './property-history.js';
 
 const VERSION = "version-7-openai-expert-v120-20260916";
 const AMPRE = "https://query.ampre.ca/odata";
@@ -192,11 +192,12 @@ async function processV7ReportJobs(env, limit = 1) {
 
 async function buildVersion7Report(env, lead, property, requestId) {
   let report = await buildPhase6Report(env, lead, property, requestId);
+  report=reviewSpecialUse(report,property);
   const historyParsed=sellerHistoryParsedAddress(property.address||'');
   const historyRows=[...(env.THM_REPORT_RUNTIME?.rawRows?.values()||[])].filter(r=>sellerHistoryMatches(historyParsed,r,historyParsed.city||property.city));
   report.property_history=property.propertyHistory || summarizePropertyHistory(historyRows.map(historyEvent));
   const sellerVerified = lead.lead_mode !== "seller" || (report.seller?.evidence?.subjectMatched ?? report.seller?.evidence?.listingMatched) === true;
-  const needsExpert = sellerVerified && shouldUseExpertComp(report);
+  const needsExpert = sellerVerified && !report.review_flags?.some(f=>f.code==='special_use_review') && shouldUseExpertComp(report);
 
   if (needsExpert && env.OPENAI_API_KEY && env.AMPRE_VOW_TOKEN) {
     try {
@@ -209,12 +210,13 @@ async function buildVersion7Report(env, lead, property, requestId) {
 
   // Establish one final numeric result before asking a model to explain it.
   if (typeof env.THM_FINALIZE_REPORT === 'function') report = await reportStage(env, 'decision_summary', 24000, e => env.THM_FINALIZE_REPORT(report, e));
+  report=reviewRecentSale(report);
   if (lead.lead_mode === "seller" && sellerVerified && report.comparables?.length >= 3) {
     report = await enhanceSellerReport(env, lead, property, report, requestId).catch(error => {
       console.warn(JSON.stringify({ event: "v7_seller_ai_failed", request_id: requestId, error: String(error?.message || error).slice(0, 240) }));
       return report;
     });
-  } else if (lead.lead_mode !== "seller" && (report.expert_comp_mode?.used || report.ai_generation?.provider === "deterministic_fallback")) {
+  } else if (lead.lead_mode !== "seller" && (report.review_flags?.length || report.expert_comp_mode?.used || report.ai_generation?.provider === "deterministic_fallback")) {
     const narrative = await openAiBuyerNarrative(env, report, property).catch(() => null);
     if (narrative) {
       report = {
@@ -277,7 +279,13 @@ async function collectBroadSoldPool(env, property, seller = false) {
 
   const rows = [...(env.THM_REPORT_RUNTIME?.rawRows?.values() || [])];
   if (soldCandidates(property, rows).length >= 12) return soldCandidates(property, rows).slice(0, 60);
+  const cutoff=new Date(Date.now()-365*864e5).toISOString().slice(0,10);
   for (const filter of [...new Set(searches)].slice(0, 3)) {
+    // Live capability checks confirm these fields are filterable. Search actual
+    // recent sales before spending the budget on older, active and rental rows.
+    const recent=`${filter} and PurchaseContractDate ge ${cutoff} and contains(MlsStatus,'Sold')`;
+    rows.push(...await tailQuery(recent,token,300,env));
+    if(soldCandidates(property,rows).length>=12)break;
     if (env.THM_REPORT_RUNTIME?.completedFilters.has(filter)) continue;
     const batch = await tailQuery(filter, token, seller ? 500 : 700, env);
     rows.push(...batch);
@@ -536,12 +544,13 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
     subject: report.facts,
     historicalSubjectSource: report.seller?.evidence?.archiveSubject || null,
     propertyHistory: report.property_history,
+    requiredReviewNotes: report.review_flags||[],
     valuation: report.valuation,
     soldComparables: report.comparables,
     activeCompetition: report.active_comparables,
     inputPolicy: "address_and_historical_mls_only",
   };
-  const system = `Write in the natural voice of a thoughtful, experienced GTA listing Realtor speaking directly to the homeowner. Use \"your home\", contractions and plain Canadian English. Start with the practical takeaway, explain what stands out about this home, and suggest one sensible next step. Be warm and candid, not salesy. Avoid jargon such as \"evidence reconciliation\", \"subject property\", \"data-driven insights\" or \"leverage\". Do not claim a personal visit, inspection or human review that has not happened. Produce seller-specific pricing and positioning reasoning. The supplied home facts come from historical MLS records, not seller questionnaire answers. They may not reflect present condition. Do not infer recent renovations, kitchen changes, size, bedroom changes or seller expectations. Do not output or apply a condition adjustment to the valuation. Decide whether condition is materially value-driving for this particular property and market. No seller expectations are supplied; leave expectation_comparison empty. Use sold evidence first and active listings only as competition/context. Use the supplied final valuation midpoint, low, high and confidence exactly; do not calculate a different likely sale range. Distinguish a suggested asking price from the likely sale range. Treat archived home specifications as historical, never as current verified condition. Do not promise a sale price. Write the independent market read as a clear 30-second summary under 55 words: what the sold evidence suggests and the most important uncertainty. Keep listing strategy under 70 words. At most three concise bullets per list, each under 20 words. Return JSON only.`;
+  const system = `Write in the natural voice of a thoughtful, experienced GTA listing Realtor speaking directly to the homeowner. Use \"your home\", contractions and plain Canadian English. Start with the practical takeaway, explain what stands out about this home, and suggest one sensible next step. Be warm and candid, not salesy. Avoid jargon such as \"evidence reconciliation\", \"subject property\", \"data-driven insights\" or \"leverage\". Do not claim a personal visit, inspection or human review that has not happened. Produce seller-specific pricing and positioning reasoning. The supplied home facts come from historical MLS records, not seller questionnaire answers. They may not reflect present condition. Do not infer recent renovations, kitchen changes, size, bedroom changes or seller expectations. Do not output or apply a condition adjustment to the valuation. Decide whether condition is materially value-driving for this particular property and market. No seller expectations are supplied; leave expectation_comparison empty. Use sold evidence first and active listings only as competition/context. Explicitly mention any supplied requiredReviewNotes; a recent subject-sale discrepancy requires checking transaction terms and condition. Use the supplied final valuation midpoint, low, high and confidence exactly; do not calculate a different likely sale range. Distinguish a suggested asking price from the likely sale range. Treat archived home specifications as historical, never as current verified condition. If valuation.available is false, do not suggest an asking price or invent an estimated range. Explain why a specialist review is needed. Do not promise a sale price. Write the independent market read as a clear 30-second summary under 55 words: what the sold evidence suggests and the most important uncertainty. Keep listing strategy under 70 words. At most three concise bullets per list, each under 20 words. Return JSON only.`;
   const result = await openAiJson(env, "thm_seller_strategy", schema, [
     { role: "system", content: system },
     { role: "user", content: JSON.stringify(payload) },
@@ -582,10 +591,10 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
 
 async function openAiBuyerNarrative(env, report, property) {
   const schema = buyerNarrativeSchema();
-  const system = `Write like an approachable, experienced GTA buyer Realtor speaking directly to the buyer: natural Canadian English, short sentences, contractions, and concrete next steps. Avoid robotic headings inside prose and jargon such as \"subject property\" or \"evidence reconciliation\". Never imply you toured the home. Write a concise GTA buyer decision narrative grounded only in the supplied property facts and real sold evidence. If Expert Comp Mode was used, explain in plain language that a wider set of sold homes was needed and meaningful differences were allowed for; do not mention engines, technical modes, or imply a human has already reviewed it. Never invent a sale or property fact. Use the final valuation numbers and confidence exactly as supplied; do not recompute them. Distinguish above-grade and basement bedrooms. Executive summary at most 55 words; market read and strategy at most 80 words each; bullets at most 22 words. Do not call this an appraisal. Return JSON only.`;
+  const system = `Write like an approachable, experienced GTA buyer Realtor speaking directly to the buyer: natural Canadian English, short sentences, contractions, and concrete next steps. Avoid robotic headings inside prose and jargon such as \"subject property\" or \"evidence reconciliation\". Never imply you toured the home. Write a concise GTA buyer decision narrative grounded only in the supplied property facts and real sold evidence. If Expert Comp Mode was used, explain in plain language that a wider set of sold homes was needed and meaningful differences were allowed for; do not mention engines, technical modes, or imply a human has already reviewed it. Never invent a sale or property fact. Use the final valuation numbers and confidence exactly as supplied; do not recompute them. Explicitly mention any supplied requiredReviewNotes. Distinguish above-grade and basement bedrooms. Executive summary at most 55 words; market read and strategy at most 80 words each; bullets at most 22 words. If valuation.available is false, do not invent a market value, value score, offer price or range. Do not call this an appraisal. Return JSON only.`;
   return openAiJson(env, "thm_buyer_narrative", schema, [
     { role: "system", content: system },
-    { role: "user", content: JSON.stringify({ facts: report.facts, propertyHistory: report.property_history, valuation: report.valuation, comparables: report.comparables, expert: report.expert_comp_mode, remarks: property?.remarks }) },
+    { role: "user", content: JSON.stringify({ facts: report.facts, propertyHistory: report.property_history, requiredReviewNotes:report.review_flags||[], valuation: report.valuation, comparables: report.comparables, expert: report.expert_comp_mode, remarks: property?.remarks }) },
   ], false);
 }
 

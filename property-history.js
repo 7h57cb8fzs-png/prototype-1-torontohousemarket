@@ -25,3 +25,28 @@ export function summarizePropertyHistory(events=[],options={}){
   const rentalNote=rentals.length?` Also ${rentals.length} distinct rental listing${rentals.length===1?'':'s'} recovered in this period.`:'';
   return {years:5,since,counts,lastSold,records,rentalListingCount:rentals.length,coverage:'recovered_records_only',retrievalComplete:options.complete===true,summary:`${activity} ${sale}${rentalNote} Available MLS history may be incomplete.`};
 }
+
+// Consistency check only. A prior transaction never sets the calculated value.
+export function reviewRecentSale(report){
+  const sale=report.property_history?.lastSold,value=Number(report.valuation?.midpoint);
+  const age=(Date.parse(report.generated_at||new Date().toISOString())-Date.parse(sale?.date||''))/864e5;
+  if(!report.valuation?.available||!(sale?.price>50000)||!(value>0)||age<0||age>90)return report;
+  const gap=(value/sale.price-1)*100;if(Math.abs(gap)<20)return report;
+  const note=`The estimate is ${Math.round(Math.abs(gap))}% ${gap>0?'above':'below'} this property's recorded ${sale.date} sale at $${sale.price.toLocaleString('en-CA')}. Verify the transaction terms, condition and comparable selection before relying on the estimate.`;
+  return {...report,review_flags:[...(report.review_flags||[]),{code:'recent_subject_sale_gap',differencePct:Math.round(gap),note}],
+    valuation:{...report.valuation,confidence:'Limited',requiresReview:true},
+    evidence_quality:{...(report.evidence_quality||{}),label:'Limited'},
+    decision_summary:{...(report.decision_summary||{}),headline:'Estimate needs review',evidence_confidence:'Limited'},
+    value_rating:{available:false,score:null,label:'Review recent sale',reason:note}};
+}
+
+export function reviewSpecialUse(report,property={}){
+  const remarks=String(property.remarks||'');
+  const specialised=/\b(?:land assembly|development site|redevelopment opportunity|severance approved|approved severance|tear[ -]?down)\b/i.test(remarks)||/\b(?:approved|zoned|rezoning)\b[^.!?]{0,110}\b(?:townhomes?|townhouses?|four[ -]unit|\d+[ -]unit|multiplex|mixed[ -]use|commercial|redevelopment)\b/i.test(remarks);
+  if(!specialised)return report;
+  const note='The listing describes development or zoning potential. Ordinary residential sales do not establish the value of those rights. Verify the planning claims and obtain a specialist pricing review.';
+  return {...report,review_flags:[...(report.review_flags||[]),{code:'special_use_review',note}],
+    valuation:{...(report.valuation||{}),available:false,low:null,midpoint:null,high:null,estimated_market_value:null,market_value:null,likely_market_range:{low:null,high:null},confidence:'Limited',requiresReview:true,basis:note},
+    value_rating:{available:false,score:null,label:'Specialist review',reason:note},
+    narrative:{...(report.narrative||{}),executive_summary:note,market_read:note,buyer_strategy:'Ask the listing team for the planning documents, permitted uses and development-specific evidence before making a pricing decision.'}};
+}

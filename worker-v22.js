@@ -75,7 +75,7 @@ export function coreEnv(env){return {...env,GEMINI_API_KEY:null,OPENROUTER_API_K
 export async function finalizePayload(report,env){
   let p=decorate(report),cx=complexity(p);
   p.model_policy={primary:LUNA,terra_review:false,terra_threshold:'compound severe complexity only',complexity_score:cx.score,complexity_flags:cx.flags};
-  if(cx.escalate && p.comparables?.length>=3 && env.OPENAI_API_KEY){try{p=applyTerra(p,await terra(env,p),cx);}catch(e){p.model_policy.terra_error=String(e?.message||e).slice(0,200);}}
+  if(p.valuation?.available===true && cx.escalate && p.comparables?.length>=3 && env.OPENAI_API_KEY){try{p=applyTerra(p,await terra(env,p),cx);}catch(e){p.model_policy.terra_error=String(e?.message||e).slice(0,200);}}
   p.version=7.6;p.version_label='Toronto House Market Version 7.6';
   p.ai_note=p.model_policy.terra_review?'Version 7.4 · exceptional-complexity Terra review':'Version 7.4 · primary path; Terra not used';
   return p;

@@ -63,6 +63,6 @@ export default {async fetch(request,env){
     }catch(e){error=String(e?.message||e);}
     let rendered=null,renderError=null;
     if(report)try{rendered=c.mode==='seller'?sellerReportEmail(c.address,report):propertyReportEmail(c.address,{},report);}catch(e){renderError=String(e?.message||e);}
-    return Response.json({case:c,report,error,renderError,telemetry:runtimeSummary(runtime),diagnostics:property?.sellerEvidence?.diagnostics||property?.comparableContext?.diagnostics||null,html:rendered?.html||null,text:rendered?.text||null},{headers:{'Cache-Control':'private, no-store','X-Robots-Tag':'noindex'}});
+    return Response.json({case:c,report,error,renderError,subjectRemarks:property?.remarks||null,telemetry:runtimeSummary(runtime),diagnostics:property?.sellerEvidence?.diagnostics||property?.comparableContext?.diagnostics||null,html:rendered?.html||null,text:rendered?.text||null},{headers:{'Cache-Control':'private, no-store','X-Robots-Tag':'noindex'}});
   }catch(e){return Response.json({error:String(e?.message||e)},{status:500,headers:{'Cache-Control':'no-store'}});}
 }};
