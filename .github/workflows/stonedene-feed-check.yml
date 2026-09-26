@@ -1,0 +1,55 @@
+name: Read-only exact historical MLS check
+on:
+  push:
+    branches: [fix/stonedene-lookup-20260926]
+    paths: [.github/workflows/stonedene-feed-check.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read historical feed without submitting a report
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          import {randomBytes} from 'node:crypto';
+          import assert from 'node:assert/strict';
+          const name='prototype-1-torontohousemarket';
+          const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID;
+          async function cf(path){const r=await fetch(root+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN},signal:AbortSignal.timeout(20000)});const d=await r.json();assert(r.ok&&d.success,'Cloudflare read failed '+r.status);return d.result;}
+          const state=await cf('/workers/scripts/'+name+'/deployments');
+          assert.equal(state.deployments[0].versions.length,1);
+          const before=state.deployments[0].versions[0].version_id;
+          const version=await cf('/workers/workers/'+name+'/versions/'+before+'?include=modules');
+          const schedule=await cf('/workers/scripts/'+name+'/schedules');
+          const nonce=randomBytes(32).toString('hex');console.log('::add-mask::'+nonce);
+          const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          delete cfg.secrets;delete cfg.assets;delete cfg.triggers;
+          cfg.main='worker-seller-feed-probe.js';
+          cfg.vars=Object.fromEntries(version.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));
+          cfg.vars.THM_QA_NONCE=nonce;
+          const expiry=Date.now()+600000;
+          fs.writeFileSync(cfg.main,`export default {async fetch(req,env){
+            if(Date.now()>${expiry}||new URL(req.url).pathname!=='/probe'||req.headers.get('Authorization')!=='Bearer '+env.THM_QA_NONCE)return new Response('Not found',{status:404});
+            const shapes=[['direct',"https://query.ampre.ca/odata/Property('C2550539')"],['title',"contains(StreetName,'Stonedene') and contains(StreetNumber,'29')"],['upper',"contains(StreetName,'STONEDENE') and contains(StreetNumber,'29')"],['lower',"contains(StreetName,'stonedene') and contains(StreetNumber,'29')"],['listing_key',"ListingKey eq 'C2550539'"],['street',"contains(StreetName,'Stonedene')"],['unparsed',"contains(UnparsedAddress,'Stonedene') and contains(UnparsedAddress,'29')"],['prefix',"contains(StreetName,'Stone') and StreetNumber eq '29'"]];
+            const results=[];
+            for(const [shape,value] of shapes){try{const url=value.startsWith('https:')?value:'https://query.ampre.ca/odata/Property?'+new URLSearchParams({'$filter':value,'$top':'100'}).toString().replaceAll('+','%20');const r=await fetch(url,{headers:{Authorization:'Bearer '+env.AMPRE_VOW_TOKEN,Accept:'application/json'},signal:AbortSignal.timeout(8000)});const d=await r.json().catch(()=>({}));const rows=Array.isArray(d.value)?d.value:d.ListingKey?[d]:[];const exact=rows.filter(x=>String(x.StreetNumber)==='29'&&String(x.StreetName||'').toLowerCase()==='stonedene');results.push({shape,http:r.status,rows:rows.length,next:!!d['@odata.nextLink'],exactMatches:exact.length,requestedMlsPresent:rows.some(x=>x.ListingKey==='C2550539'),exactKeys:exact.map(x=>x.ListingKey),directStreetNumberMatches:shape==='direct'&&rows[0]?String(rows[0].StreetNumber)==='29':null,directStreetNameMatches:shape==='direct'&&rows[0]?String(rows[0].StreetName||'').toLowerCase()==='stonedene':null,factFields:exact[0]?Object.keys(exact[0]).filter(k=>/^(Street|City|Bedrooms|Bathrooms|LivingArea|Lot|ArchitecturalStyle|OriginalEntryTimestamp)/.test(k)):[]});}catch(e){results.push({shape,error:e.name});}}
+            return Response.json({results},{headers:{'Cache-Control':'private, no-store','X-Robots-Tag':'noindex'}});
+          }};`);
+          fs.writeFileSync('wrangler.seller-feed-probe.json',JSON.stringify(cfg));
+          let output;try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config','wrangler.seller-feed-probe.json'],{encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:12000000});}catch{throw Error('Unpublished diagnostic upload failed; private configuration output withheld.');}
+          const preview=output.match(/Version Preview URL:\s*(https:\/\/[^\s]+)/i)?.[1];assert(preview,'Missing preview URL');
+          const r=await fetch(preview+'/probe',{headers:{Authorization:'Bearer '+nonce},signal:AbortSignal.timeout(115000)});assert(r.ok,'Probe HTTP '+r.status);console.log('SELLER_FEED_RESULT',JSON.stringify(await r.json()));
+          const end=await cf('/workers/scripts/'+name+'/deployments');assert.equal(end.deployments[0].versions[0].version_id,before,'Production changed during diagnostic');assert.deepEqual(await cf('/workers/scripts/'+name+'/schedules'),schedule);
+          console.log('PASS: production version and cron unchanged; no leads, reports, consent or emails created. Diagnostic access expires in ten minutes.');
+          NODE
