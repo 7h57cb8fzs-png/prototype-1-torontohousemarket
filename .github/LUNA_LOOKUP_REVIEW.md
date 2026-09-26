@@ -123,3 +123,11 @@ price with a clear verification request. Source commit
 `52c942f2-2042-4d77-89e9-8c99ced92c2b`, SHA-256
 `4effeb70717cacb558e3e9d9c471d12698bdabf964d647c7a25e142ab49aa904`.
 The exact candidate is promoted by the guarded publication workflow.
+
+## Published
+
+Workflow `36228557462` successfully promoted the reviewed candidate on
+2026-09-26 at 08:02 UTC. All 16 checked public assets matched; admin routes remained
+protected; binding configuration, active source hash and cron were verified.
+The live `/api/version` reports `version-7.6-luna-lookup-history-20260926` and
+`gpt-5.6-luna`. The release was fast-forwarded into the canonical `phase-6` branch.
