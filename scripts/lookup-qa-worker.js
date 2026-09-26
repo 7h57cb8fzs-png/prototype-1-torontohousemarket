@@ -26,11 +26,13 @@ export default {async fetch(request,env){
       const cities=['Toronto','Mississauga','Vaughan','Richmond Hill','Markham','Oakville','Brampton'];
       const index=Number(u.searchParams.get('city')),buyer=u.searchParams.get('mode')==='buyer';
       if(!Number.isInteger(index)||index<0||index>=cities.length)return new Response('Invalid city',{status:400});
-      const base='https://query.ampre.ca/odata/Property',filter=`contains(City,'${cities[index]}')`;
+      const communities=['Waterfront','Lakeview','Maple','Crosby','Unionville','Bronte','Brampton'];
+      const base='https://query.ampre.ca/odata/Property',filter=`contains(City,'${cities[index]}') and contains(CityRegion,'${communities[index]}')`;
       const headers={Authorization:'Bearer '+(buyer?env.AMPRE_TOKEN:env.AMPRE_VOW_TOKEN),Accept:'application/json'};
       const query=async p=>{const r=await fetch(base+'?'+new URLSearchParams(p).toString().replaceAll('+','%20'),{headers,signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('Catalog HTTP '+r.status+' '+JSON.stringify(p)+' '+(await r.text()).slice(0,350));return r.json();};
       const count=Number((await query({'$filter':filter,'$count':'true','$top':'1'}))['@odata.count']);
-      const offsets=buyer?[0,100,200]:[Math.max(0,count-100),Math.max(0,count-300),Math.max(0,count-600)];
+      const bounded=Math.min(count,100000);
+      const offsets=buyer?[0,100,200]:[Math.max(0,bounded-100),Math.max(0,bounded-300),Math.max(0,bounded-600)];
       const records=[];
       for(const skip of [...new Set(offsets)])records.push(...((await query({'$filter':filter,'$top':'100','$skip':String(skip)})).value||[]));
       const rows=records.filter(r=>r.ListingKey&&r.StreetNumber&&r.StreetName&&/Detached|Semi-Detached|Townhouse|Condo Apartment/i.test(r.PropertySubType||'')&&!/lease|rent/i.test(r.TransactionType||'')&&r.InternetEntireListingDisplayYN!==false&&r.InternetAddressDisplayYN!==false).filter(r=>buyer?/active|new/i.test(r.StandardStatus+' '+r.MlsStatus)&&!/sold|closed|terminat|expir|cancel/i.test(r.StandardStatus+' '+r.MlsStatus):/sold|closed|terminat|expir|cancel/i.test(r.StandardStatus+' '+r.MlsStatus));

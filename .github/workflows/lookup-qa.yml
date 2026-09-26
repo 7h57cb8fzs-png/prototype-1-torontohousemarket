@@ -35,3 +35,4 @@ jobs:
           if-no-files-found: ignore
 
 # Catalog diagnostics retry 1
+# Respect 100000-row MLS result-set cap with community-scoped sampling
