@@ -28,7 +28,7 @@ export default {async fetch(request,env){
       if(!Number.isInteger(index)||index<0||index>=cities.length)return new Response('Invalid city',{status:400});
       const base='https://query.ampre.ca/odata/Property',filter=`contains(City,'${cities[index]}')`;
       const headers={Authorization:'Bearer '+(buyer?env.AMPRE_TOKEN:env.AMPRE_VOW_TOKEN),Accept:'application/json'};
-      const query=async p=>{const r=await fetch(base+'?'+new URLSearchParams(p).toString().replaceAll('+','%20'),{headers,signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('Catalog HTTP '+r.status);return r.json();};
+      const query=async p=>{const r=await fetch(base+'?'+new URLSearchParams(p).toString().replaceAll('+','%20'),{headers,signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('Catalog HTTP '+r.status+' '+JSON.stringify(p)+' '+(await r.text()).slice(0,350));return r.json();};
       const count=Number((await query({'$filter':filter,'$count':'true','$top':'1'}))['@odata.count']);
       const offsets=buyer?[0,100,200]:[Math.max(0,count-100),Math.max(0,count-300),Math.max(0,count-600)];
       const records=[];
