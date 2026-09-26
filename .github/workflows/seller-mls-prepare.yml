@@ -1,0 +1,48 @@
+name: Prepare Seller MLS-only source checkpoint
+on:
+  push:
+    branches: [fix/seller-mls-only-20260926]
+    paths: [.github/workflows/seller-mls-prepare.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Read-only production checkpoint
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+        run: |
+          mkdir -p "$RUNNER_TEMP/seller-mls-checkpoint"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          const out=process.env.RUNNER_TEMP+'/seller-mls-checkpoint';
+          const base='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID+'/workers/scripts/prototype-1-torontohousemarket';
+          async function get(path){const r=await fetch(base+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN},signal:AbortSignal.timeout(30000)});if(!r.ok)throw new Error('Cloudflare checkpoint HTTP '+r.status);return r;}
+          const d=await (await get('/deployments')).json();
+          if(!d.success)throw new Error('Deployment checkpoint unavailable');
+          const content=await get('/content/v2');
+          const ct=content.headers.get('content-type')||'';
+          let modules=[];
+          if(ct.includes('multipart/form-data')){const form=await content.formData();for(const [name,file] of form.entries()){if(typeof file!=='string'&&/\.(?:js|mjs)$/.test(name)){const text=await file.text();const safe=name.replace(/[^a-zA-Z0-9_.-]/g,'_');fs.writeFileSync(out+'/production-'+safe,text);modules.push({name,bytes:Buffer.byteLength(text),sha256:crypto.createHash('sha256').update(text).digest('hex')});}}}
+          else {const text=await content.text();fs.writeFileSync(out+'/production-worker.js',text);modules=[{name:'worker.js',bytes:Buffer.byteLength(text),sha256:crypto.createHash('sha256').update(text).digest('hex')}];}
+          const s=await (await get('/schedules')).json();
+          const checkpoint={sourceCommit:process.env.GITHUB_SHA,checkedAt:new Date().toISOString(),deployment:d.result.deployments[0],modules,schedules:s.result};
+          fs.writeFileSync(out+'/checkpoint.json',JSON.stringify(checkpoint,null,2));
+          console.log(JSON.stringify({checkpoint:'read_only',deployment:checkpoint.deployment.id,versions:checkpoint.deployment.versions,modules}));
+          NODE
+      - name: Archive tracked source only
+        run: git archive --format=tar HEAD > "$RUNNER_TEMP/seller-mls-checkpoint/repository.tar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: seller-mls-source-checkpoint
+          path: ${{ runner.temp }}/seller-mls-checkpoint/
+          retention-days: 2
+          if-no-files-found: error
