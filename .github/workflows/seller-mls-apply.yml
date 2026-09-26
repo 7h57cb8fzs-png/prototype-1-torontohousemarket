@@ -1,0 +1,51 @@
+name: Apply and verify Seller MLS-only evidence
+on:
+  push:
+    branches: [fix/seller-mls-only-20260926]
+    paths: [.github/workflows/seller-mls-apply.yml]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply reviewed source correction
+        run: python3 scripts/apply-seller-mls-only.py
+      - name: Validate syntax and change boundary
+        run: |
+          node --check worker-v11.js
+          node --check worker-v12.js
+          node --check worker-v22.js
+          node --check seller-archive.js
+          node --check seller-mls-input.js
+          node scripts/seller-mls-scope.mjs
+      - name: Run 16 focused synthetic regressions
+        run: |
+          node --test tests/seller-mls-only.test.mjs tests/seller-v73-policy.test.mjs
+          node --test --test-name-pattern='the default request|public report creation|admin manual capture|showing requests reject|buyer emails distinguish' tests/phase5-request-flow.test.mjs
+      - name: Commit tested application sources to isolated branch
+        run: |
+          git config user.name 'THM Release Checks'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add worker-v11.js worker-v12.js worker-v22.js .assetsignore tests/seller-v73-policy.test.mjs
+          git commit -m 'Separate Seller valuation facts from questionnaire answers'
+          git push origin HEAD:fix/seller-mls-only-20260926
+      - name: Check reproducible production baseline bundle
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';import {execFileSync} from 'node:child_process';import {createHash} from 'node:crypto';import path from 'node:path';
+          const root=process.env.RUNNER_TEMP+'/thm-baseline';fs.mkdirSync(root,{recursive:true});
+          const tar=execFileSync('git',['archive','5eeb589f81af01e5c78d37432a88fc527696625c'],{maxBuffer:30000000});execFileSync('tar',['-x','-C',root],{input:tar});
+          const cfg=JSON.parse(fs.readFileSync(root+'/wrangler.jsonc','utf8'));delete cfg.secrets;delete cfg.assets;delete cfg.triggers;fs.writeFileSync(root+'/wrangler.qa.json',JSON.stringify(cfg));
+          const out=process.env.RUNNER_TEMP+'/thm-baseline-bundle';
+          execFileSync('npx',['--yes','wrangler@4.129.0','deploy','--dry-run','--outdir',out,'--config','wrangler.qa.json'],{cwd:root,stdio:'pipe',maxBuffer:12000000});
+          const file=fs.readdirSync(out).find(x=>x.endsWith('.js'));const hash=createHash('sha256').update(fs.readFileSync(path.join(out,file))).digest('hex');
+          console.log(JSON.stringify({baselineBundle:file,sha256:hash,exactProductionMatch:hash==='109ef1b69e491c95f1ad57cf591b95a0246174327fb26edbdbea088a6bb16744'}));
+          NODE

@@ -1,0 +1,33 @@
+name: Verify Seller MLS-only candidate
+on:
+  push:
+    branches: [fix/seller-mls-only-20260926]
+    paths: [.github/workflows/seller-mls-preview.yml]
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate unchanged Buyer and frontend scope
+        run: node scripts/seller-mls-scope.mjs
+      - name: Repeat focused synthetic invariance checks
+        run: |
+          node --test tests/seller-mls-only.test.mjs tests/seller-v73-policy.test.mjs
+          node --test --test-name-pattern='the default request|public report creation|admin manual capture|showing requests reject|buyer emails distinguish' tests/phase5-request-flow.test.mjs
+      - name: Upload unpublished candidate and run four read-only Seller checks
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          EXPECTED_ACTIVE_VERSION: b696da17-c413-425b-9d22-fa783ecd5a0c
+          EXPECTED_ACTIVE_SHA: 109ef1b69e491c95f1ad57cf591b95a0246174327fb26edbdbea088a6bb16744
+          PUBLISH: 'false'
+        run: node scripts/seller-mls-release.mjs

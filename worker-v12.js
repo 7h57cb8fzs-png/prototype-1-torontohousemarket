@@ -491,19 +491,17 @@ function applyExpertRecovery(report, expert) {
 }
 
 async function enhanceSellerReport(env, lead, property, report, requestId) {
-  const pct = sellerRenovationPct(report?.seller?.profile?.notes || property?.sellerProfile?.notes || "");
-  const expectation = report?.seller?.target_range || null;
+  const pct = null; // Seller questionnaire remains in the lead, never in AI evidence.
   const schema = sellerStrategySchema();
   const payload = {
     subject: report.facts,
     historicalSubjectSource: report.seller?.evidence?.archiveSubject || null,
-    renovationPct: pct,
     valuation: report.valuation,
     soldComparables: report.comparables,
     activeCompetition: report.active_comparables,
-    sellerExpectation: expectation ? { low: expectation.low, high: expectation.high } : null,
+    inputPolicy: "address_and_historical_mls_only",
   };
-  const system = `Write in the natural voice of a thoughtful, experienced GTA listing Realtor speaking directly to the homeowner. Use \"your home\", contractions and plain Canadian English. Start with the practical takeaway, explain what stands out about this home, and suggest one sensible next step. Be warm and candid, not salesy. Avoid jargon such as \"evidence reconciliation\", \"subject property\", \"data-driven insights\" or \"leverage\". Do not claim a personal visit, inspection or human review that has not happened. Produce seller-specific pricing and positioning reasoning. The renovation percentage is the owner's broad subjective description, not a mechanical price adjustment. Use it only as qualitative context when interpreting the sold evidence and current competition. Do not output or apply a percentage adjustment to the valuation. Decide whether condition is materially value-driving for this particular property and market. Never let the seller's expected minimum/maximum set or bias the independent valuation; compare expectations only after forming your view. Use sold evidence first and active listings only as competition/context. Use the supplied final valuation midpoint, low, high and confidence exactly; do not calculate a different likely sale range. Distinguish a suggested asking price from the likely sale range. Treat archived home specifications as historical, never as current verified condition. Do not promise a sale price. Write the independent market read as a clear 30-second summary under 55 words: what the sold evidence suggests and the most important uncertainty. Keep listing strategy under 70 words. At most three concise bullets per list, each under 20 words. Return JSON only.`;
+  const system = `Write in the natural voice of a thoughtful, experienced GTA listing Realtor speaking directly to the homeowner. Use \"your home\", contractions and plain Canadian English. Start with the practical takeaway, explain what stands out about this home, and suggest one sensible next step. Be warm and candid, not salesy. Avoid jargon such as \"evidence reconciliation\", \"subject property\", \"data-driven insights\" or \"leverage\". Do not claim a personal visit, inspection or human review that has not happened. Produce seller-specific pricing and positioning reasoning. The supplied home facts come from historical MLS records, not seller questionnaire answers. They may not reflect present condition. Do not infer recent renovations, kitchen changes, size, bedroom changes or seller expectations. Do not output or apply a condition adjustment to the valuation. Decide whether condition is materially value-driving for this particular property and market. No seller expectations are supplied; leave expectation_comparison empty. Use sold evidence first and active listings only as competition/context. Use the supplied final valuation midpoint, low, high and confidence exactly; do not calculate a different likely sale range. Distinguish a suggested asking price from the likely sale range. Treat archived home specifications as historical, never as current verified condition. Do not promise a sale price. Write the independent market read as a clear 30-second summary under 55 words: what the sold evidence suggests and the most important uncertainty. Keep listing strategy under 70 words. At most three concise bullets per list, each under 20 words. Return JSON only.`;
   const result = await openAiJson(env, "thm_seller_strategy", schema, [
     { role: "system", content: system },
     { role: "user", content: JSON.stringify(payload) },
@@ -520,8 +518,8 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
       renovation_label: renovationLabel(pct),
       condition_context: {
         renovation_pct: pct,
-        treatment: "context_only",
-        note: "Owner-reported renovation level informs the Realtor-style interpretation of evidence; it is not applied as a fixed percentage or dollar adjustment."
+        treatment: "not_used",
+        note: "Seller questionnaire answers are retained separately with the lead for future verification. Only historical MLS facts are supplied to this analysis."
       },
       strategy: {
         independent_market_read: clean(result?.independent_market_read),
@@ -537,7 +535,7 @@ async function enhanceSellerReport(env, lead, property, report, requestId) {
       executive_summary: clean(result?.independent_market_read) || report.narrative?.executive_summary,
       preparation_checks: Array.isArray(result?.preparation_priorities) && result.preparation_priorities.length ? result.preparation_priorities.map(clean).filter(Boolean).slice(0,5) : report.narrative?.preparation_checks,
     },
-    ai_note: `OpenAI seller strategy · renovation context ${pct == null ? "not provided" : pct + "%"} · owner expectation excluded from independent valuation`,
+    ai_note: "OpenAI seller strategy from historical MLS evidence only; seller questionnaire excluded",
     analysis_mode: "Version 7: calculated sold evidence + OpenAI listing-Realtor reasoning",
   };
 }
@@ -670,6 +668,7 @@ function subjectForAi(property) {
     basement: property.basement || null,
     garage: property.garageType || null,
     historicalSubjectSource: property.sellerEvidence?.archiveSubject || null,
+    ...(property.sellerEvidence ? {architecturalStyle: property.architecturalStyle || null, belowGradeBeds: property.belowGradeBeds ?? null, bedroomBasis: property.bedroomBasis || null} : {}),
     remarks: clean(property.remarks)?.slice(0, 1200) || null,
   };
 }
