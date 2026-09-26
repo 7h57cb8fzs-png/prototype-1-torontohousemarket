@@ -24,12 +24,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
           EXPECTED_ACTIVE_VERSION: 5fd52d27-0890-401b-a771-54e590d3177a
           EXPECTED_ACTIVE_SHA: e72af43addf85b4c04b3ea92e3daa34b272c2ca15d3c3785b93f4405359b3957
-          QA_ROUND: initial
+          QA_ROUND: mixed
         run: node scripts/lookup-qa.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lookup-qa-initial
+          name: lookup-qa-mixed
           path: qa-output/
           retention-days: 2
           if-no-files-found: ignore

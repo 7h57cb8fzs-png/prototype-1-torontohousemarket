@@ -906,7 +906,7 @@ async function querySoldComparableRows(baseFilters, env, top, startSkip = 0, sel
     const counted = await queryPropertyCount(baseFilters, env);
     audit.push({ queryScope: "local_history_count", requestedSkip: startSkip, totalCount: counted.count, ...counted.meta });
     if (counted.count != null) {
-      effectiveStartSkip = Math.max(0, counted.count - top);
+      effectiveStartSkip = Math.max(0, Math.min(100000,counted.count) - top);
       audit.push({ queryScope: "local_history_tail_window", requestedSkip: startSkip, effectiveStartSkip, tailSkip: Math.max(0, counted.count - 1), reliable: true, capped: counted.count > 1e5 });
     } else {
       const tail = await locateRecentHistoryStart(baseFilters, env, top, pageSize, startSkip);
@@ -1250,8 +1250,8 @@ function isSoldWithinDays(r, windowDays, subject = null) {
   const transaction = String(r?.TransactionType || "");
   const price = firstFiniteNumber(r, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"]);
   const date = soldRecordDate(r);
-  const soldEvidence = /closed|sold|deal firm/i.test(status) || !!validDate(firstValue(r, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"]));
-  if (/lease|leased|rent|rented/i.test(`${status} ${transaction}`)) return false;
+  const soldEvidence = /closed|sold|deal firm/i.test(status);
+  if (/lease|leased|rent|rented|conditional|sold cond|terminat|cancel|expir|withdraw/i.test(`${status} ${transaction}`)) return false;
   if (!soldEvidence || !price || !date) return false;
   const subjectPrice = firstFiniteNumber(subject, ["ListPrice", "ClosePrice", "SoldPrice", "SalePrice"]);
   if (subjectPrice >= 1e5 && price < Math.max(5e4, subjectPrice * 0.15)) return false;
@@ -1265,7 +1265,7 @@ function soldRecordDate(r) {
   if (explicit) return explicit;
   const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""}`;
   const price = firstFiniteNumber(r, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"]);
-  return price && /closed|sold|deal firm/i.test(status) ? validDate(r.ModificationTimestamp || r.SystemModificationTimestamp) : null;
+  return null; // A database update is not a sale event.
 }
 __name(soldRecordDate, "soldRecordDate");
 __name2(soldRecordDate, "soldRecordDate");
@@ -5177,15 +5177,24 @@ async function loadPropertyForReport(env, lead, requestId = null) {
   protectedUrl.searchParams.set("mode", "report_evidence");
   const vowResponse = await worker_v10_default.fetch(new Request(protectedUrl.toString(), { method: "GET", headers: { "X-THM-Request-Id": requestId || crypto.randomUUID() } }), { ...env, AMPRE_TOKEN: env.AMPRE_VOW_TOKEN }, { waitUntil() {
   } });
-  const vowBody = await vowResponse.json().catch(() => null);
-  if (!vowResponse.ok || !vowBody?.ok || !vowBody.property) throw new Error(vowBody?.error || "Protected VOW property evidence could not be resolved.");
+  let vowBody = await vowResponse.json().catch(() => null);
+  if(!listingKey && (!vowResponse.ok || !vowBody?.property?.listingKey)){
+    const input=lead.resolved_address||lead.metadata?.property_input||'';
+    const recovered=await resolveSellerSubject(input,{}, {...env,AMPRE_TOKEN:env.AMPRE_VOW_TOKEN},{}).catch(()=>null);
+    if(recovered?.ListingKey){
+      const retry=new URL(protectedUrl);retry.searchParams.delete('q');retry.searchParams.set('listingKey',recovered.ListingKey);
+      const response=await worker_v10_default.fetch(new Request(retry),{...env,AMPRE_TOKEN:env.AMPRE_VOW_TOKEN},{waitUntil(){}});
+      if(response.ok){vowBody=await response.json();url.searchParams.delete('q');url.searchParams.set('listingKey',recovered.ListingKey);}
+    }
+  }
+  if (!vowBody?.ok || !vowBody.property) throw new Error(vowBody?.error || "Protected VOW property evidence could not be resolved.");
   const offerRecord = await fetchPropertyByKey(vowBody.property.listingKey || listingKey, {...env, AMPRE_TOKEN:env.AMPRE_VOW_TOKEN}, false).catch(()=>null);
   vowBody.property.reportOfferInstructions = offerRecord ? extractOfferInstructions(offerRecord) : null;
   if (offerRecord) {
     const address=vowBody.property.address, parsed=sellerHistoryParsedAddress(address||'');
     let events=[historyEvent(offerRecord)];
     if(parsed.number&&parsed.name)try{
-      const filter=`contains(StreetName,'${escapeOData2(parsed.name.split(/\s+/).sort((a,b)=>b.length-a.length)[0])}') and contains(StreetNumber,'${escapeOData2(parsed.number)}')`;
+      const filter=`contains(StreetName,'${escapeOData2(parsed.name.split(/\s+/).sort((a,b)=>b.length-a.length)[0])}') and contains(StreetNumber,'${escapeOData2(parsed.number)}')${parsed.unit ? ` and contains(UnitNumber,'${escapeOData2(parsed.unit)}')` : ''}`;
       const found=await sellerQueryRows([filter],{...env,AMPRE_TOKEN:env.AMPRE_VOW_TOKEN},200);
       events.push(...found.rows.filter(r=>sellerHistoryMatches(parsed,r,parsed.city||offerRecord.City)).map(historyEvent));
     }catch{/* A missing history supplement must not discard valid comparable evidence. */}
@@ -6312,7 +6321,8 @@ async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
   const queryToken = name => name.split(/\s+/).filter(w=>!/^the$|^st$|^saint$/i.test(w)).sort((a,b)=>b.length-a.length)[0] || name;
   const streetFilters = [...new Set(names.map(name => `contains(StreetName,'${escapeOData2(queryToken(name))}')`))];
   const streetFilter = streetFilters[0];
-  const exactQueries = streetFilters.map(filter => `${filter} and contains(StreetNumber,'${number}')${cityWord ? ` and contains(City,'${cityWord}')` : ""}`);
+  const buildingQueries = streetFilters.map(filter => `${filter} and contains(StreetNumber,'${number}')${cityWord ? ` and contains(City,'${cityWord}')` : ""}`);
+  const exactQueries = parsed.unit ? buildingQueries.map(filter=>`${filter} and contains(UnitNumber,'${escapeOData2(parsed.unit)}')`) : buildingQueries;
   const fallbackQueries = [...streetFilters, ...names.map(name=>`contains(UnparsedAddress,'${escapeOData2(parsed.number+" "+name)}')`)];
   const candidates = /* @__PURE__ */ new Map(), streetRecords = /* @__PURE__ */ new Map(), audit = [];
   let complete = true;
@@ -6331,6 +6341,7 @@ async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
     }
   };
   await runFilters(exactQueries, 300);
+  if (parsed.unit && !candidates.size) await runFilters(buildingQueries,300);
   if (!candidates.size) {
     const recovery = await chooseLookupPlans(env, 'address', {address, parsed, prior:diagnostics.queries.map(q=>({filter:q.filter,rows:q.rows,complete:q.complete}))}, addressRecoveryPlans(parsed,exactQueries));
     diagnostics.lunaRecovery = recovery.audit;
@@ -6378,6 +6389,10 @@ async function resolveSellerSubject(address, profile, env, diagnostics = {}) {
   result._sellerFactSources = sources;
   result._sellerLookupAudit = audit;
   result._sellerHistoryComplete = complete;
+  if(parsed.unit&&candidates.size)try{
+    const building=await sellerQueryRows([buildingQueries[0]],env,300);
+    for(const r of building.rows)if(r.ListingKey)streetRecords.set(r.ListingKey,r);
+  }catch{/* Optional other-unit evidence must not undo an exact unit match. */}
   result._sellerStreetRecords = [...streetRecords.values()];
   return result;
 }
@@ -6409,7 +6424,7 @@ function sellerSale(record) {
   if (/lease|rent/i.test(`${status} ${record.TransactionType || ""}`)) return null;
   const price = firstFiniteNumber(record, ["ClosePrice", "SoldPrice", "SalePrice", "PurchaseContractPrice", "ClosedPrice", "FinalSalePrice"]);
   const date = validDate(firstValue(record, ["PurchaseContractDate", "SoldDate", "CloseDate", "ContractDate", "ClosingDate"]));
-  if (!price || price < 5e4 || !date || !/sold|closed|deal firm/i.test(status) || /conditional|sold cond/i.test(status)) return null;
+  if (!price || price < 5e4 || !date || !/sold|closed|deal firm/i.test(status) || /conditional|sold cond|terminat|cancel|expir|withdraw/i.test(status)) return null;
   const age = (Date.now() - date.getTime()) / 864e5;
   return age >= 0 && age <= 365 ? { record, price, date, age } : null;
 }

@@ -17,6 +17,19 @@ export default {async fetch(request,env){
   const u=new URL(request.url);
   if(Date.now()>Number(env.THM_LOOKUP_QA_EXPIRES)||request.headers.get('Authorization')!=='Bearer '+env.THM_LOOKUP_QA_NONCE)return new Response('Not found',{status:404});
   try{
+    if(u.pathname==='/probe'&&request.method==='GET'){
+      const queries=[
+        "contains(CityRegion,'Waterfront') and PurchaseContractDate ge 2025-09-26",
+        "contains(CityRegion,'Waterfront') and contains(MlsStatus,'Sold')",
+        "contains(StreetName,'Disera') and contains(StreetNumber,'60') and contains(UnitNumber,'1404')"
+      ];
+      const results=[];
+      for(const [i,filter] of queries.entries()){
+        const url='https://query.ampre.ca/odata/Property?'+new URLSearchParams({'$filter':filter,'$count':'true','$top':'0'}).toString().replaceAll('+','%20');
+        const r=await fetch(url,{headers:{Authorization:'Bearer '+env.AMPRE_VOW_TOKEN},signal:AbortSignal.timeout(10000)});const d=await r.json();results.push({probe:i,http:r.status,count:d['@odata.count']??null,error:d.error?.message||null});
+      }
+      return Response.json({results});
+    }
     if(u.pathname==='/baseline'&&request.method==='GET'){
       const reports=await db(env,"property_reports?select=id,created_at,report_payload&report_payload->>report_type=eq.THM%20Seller%20Price%20Perspective&order=created_at.desc&limit=13");
       const searches=await db(env,'analysis_sessions?select=property_input,resolved_address&limit=2000');
@@ -42,7 +55,7 @@ export default {async fetch(request,env){
     const c=await request.json();if(!['buyer','seller'].includes(c.mode)||typeof c.address!=='string'||c.address.length>350||!/^\d/.test(c.address))return new Response('Invalid case',{status:400});
     const runtime=createReportRuntime({id:'lookup-qa-'+c.id,attempts:1},{totalMs:110000});
     const scoped={...coreEnv(env),THM_REPORT_RUNTIME:runtime,RESEND_API_KEY:null};
-    const lead={lead_mode:c.mode,resolved_address:c.address,metadata:{property_input:c.address},property_snapshot:c.mode==='buyer'?{listingKey:c.listingKey}:{sellerProfile:{}}};
+    const lead={lead_mode:c.mode,resolved_address:c.address,metadata:{property_input:c.address},property_snapshot:c.mode==='buyer'?(c.lookup==='address'?{}:{listingKey:c.listingKey}):{sellerProfile:{}}};
     let property,report,error;
     try{
       property=await reportStage(scoped,'mls_evidence',50000,e=>loadPropertyForReport(e,lead,'lookup-qa-'+c.id));

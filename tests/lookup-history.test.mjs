@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {historyEvent,summarizePropertyHistory} from '../property-history.js';
 import {chooseLookupPlans,addressRecoveryPlans} from '../lookup-recovery.js';
 import {soldCandidates,normalizeExpertResult,applyExpertRecovery} from '../worker-v12.js';
-import {sellerHistoryMatches,sellerHistoryParsedAddress} from '../worker-v11.js';
+import {sellerHistoryMatches,sellerHistoryParsedAddress,isSoldWithinDays} from '../worker-v11.js';
+import {finalizePayload} from '../worker-v22.js';
 test('history counts MLS IDs once, excludes lease listings, never treats update time as sale date',()=>{
   const year=new Date().getUTCFullYear();
   const row={ListingKey:'C00000001',ListingContractDate:`${year}-01-01`,StandardStatus:'Closed',MlsStatus:'Terminated',ModificationTimestamp:`${year}-02-01`};
@@ -30,4 +31,18 @@ test('duplicate model choices cannot manufacture three sales; three unique indic
   const base={valuation:{available:false}};assert.equal(applyExpertRecovery(base,one),base);
   const three=normalizeExpertResult({comparables:candidates.map(c=>({id:c.id}))},candidates,'ampre_vow');
   const report=applyExpertRecovery(base,three);assert.equal(report.valuation.available,true);assert(Number.isFinite(report.valuation.low));assert(report.valuation.high>report.valuation.low);
+});
+test('buyer core cannot convert a modification timestamp or conditional status into a completed sale',()=>{
+  const date=new Date(Date.now()-7*864e5).toISOString();
+  const row={StandardStatus:'Closed',TransactionType:'For Sale',ClosePrice:1000000,ModificationTimestamp:date};
+  assert.equal(isSoldWithinDays(row,365),false);
+  assert.equal(isSoldWithinDays({...row,PurchaseContractDate:date,MlsStatus:'Sold Conditional'},365),false);
+  assert.equal(isSoldWithinDays({...row,PurchaseContractDate:date,MlsStatus:'Sold'},365),true);
+});
+test('final presentation cannot invent a valuation from evidence-only rows or narrow existing uncertainty',async()=>{
+  const comparables=[1,2,3].map(i=>({listingKey:'C0000000'+i,address:i+' Example Avenue, Toronto',propertySubType:'Detached',soldPrice:1000000+i*10000}));
+  const base={facts:{property_type:'Detached'},comparables,valuation:{available:false,low:null,midpoint:null,high:null}};
+  assert.equal((await finalizePayload(base,{})).valuation.available,false);
+  const valid=await finalizePayload({...base,valuation:{available:true,low:800000,midpoint:1000000,high:1200000,confidence:'Low'}},{});
+  assert(valid.valuation.low<=800000);assert(valid.valuation.high>=1200000);
 });

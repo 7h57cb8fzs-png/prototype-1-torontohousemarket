@@ -273,7 +273,7 @@ async function collectBroadSoldPool(env, property, seller = false) {
   const postal = String(property.postalCode || "").replace(/\s/g, "").slice(0, 3).toUpperCase();
   if (community && !/^(toronto )?[cew]\d{2}$/i.test(community)) searches.push(`contains(CityRegion,'${odata(community)}')`);
   if (/^[A-Z]\d[A-Z]$/.test(postal)) searches.push(`startswith(PostalCode,'${postal}')`);
-  if (city) searches.push(`contains(City,'${odata(city)}')`);
+  if (city && property.propertySubType) searches.push(`contains(City,'${odata(city)}') and contains(PropertySubType,'${odata(property.propertySubType)}')`);
 
   const rows = [...(env.THM_REPORT_RUNTIME?.rawRows?.values() || [])];
   if (soldCandidates(property, rows).length >= 12) return soldCandidates(property, rows).slice(0, 60);
@@ -304,10 +304,14 @@ async function tailQuery(filter, token, limit, env = {}) {
     const r = await reportFetch(env, countUrl, { headers, signal: AbortSignal.timeout(9000) });
     if (r.ok) count = Number((await r.json())?.["@odata.count"]);
   } catch {}
-  const start = Number.isSafeInteger(count) && count > limit ? count - limit : 0;
+  // AMPRE rejects any request whose skip + top exceeds 100,000.
+  // A capped scan is incomplete evidence, never proof of absent sales.
+  const boundedCount=Number.isSafeInteger(count)?Math.min(count,100000):null;
+  const start = boundedCount > limit ? boundedCount - limit : 0;
+  if(count>100000&&env.THM_REPORT_RUNTIME)(env.THM_REPORT_RUNTIME.lookupRecovery ||= []).push({purpose:'comparables',status:'provider_result_cap',filter,total:count});
   const rows = [];
   let skip = start;
-  while (rows.length < limit) {
+  while (rows.length < limit && skip < 100000) {
     const url = new URL(`${AMPRE}/Property`);
     url.search = new URLSearchParams({ "$filter": filter, "$top": "100", ...(skip ? { "$skip": String(skip) } : {}) }).toString();
     const r = await reportFetch(env, url, { headers, signal: AbortSignal.timeout(10000) });
@@ -331,14 +335,17 @@ export function soldCandidates(subject, rows) {
     const key = sellerHomeKey(r) || r?.ListingKey;
     if (!key || seen.has(key)) return false;
     const status = `${r?.StandardStatus || ""} ${r?.MlsStatus || ""} ${r?.ContractStatus || ""} ${r?.TransactionType || ""}`;
-    if (!/sold|closed|deal firm/i.test(status) || /lease|rent|conditional|sold cond/i.test(status)) return false;
+    if (!/sold|closed|deal firm/i.test(status) || /lease|rent|conditional|sold cond|terminat|cancel|expir|withdraw/i.test(status)) return false;
     const price = money(r?.ClosePrice || r?.SoldPrice || r?.SalePrice || r?.FinalSalePrice);
     const sold = new Date(r?.PurchaseContractDate || r?.SoldDate || r?.CloseDate || "");
     if (!(price > 50000) || !Number.isFinite(sold.getTime())) return false;
     const age = (Date.now() - sold.getTime()) / 864e5;
     if (age < 0 || age > 365) return false;
     if (normalizeAddress(r?.UnparsedAddress) === subjectAddress) return false;
-    if (sellerSameHome(subjectRaw,r) || !exactComparableType(subjectRaw,r) || !sellerComparableGeography(subjectRaw,r)) return false;
+    const normalizedCity=v=>clean(v).toLowerCase().replace(/^toronto\s+[cew]\d{2}$/,'toronto');
+    const fsa=v=>String(v||'').replace(/\s/g,'').slice(0,3).toUpperCase();
+    const postalLocal=normalizedCity(subject.city)===normalizedCity(r.City)&&/^[A-Z]\d[A-Z]$/.test(fsa(subject.postalCode))&&fsa(subject.postalCode)===fsa(r.PostalCode);
+    if (sellerSameHome(subjectRaw,r) || r.ListingKey===subject.listingKey || !exactComparableType(subjectRaw,r) || !(sellerComparableGeography(subjectRaw,r)||postalLocal)) return false;
     const condo = /condo|condominium/i.test(`${r?.PropertyType || ""} ${r?.PropertySubType || ""}`);
     if (condo !== subjectCondo) return false;
     seen.add(key);
@@ -364,6 +371,7 @@ export function soldCandidates(subject, rows) {
     parking: number(r.ParkingTotal),
     basement: Array.isArray(r.Basement) ? r.Basement.join(" · ") : clean(r.Basement),
     remarks: clean(r.PublicRemarks || r.PublicRemarksExtras)?.slice(0, 900) || null,
+    geographyBasis:sellerComparableGeography(subjectRaw,r)?'same community or verified building':'same municipality and postal district; neighbourhood differences require review',
     sourceType: "ampre_vow",
   })).sort((a, b) => Date.parse(b.soldDate) - Date.parse(a.soldDate));
 }
@@ -371,7 +379,7 @@ export function soldCandidates(subject, rows) {
 async function selectExpertComparables(env, property, candidates, seller) {
   const schema = expertSchema();
   const subject = subjectForAi(property);
-  const instructions = `Act as an experienced GTA residential Realtor doing a careful CMA-style comparable review. The strict automated engine did not produce strong enough evidence. Select the economically most relevant REAL sold properties from the supplied candidates and reconcile them to the subject. Do not mechanically prioritize bedroom count, lot frontage, lot depth, age, size or any one field. Decide which characteristics actually drive value for this specific home, housing form and micro-market. A 3-bedroom can be a better comp than a 4-bedroom; a 30-foot lot can be economically similar to a 33- or 35-foot lot; depth differences may or may not matter. Explain why. You may make appraiser-style judgment adjustments, but never alter the recorded sold price. Use adjusted_indication only as your reasoned indication for the subject. Do not invent properties or facts. Start with recent local evidence. Choosing a substantially older sale over a newer plausible candidate requires a specific comparable advantage and explicit uncertainty; never assume market appreciation. Unknown interior size cannot be inferred from bedroom count. Prefer 3-6 comps. For condos, strongly prefer the same building or same community and similar interior size unless you can clearly justify a broader match. Return JSON only.`;
+  const instructions = `Act as an experienced GTA residential Realtor doing a careful CMA-style comparable review. The strict automated engine did not produce strong enough evidence. Select the economically most relevant REAL sold properties from the supplied candidates and reconcile them to the subject. Do not mechanically prioritize bedroom count, lot frontage, lot depth, age, size or any one field. Decide which characteristics actually drive value for this specific home, housing form and micro-market. A 3-bedroom can be a better comp than a 4-bedroom; a 30-foot lot can be economically similar to a 33- or 35-foot lot; depth differences may or may not matter. Explain why. You may make appraiser-style judgment adjustments, but never alter the recorded sold price. Use adjusted_indication only as your reasoned indication for the subject. Do not invent properties or facts. Start with recent local evidence. Choosing a substantially older sale over a newer plausible candidate requires a specific comparable advantage and explicit uncertainty; never assume market appreciation. Unknown interior size cannot be inferred from bedroom count. Prefer 3-6 comps. A subject indication requiring more than a 35% adjustment is too weak for automated valuation: exclude that sale instead of clipping the adjustment. Returning fewer than three is valid when sufficient evidence is absent. Prefer same-community evidence; a postal-district match alone does not prove comparable micro-location, so explicitly justify any neighbourhood difference. For condos, strongly prefer the same building or same community and similar interior size unless you can clearly justify a broader match. Return JSON only.`;
   const result = await openAiJson(env, "thm_expert_comps", schema, [
     { role: "system", content: instructions },
     { role: "user", content: JSON.stringify({ mode: seller ? "seller" : "buyer", subject, candidates }) },
@@ -430,11 +438,14 @@ export function normalizeExpertResult(result, candidates, sourceType) {
   for (const chosen of Array.isArray(result?.comparables) ? result.comparables : []) {
     const base = byId.get(String(chosen.id));
     if (!base || seen.has(String(base.id))) continue;
+    const indication=money(chosen.adjusted_indication)||base.soldPrice;
+    // Large unsupported model uplifts cannot manufacture sufficient evidence.
+    if(Math.abs(indication/base.soldPrice-1)>0.35)continue;
     seen.add(String(base.id));
     rows.push({
       ...base,
       sourceType,
-      adjusted_indication: money(chosen.adjusted_indication) || base.soldPrice,
+      adjusted_indication: indication,
       selection_reason: clean(chosen.selection_reason),
       adjustment_reason: clean(chosen.adjustment_reason),
       adjustment_basis: clean(chosen.adjustment_basis) || "professional_judgment",
@@ -459,6 +470,7 @@ export function applyExpertRecovery(report, expert) {
     lotDepth: c.lotDepth ?? null,
     cityRegion: c.community || c.cityRegion || null,
     postalCode: c.postalCode || null,
+    geographyNote:c.geographyBasis || null,
     similarity: null,
     distanceKm: null,
     expertSelectionReason: c.selection_reason || null,
@@ -496,7 +508,7 @@ export function applyExpertRecovery(report, expert) {
       expertMode: true,
       sizeFallbackUsed: true,
       expandedWindow: true,
-      windowDays: Math.max(900, Number(report.comparable_policy?.windowDays || 0)),
+      windowDays: 365,
       externalEvidenceCount: externalCount,
       strictEngineFirst: true,
     },
@@ -590,8 +602,8 @@ async function openAiJson(env, name, schema, input, webSearch) {
       body: JSON.stringify(body),
     });
     const data = await response.json().catch(() => null);
+    if (env.THM_REPORT_RUNTIME) (env.THM_REPORT_RUNTIME.aiUsage ||= []).push({ model: body.model, purpose: name, http_status:response.status, usage: data?.usage || null });
     if (!response.ok) throw new Error(`OpenAI ${response.status}: ${clean(data?.error?.message || "request failed")}`);
-    if (env.THM_REPORT_RUNTIME) (env.THM_REPORT_RUNTIME.aiUsage ||= []).push({ model: body.model, purpose: name, usage: data?.usage || null });
     const text = responseOutputText(data);
     if (!text) throw new Error("OpenAI returned no structured output.");
     return JSON.parse(text);

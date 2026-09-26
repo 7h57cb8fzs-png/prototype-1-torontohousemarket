@@ -34,30 +34,41 @@ fs.appendFileSync(path.join(baselineDir,'worker-v22.js'),'\nexport {coreEnv};\n'
 const baselineAdapter=upload(baselineDir,true),candidateAdapter=upload(repo,true);
 async function call(adapter,endpoint,data){const r=await fetch(adapter.url+endpoint,{method:data?'POST':'GET',headers:{Authorization:'Bearer '+nonce,...data?{'Content-Type':'application/json'}:{}},...data?{body:JSON.stringify(data)}:{},signal:AbortSignal.timeout(120000)});const d=await r.json();assert(r.ok,'QA request failed: '+r.status+' '+String(d.error||''));return d;}
 const baseline=await call(candidateAdapter,'/baseline');assert.equal(baseline.reports.length,13);
+console.log('QUERY_CAPABILITIES',JSON.stringify(await call(candidateAdapter,'/probe')));
 const norm=s=>String(s||'').toLowerCase().replace(/\b(avenue|drive|road|street|court|lane)\b/g,m=>({avenue:'ave',drive:'dr',road:'rd',street:'st',court:'ct',lane:'ln'}[m])).replace(/[^a-z0-9]/g,'');
 const prior=fs.existsSync('scripts/lookup-qa-exclusions.json')?JSON.parse(fs.readFileSync('scripts/lookup-qa-exclusions.json','utf8')):[];
 const excluded=new Set([...baseline.excluded,...baseline.reports.map(r=>r.report_payload.facts?.address)].map(a=>hash(norm(a))));for(const h of prior)excluded.add(h);
+const oldMls=new Set();
+const inspect=value=>{if(Array.isArray(value))return value.forEach(inspect);if(value&&typeof value==='object'){for(const [key,v] of Object.entries(value)){if(/address/i.test(key)&&typeof v==='string')excluded.add(hash(norm(v)));if(/listingKey|mls/i.test(key)&&typeof v==='string'&&/^[A-Z]\d{7,9}$/.test(v))oldMls.add(v);inspect(v);}}};
+for(const f of fs.readdirSync('tests').filter(f=>f.endsWith('.json')))inspect(JSON.parse(fs.readFileSync('tests/'+f,'utf8')));
 const randomSeed=randomBytes(16).toString('hex');
 const wanted=round==='initial'?{seller:20,buyer:0}:round==='mixed'?{seller:10,buyer:10}:{seller:5,buyer:5};
 const cases=round==='initial'?baseline.reports.map((r,i)=>({id:'recent-'+(i+1),mode:'seller',address:r.report_payload.facts.address,originalReportId:r.id,group:'recent'})):[];
+const catalogAll=[];
 for(const mode of ['seller','buyer']){
   if(!wanted[mode])continue;
   const pools=[];
   for(let city=0;city<7;city++){
     const catalog=await call(candidateAdapter,'/catalog?city='+city+'&mode='+mode);
-    pools.push(catalog.rows.filter(c=>!excluded.has(hash(norm(c.address)))).sort((a,b)=>hash(randomSeed+a.listingKey).localeCompare(hash(randomSeed+b.listingKey))));
+    catalogAll.push(...catalog.rows);
+    pools.push(catalog.rows.filter(c=>!excluded.has(hash(norm(c.address)))&&!oldMls.has(c.listingKey)).sort((a,b)=>hash(randomSeed+a.listingKey).localeCompare(hash(randomSeed+b.listingKey))));
   }
   let n=0,pass=0;
   while(n<wanted[mode]&&pass<100){for(const pool of pools){const c=pool.shift();if(!c||excluded.has(hash(norm(c.address))))continue;excluded.add(hash(norm(c.address)));cases.push({...c,id:round+'-'+mode+'-'+(++n),group:round});if(n>=wanted[mode])break;}pass++;}
   assert.equal(n,wanted[mode],'Not enough distinct untested '+mode+' addresses');
 }
+for(const [i,c] of cases.filter(c=>c.mode==='buyer').entries())c.lookup=i%2===0?'address':'mls';
+if(round==='mixed'){
+  for(const i of [1,4])cases.push({id:'repair-recent-'+(i+1),group:'repair',mode:'seller',address:baseline.reports[i].report_payload.facts.address});
+  for(const h of JSON.parse(fs.readFileSync('scripts/lookup-qa-rechecks.json','utf8'))){const c=catalogAll.find(c=>c.mode==='seller'&&hash(norm(c.address))===h);assert(c,'Previously sampled repair case not recovered');cases.push({...c,id:'repair-'+h.slice(0,8),group:'repair'});}
+}
 const detail={round,sourceCommit:process.env.GITHUB_SHA,candidate:{...candidate,hash:candidateHash},rollback:before,seed:randomSeed,baselineReports:baseline.reports,cases,results:[]};
 function save(){const key=randomBytes(32),iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv),data=Buffer.concat([cipher.update(JSON.stringify(detail)),cipher.final()]);const encrypted={key:publicEncrypt({key:fs.readFileSync('scripts/lookup-qa-public.pem'),oaepHash:'sha256'},key).toString('base64'),iv:iv.toString('base64'),tag:cipher.getAuthTag().toString('base64'),data:data.toString('base64')};fs.writeFileSync(path.join(out,'private-results.enc.json'),JSON.stringify(encrypted));}
-function summary(d){const r=d.report,c=r?.comparables||[],v=r?.valuation;return {ok:!!r,error:d.error||null,matched:r?.seller?.evidence?.subjectMatched??!!r?.facts,available:v?.available===true,comps:c.length,validRange:v?.available!==true||(Number.isFinite(v.low)&&v.low>0&&v.high>=v.low&&c.length>=3),historyCount:r?.property_history?.counts?.listed??null,lastSold:!!r?.property_history?.lastSold,aiCalls:d.telemetry?.ai_usage?.length||0,models:[...new Set((d.telemetry?.ai_usage||[]).map(a=>a.model))],seconds:Math.round(d.telemetry?.processing_ms/1000),duplicateIds:c.length-new Set(c.map(x=>x.listingKey)).size};}
+function summary(d={}){const r=d.report,c=r?.comparables||[],v=r?.valuation;return {ok:!!r,error:d.error||null,matched:r?.seller?.evidence?.subjectMatched??!!r?.facts,available:v?.available===true,comps:c.length,validRange:v?.available!==true||(Number.isFinite(v.low)&&v.low>0&&v.high>=v.low&&c.length>=3),historyCount:r?.property_history?.counts?.listed??null,lastSold:!!r?.property_history?.lastSold,aiCalls:d.telemetry?.ai_usage?.length||0,models:[...new Set((d.telemetry?.ai_usage||[]).map(a=>a.model))],seconds:Math.round(d.telemetry?.processing_ms/1000),duplicateIds:c.length-new Set(c.map(x=>x.listingKey)).size};}
 const queue=[...cases];
 async function run(){while(queue.length){const c=queue.shift();const pair={case:c};
   // Fresh same-input runs distinguish this change from older stored reports.
-  for(const [name,adapter] of [['before',baselineAdapter],['after',candidateAdapter]]){
+  for(const [name,adapter] of (c.group==='repair'?[['after',candidateAdapter]]:[['before',baselineAdapter],['after',candidateAdapter]])){
     try{pair[name]=await call(adapter,'/run',c);}catch(e){pair[name]={error:String(e.message)};}
   }
   detail.results.push(pair);save();console.log('QA_RESULT',JSON.stringify({id:c.id,mode:c.mode,before:summary(pair.before),after:summary(pair.after)}));

@@ -22,7 +22,7 @@ export async function chooseLookupPlans(env, purpose, facts, plans) {
     const ids=[...new Set(JSON.parse(output).ids)].slice(0,3);
     const selected=ids.map(id=>plans.find(p=>p.id===id)).filter(Boolean);
     return {plans:selected,audit:{...audit,status:'completed',selected:selected.map(p=>p.id)}};
-  }catch(error){return {plans:plans.slice(0,2),audit:{...audit,status:'deterministic_fallback',error:String(error?.message||error).slice(0,120)}};}
+  }catch(error){return {plans:plans.slice(0,2),audit:{...audit,status:'deterministic_fallback',selected:plans.slice(0,2).map(p=>p.id),error:String(error?.message||error).slice(0,120)}};}
 }
 
 export function addressRecoveryPlans(parsed, attempted=[]) {
@@ -30,6 +30,7 @@ export function addressRecoveryPlans(parsed, attempted=[]) {
   const words=String(parsed.name||'').split(/\s+/).filter(w=>w.length>2&&!/^(the|saint)$/i.test(w));
   const tokens=[...new Set([parsed.name,...words].filter(Boolean))];
   const plans=[];
+  if(parsed.unit)plans.push({id:'exact_unit',filter:`contains(StreetName,'${quote(tokens[0])}') and contains(StreetNumber,'${quote(parsed.number)}') and contains(UnitNumber,'${quote(parsed.unit)}')`,reason:'Reduce a large condo building history to the requested unit; exact local validation remains mandatory.'});
   for(const [i,token] of tokens.entries())for(const [j,value] of [...new Set([token,token.toUpperCase(),token.replace(/\b\w/g,c=>c.toUpperCase())])].entries()){
     const filter=`contains(UnparsedAddress,'${quote(value)}') and contains(UnparsedAddress,'${quote(parsed.number)}')`;
     if(!attempted.includes(filter))plans.push({id:`address_${i}_${j}`,filter,reason:'Alternate address field; local exact identity validation remains mandatory.'});
