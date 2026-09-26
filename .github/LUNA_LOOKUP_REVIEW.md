@@ -88,3 +88,38 @@ The first produces an explicit review flag without recalculating the value from
 the prior transaction. The second withholds the generic estimate and requests
 specialist review; claimed planning rights are not treated as verified approvals.
 These safeguards apply to both Buyer and Seller reports.
+
+## Final staged results
+
+Final random run `36227627467`: ten new cases (five Buyer, five Seller) all rendered
+with comparisons and history. Follow-up `36228054212` verified development holds,
+recent-subject-sale discrepancy flags, and corrected narrative instructions.
+Narrative check `36228198434` showed instructions alone did not reliably prevent
+unsupported relative-floor claims, so a deterministic guard now preserves factual
+sales but withholds the price when a model adjustment assumes relative elevation
+that the supplied comparison data does not establish.
+
+The requested set comprises 63 cases / 62 unique properties, because two of the
+13 recent records share an address. Using each case's latest completed stage:
+61 cases contain comparisons; 59 contain recovered dated sale listings from the
+past five years; 23 identify a last recorded sale. The repeated unresolved address
+remains unresolved. Six baseline cases contained self-comparison, subtype mismatch
+or adjustments above 35%; those concrete problems were absent in their latest
+rechecks. This is a narrow quality check, not proof of pricing accuracy.
+
+The historical saved 13 had 9 comparison sets, but the production baseline before
+this revision already had 11; the latest replay retains 11. Do not attribute the
+older coverage gain to this release. Staged results are not a claim that every
+case was rerun after every later narrative refinement. Known issues were rechecked.
+
+All QA adapters block email calls and database mutations. No test emails were
+sent. The 21 focused regressions passed, alongside the existing comparable and
+Buyer-flow checks. Publication identity and verification follow below.
+
+Final guard check `36228419297` passed: the previously affected report retained
+four factual sales, removed unsupported elevation adjustments, and withheld the
+price with a clear verification request. Source commit
+`5d7ecc64f8b4793223dba59036e1bae853e29a28` was uploaded as candidate
+`52c942f2-2042-4d77-89e9-8c99ced92c2b`, SHA-256
+`4effeb70717cacb558e3e9d9c471d12698bdabf964d647c7a25e142ab49aa904`.
+The exact candidate is promoted by the guarded publication workflow.

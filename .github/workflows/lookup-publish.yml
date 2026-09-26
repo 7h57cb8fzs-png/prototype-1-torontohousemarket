@@ -1,0 +1,29 @@
+name: Publish reviewed Luna lookup and history
+on:
+  push:
+    branches: [fix/luna-lookup-history-20260926]
+    paths: [.github/workflows/lookup-publish.yml]
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify report safeguards
+        run: node --test tests/lookup-history.test.mjs tests/seller-mls-only.test.mjs tests/seller-v73-policy.test.mjs
+      - name: Promote exact reviewed version and verify production
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          EXPECTED_ACTIVE_VERSION: 5fd52d27-0890-401b-a771-54e590d3177a
+          EXPECTED_ACTIVE_SHA: e72af43addf85b4c04b3ea92e3daa34b272c2ca15d3c3785b93f4405359b3957
+          CANDIDATE_VERSION_ID: 52c942f2-2042-4d77-89e9-8c99ced92c2b
+          CANDIDATE_PREVIEW_URL: https://52c942f2-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev
+          EXPECTED_CANDIDATE_SHA: 4effeb70717cacb558e3e9d9c471d12698bdabf964d647c7a25e142ab49aa904
+          PUBLISH: 'true'
+        run: node scripts/lookup-publish.mjs
