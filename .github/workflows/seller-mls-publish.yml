@@ -1,0 +1,35 @@
+name: Publish verified Seller MLS-only correction
+on:
+  push:
+    branches: [fix/seller-mls-only-20260926]
+    paths: [.github/workflows/seller-mls-publish.yml]
+permissions:
+  contents: read
+concurrency:
+  group: thm-production-seller-mls-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Confirm unchanged scope before exact candidate promotion
+        run: node scripts/seller-mls-scope.mjs
+      - name: Promote reviewed candidate and verify production assets, auth and cron
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          EXPECTED_ACTIVE_VERSION: b696da17-c413-425b-9d22-fa783ecd5a0c
+          EXPECTED_ACTIVE_SHA: 109ef1b69e491c95f1ad57cf591b95a0246174327fb26edbdbea088a6bb16744
+          CANDIDATE_VERSION_ID: 5fd52d27-0890-401b-a771-54e590d3177a
+          CANDIDATE_PREVIEW_URL: https://5fd52d27-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev
+          EXPECTED_CANDIDATE_SHA: e72af43addf85b4c04b3ea92e3daa34b272c2ca15d3c3785b93f4405359b3957
+          PUBLISH: 'true'
+        run: node scripts/seller-mls-release.mjs
