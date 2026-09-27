@@ -49,8 +49,8 @@ jobs:
             const service=await q('');const resources=service.rows.map(x=>x.name);
             const results={resourceHttp:service.http,resources,buckets:[],statusChecks:[]};
             if([401,403].includes(service.http))return Response.json(results);
-            const fieldInfo=await q('Field',{'$filter':"ResourceName eq 'Property' and (StandardName eq 'ListingContractDate' or StandardName eq 'OriginalEntryTimestamp')",'$top':'10'});
-            results.dateFieldMetadata={http:fieldInfo.http,fields:fieldInfo.rows.map(x=>({name:x.StandardName,type:x.DataType}))};
+            const fieldInfo=await q('Field',{'$top':'1'});
+            results.dateFieldMetadata={http:fieldInfo.http,fieldNames:Object.keys(fieldInfo.rows[0]||{}),error:fieldInfo.error};
             const periods=[['before_2000',null,'2000-01-01'],['2000_2009','2000-01-01','2010-01-01'],['2010_2014','2010-01-01','2015-01-01'],['2015_2019','2015-01-01','2020-01-01'],['2020_2025','2020-01-01','2026-01-01']];
             let historicalKey=null,propertyDenied=false;
             for(const [label,start,end] of periods){
@@ -60,16 +60,27 @@ jobs:
               if(!historicalKey&&d.rows[0]?.ListingKey)historicalKey=d.rows[0].ListingKey;
               if([401,403].includes(d.http)){propertyDenied=true;break;}
             }
-            if(!propertyDenied)for(const status of ['Closed','Expired','Canceled','Withdrawn']){
+            if(!propertyDenied)for(const status of ['Closed','Expired','Cancelled','Withdrawn']){
               const d=await q('Property',{'$filter':"StandardStatus eq '"+status+"' and ListingContractDate lt 2020-01-01",'$count':'true','$top':'1','$select':'ListingKey,ListingContractDate,StandardStatus'});
               results.statusChecks.push({status,http:d.http,count:d.count,rows:d.rows.length,error:d.error});
               if([401,403].includes(d.http))break;
             }
+            if(!propertyDenied){
+              results.crossChecks=[];
+              for(const [label,filter,order] of [['pre2020_entry','OriginalEntryTimestamp lt 2020-01-01T00:00:00Z',null],['pre2020_nonactive',"ListingContractDate lt 2020-01-01 and StandardStatus ne 'Active'",null],['oldest_sold',"StandardStatus eq 'Closed' and ListingContractDate ne null",'ListingContractDate asc'],['all_expired',"StandardStatus eq 'Expired'",null]]){
+                const d=await q('Property',{'$filter':filter,'$count':'true','$top':'1','$select':'ListingKey,ListingContractDate,OriginalEntryTimestamp,StandardStatus',...(order?{'$orderby':order}:{})});
+                results.crossChecks.push({label,http:d.http,count:d.count,rows:d.rows.length,error:d.error,sample:d.rows.map(x=>({contractDate:x.ListingContractDate,entryDate:x.OriginalEntryTimestamp,status:x.StandardStatus}))});
+                if([401,403].includes(d.http))break;
+              }
+            }
             if(resources.includes('HistoryTransactional')){
               results.history=[];
+              const probe=await q('HistoryTransactional',{'$top':'1'});
+              results.historyShape={http:probe.http,rows:probe.rows.length,fields:Object.keys(probe.rows[0]||{}),error:probe.error};
+              if([401,403].includes(probe.http))return Response.json(results);
               for(const [label,key] of [['known_missing_2013','C2550539'],['available_historical_control',historicalKey]]){
                 if(!key)continue;
-                const d=await q('HistoryTransactional',{'$filter':"ResourceName eq 'Property' and ResourceRecordKey eq '"+key+"'",'$count':'true','$top':'1','$select':'ResourceRecordKey,ResourceName,FieldKey,ModificationTimestamp,ChangeType'});
+                const d=await q('HistoryTransactional',{'$filter':"ResourceRecordKey eq '"+key+"'",'$count':'true','$top':'1'});
                 results.history.push({label,http:d.http,count:d.count,rows:d.rows.length,error:d.error,field:d.rows[0]?.FieldKey});
                 if([401,403].includes(d.http))break;
               }
