@@ -1,0 +1,86 @@
+name: Read-only historical feed access audit
+on:
+  push:
+    branches: [fix/stonedene-lookup-20260926]
+    paths: [.github/workflows/archive-access-check.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check advertised resources and bounded historical coverage
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          import {randomBytes} from 'node:crypto';
+          import assert from 'node:assert/strict';
+          const name='prototype-1-torontohousemarket';
+          const root='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID;
+          async function cf(path){const r=await fetch(root+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN},signal:AbortSignal.timeout(20000)});const d=await r.json();assert(r.ok&&d.success,'Cloudflare read failed '+r.status);return d.result;}
+          const state=await cf('/workers/scripts/'+name+'/deployments');
+          assert.equal(state.deployments[0].versions.length,1);
+          const before=state.deployments[0].versions[0].version_id;
+          const version=await cf('/workers/workers/'+name+'/versions/'+before+'?include=modules');
+          const schedule=await cf('/workers/scripts/'+name+'/schedules');
+          const nonce=randomBytes(32).toString('hex');console.log('::add-mask::'+nonce);
+          const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          delete cfg.secrets;delete cfg.assets;delete cfg.triggers;
+          cfg.main='worker-archive-access-probe.js';
+          cfg.vars=Object.fromEntries(version.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));
+          cfg.vars.THM_QA_NONCE=nonce;
+          cfg.vars.THM_QA_EXPIRES=String(Date.now()+600000);
+          const worker=async function(req,env){
+            if(Date.now()>Number(env.THM_QA_EXPIRES)||new URL(req.url).pathname!=='/probe'||req.headers.get('Authorization')!=='Bearer '+env.THM_QA_NONCE)return new Response('Not found',{status:404});
+            const base='https://query.ampre.ca/odata/',headers={Authorization:'Bearer '+env.AMPRE_VOW_TOKEN,Accept:'application/json'};
+            async function q(resource,params={}){
+              try{const r=await fetch(base+resource+'?'+new URLSearchParams(params).toString().replaceAll('+','%20'),{headers,signal:AbortSignal.timeout(12000)});const d=await r.json().catch(()=>({}));return {http:r.status,count:d['@odata.count']??null,rows:d.value||[],next:!!d['@odata.nextLink'],error:r.ok?undefined:String(d.error?.message||'Request failed').slice(0,180)};}
+              catch(e){return {http:null,rows:[],error:e.name};}
+            }
+            const service=await q('');const resources=service.rows.map(x=>x.name);
+            const results={resourceHttp:service.http,resources,buckets:[],statusChecks:[]};
+            if([401,403].includes(service.http))return Response.json(results);
+            const fieldInfo=await q('Field',{'$filter':"ResourceName eq 'Property' and (StandardName eq 'ListingContractDate' or StandardName eq 'OriginalEntryTimestamp')",'$top':'10'});
+            results.dateFieldMetadata={http:fieldInfo.http,fields:fieldInfo.rows.map(x=>({name:x.StandardName,type:x.DataType}))};
+            const periods=[['before_2000',null,'2000-01-01'],['2000_2009','2000-01-01','2010-01-01'],['2010_2014','2010-01-01','2015-01-01'],['2015_2019','2015-01-01','2020-01-01'],['2020_2025','2020-01-01','2026-01-01']];
+            let historicalKey=null,propertyDenied=false;
+            for(const [label,start,end] of periods){
+              const filter=(start?'ListingContractDate ge '+start+' and ':'')+'ListingContractDate lt '+end;
+              const d=await q('Property',{'$filter':filter,'$count':'true','$top':'1','$select':'ListingKey,ListingContractDate,OriginalEntryTimestamp,StandardStatus,MlsStatus'});
+              results.buckets.push({label,http:d.http,count:d.count,rows:d.rows.length,error:d.error,sample:d.rows.map(x=>({contractDate:x.ListingContractDate,entryDate:x.OriginalEntryTimestamp,status:x.StandardStatus,mlsStatus:x.MlsStatus}))});
+              if(!historicalKey&&d.rows[0]?.ListingKey)historicalKey=d.rows[0].ListingKey;
+              if([401,403].includes(d.http)){propertyDenied=true;break;}
+            }
+            if(!propertyDenied)for(const status of ['Closed','Expired','Canceled','Withdrawn']){
+              const d=await q('Property',{'$filter':"StandardStatus eq '"+status+"' and ListingContractDate lt 2020-01-01",'$count':'true','$top':'1','$select':'ListingKey,ListingContractDate,StandardStatus'});
+              results.statusChecks.push({status,http:d.http,count:d.count,rows:d.rows.length,error:d.error});
+              if([401,403].includes(d.http))break;
+            }
+            if(resources.includes('HistoryTransactional')){
+              results.history=[];
+              for(const [label,key] of [['known_missing_2013','C2550539'],['available_historical_control',historicalKey]]){
+                if(!key)continue;
+                const d=await q('HistoryTransactional',{'$filter':"ResourceName eq 'Property' and ResourceRecordKey eq '"+key+"'",'$count':'true','$top':'1','$select':'ResourceRecordKey,ResourceName,FieldKey,ModificationTimestamp,ChangeType'});
+                results.history.push({label,http:d.http,count:d.count,rows:d.rows.length,error:d.error,field:d.rows[0]?.FieldKey});
+                if([401,403].includes(d.http))break;
+              }
+            }
+            return Response.json(results,{headers:{'Cache-Control':'private, no-store','X-Robots-Tag':'noindex'}});
+          };
+          fs.writeFileSync(cfg.main,'export default {fetch: '+worker.toString()+'};');
+          fs.writeFileSync('wrangler.archive-access-probe.json',JSON.stringify(cfg));
+          let output;try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config','wrangler.archive-access-probe.json'],{encoding:'utf8',stdio:['ignore','pipe','pipe'],maxBuffer:12000000});}catch{throw Error('Unpublished diagnostic upload failed; private configuration output withheld.');}
+          const preview=output.match(/Version Preview URL:\s*(https:\/\/[^\s]+)/i)?.[1];assert(preview,'Missing preview URL');
+          const r=await fetch(preview+'/probe',{headers:{Authorization:'Bearer '+nonce},signal:AbortSignal.timeout(200000)});assert(r.ok,'Probe HTTP '+r.status);console.log('ARCHIVE_ACCESS_RESULT',JSON.stringify(await r.json()));
+          const end=await cf('/workers/scripts/'+name+'/deployments');assert.equal(end.deployments[0].versions[0].version_id,before,'Production changed during diagnostic');assert.deepEqual(await cf('/workers/scripts/'+name+'/schedules'),schedule);
+          console.log('PASS: production version and cron unchanged; no leads, reports, consent or emails created. Diagnostic access expires in ten minutes.');
+          NODE
