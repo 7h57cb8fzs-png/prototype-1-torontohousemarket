@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {externalSourceUrl,groundedListingLeads,researchExternalComparables,externalResearchHtml} from '../external-comp-research.js';
-import {soldCandidates,buildVersion7Report} from '../worker-v12.js';
+import {soldCandidates,buildVersion7Report,normalizeExpertResult} from '../worker-v12.js';
 import {coreEnv} from '../worker-v22.js';
 import {createReportRuntime,reportStage,remainingReportMs} from '../report-runtime.js';
 import {sellerReportEmail,propertyReportEmail} from '../worker-v11.js';
@@ -47,6 +47,12 @@ test('verification errors preserve research leads without creating a sale or pri
   assert.equal(result.comparables.length,0);assert.equal(result.research.candidates.length,3);assert.equal(result.research.candidates[0].status,'not_in_feed');assert(!JSON.stringify(result.research).includes('soldPrice'));
 });
 
+test('multiple MLS listings of one home cannot manufacture sufficient sale evidence',()=>{
+  const candidates=[{id:'C00000002',address:'102 Example Avenue, Toronto',city:'Toronto',soldPrice:1000000},{id:'C00000003',address:'102 Example Ave, Toronto',city:'Toronto',soldPrice:1100000}];
+  const result=normalizeExpertResult({comparables:candidates.map(c=>({id:c.id,adjusted_indication:c.soldPrice}))},candidates,'ampre_vow');
+  assert.equal(result.comparables.length,1);
+});
+
 test('API and budget failures are explicit and do not fail the report',async t=>{
   t.mock.method(globalThis,'fetch',async()=>new Response('{}',{status:429}));
   assert.equal((await researchExternalComparables(env(),property,options)).research.reason,'api_http_429');
@@ -81,4 +87,13 @@ test('unmatched seller still gets outside research, without invented home facts 
   assert.equal(count,1);assert.equal(report.external_research.candidates.length,3);assert.equal(report.valuation.available,false);assert.equal(report.facts.property_type,null);
   assert.equal(coreEnv({OPENAI_EXTERNAL_COMP_SEARCH:'false'}).OPENAI_EXTERNAL_COMP_SEARCH,'false');
   const html=externalResearchHtml({...report.external_research,candidates:[{...leads[0],address:'<script>bad</script>'}]});assert(!html.includes('<script>'));
+});
+
+test('sufficient comparable reports avoid a paid outside search',async t=>{
+  let webCalls=0;
+  t.mock.method(globalThis,'fetch',async(url,init={})=>{const body=JSON.parse(init.body);if(body.tools)webCalls++;return Response.json({output_text:'{}'});});
+  const comps=rows.map(r=>({listingKey:r.ListingKey,address:r.UnparsedAddress,propertySubType:r.PropertySubType,soldPrice:r.ClosePrice,soldDate:date}));
+  const complete={...property,comparableContext:{available:true,comparables:comps,rangeLow:1000000,midpoint:1030000,rangeHigh:1100000,confidence:'High'}};
+  const report=await buildVersion7Report(env(),{lead_mode:'seller'},complete,'enough');
+  assert.equal(webCalls,0);assert.equal(report.external_research,undefined);assert.equal(report.valuation.available,true);
 });

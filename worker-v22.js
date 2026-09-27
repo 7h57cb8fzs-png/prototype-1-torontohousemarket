@@ -22,7 +22,7 @@ export default {
     if(url.pathname==='/api/admin/seller-preview' && request.method==='GET'){
       const runtime=createReportRuntime({id:'admin-preview-'+crypto.randomUUID(),attempts:1});
       const scoped={...coreEnv(env),THM_REPORT_RUNTIME:runtime,
-        THM_BUILD_PREVIEW_REPORT:(e,lead,property,id)=>reportStage(e,'analysis',55000,x=>buildVersion7Report(x,lead,property,id))};
+        THM_BUILD_PREVIEW_REPORT:(e,lead,property,id)=>reportStage(e,'analysis',95000,x=>buildVersion7Report(x,lead,property,id))};
       return legacyApp.fetch(request,scoped,ctx);
     }
     if(url.pathname==='/api/version') return json({
@@ -33,7 +33,7 @@ export default {
       scheduler:'single report pipeline; no duplicate nested scheduler',
       seller_condition:'questionnaire saved for team verification; not valuation input',
       seller_input:'address_and_historical_mls_only',
-      external_comparable_search:'luna_web_search_with_mls_verification',
+      external_comparable_search:env.OPENAI_EXTERNAL_COMP_SEARCH==='false'?'disabled':'luna_web_search_with_mls_verification',
       address_input:'shared buyer/seller touch-first suggestions; condo unit-first input preserved'
     });
 

@@ -53,7 +53,7 @@ export async function researchExternalComparables(env, subject, {eligibleSales, 
     research.search_calls=(data?.output||[]).filter(x=>x.type==='web_search_call').length;
     if(env.THM_REPORT_RUNTIME)(env.THM_REPORT_RUNTIME.aiUsage||=[]).push({model:MODEL,resolved_model:data?.model||null,request_id:data?.id||null,purpose:'external_comparable_lookup',http_status:response.status,usage:data?.usage||null,web_search_calls:research.search_calls});
     if(!response.ok){research.reason='api_http_'+response.status;return {research,comparables:[]};}
-    if(data.status!=='completed'||!research.search_calls){research.reason='incomplete_search';return {research,comparables:[]};}
+    if(data.status!=='completed'||!(data.output||[]).some(x=>x.type==='web_search_call'&&x.status==='completed')){research.reason='incomplete_search';return {research,comparables:[]};}
     const leads=groundedListingLeads(data);
     research.status='completed';
     // Web search discovers records missed by address/community lookup. Recorded
@@ -69,11 +69,12 @@ export async function researchExternalComparables(env, subject, {eligibleSales, 
         const accepted=eligibleSales([row]);
         if(!accepted.length)return {...lead,status:'not_eligible'};
         retainReportRows(env,[row]);
-        return {...lead,status:'verified_sale',comparable:{...accepted[0],sourceUrl:lead.sourceUrl,discoverySource:'luna_web_search'}};
+        return {...lead,status:'verified_sale',row,comparable:{...accepted[0],sourceUrl:lead.sourceUrl,discoverySource:'luna_web_search'}};
       }catch{return {...lead,status:'verification_unavailable'};}
     }));
-    const comparables=verified.filter(x=>x?.comparable).map(x=>x.comparable);
-    research.candidates=verified.filter(Boolean).map(({comparable,...lead})=>lead);
+    const distinctIds=new Set(eligibleSales(verified.filter(x=>x?.row).map(x=>x.row)).map(x=>x.id));
+    const comparables=verified.filter(x=>x?.comparable&&distinctIds.has(x.comparable.id)).map(x=>x.comparable);
+    research.candidates=verified.filter(Boolean).map(({comparable,row,...lead})=>({...lead,...comparable&&!distinctIds.has(comparable.id)?{status:'duplicate_property'}:{}}));
     research.verified_count=comparables.length;
     return {research,comparables};
   }catch(error){research.reason=/abort|timeout|budget/i.test(error?.name+' '+error?.message)?'time_budget':'request_failed';return {research,comparables:[]};}

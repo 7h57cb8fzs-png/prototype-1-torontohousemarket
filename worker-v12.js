@@ -165,7 +165,7 @@ async function processV7ReportJobs(env, limit = 1) {
       if (!lead) throw new Error("Lead data is unavailable.");
       const property = await reportStage(scoped, 'mls_evidence', 50000, e => loadPropertyForReport(e, lead, requestId));
       await checkpoint('analysis');
-      let report = await reportStage(scoped, 'analysis', 55000, e => buildVersion7Report(e, lead, property, requestId));
+      let report = await reportStage(scoped, 'analysis', 95000, e => buildVersion7Report(e, lead, property, requestId));
       report.execution_telemetry = runtimeSummary(runtime);
       const saved = await rpc(scoped, 'complete_report_attempt', {
         p_job_id: job.id, p_report_id: job.report_id, p_attempt: job.attempts, p_report_payload: report
@@ -200,23 +200,28 @@ async function buildVersion7Report(env, lead, property, requestId) {
   const sellerVerified = lead.lead_mode !== "seller" || (report.seller?.evidence?.subjectMatched ?? report.seller?.evidence?.listingMatched) === true;
   const needsExpert = sellerVerified && !report.review_flags?.some(f=>f.code==='special_use_review') && shouldUseExpertComp(report);
 
-  let outside=[], broad=[];
-  if((report.comparables?.length||0)<3 && env.OPENAI_EXTERNAL_COMP_SEARCH==='true') {
-    const [result,recoveredPool]=await Promise.all([researchExternalComparables(env,subjectForAi(property),{
-      eligibleSales:rows=>soldCandidates(property,rows),
-      matchesAddress:(address,row)=>{const parsed=sellerHistoryParsedAddress(address);return sellerHistoryMatches(parsed,row,parsed.city||property.city);}
-    }),needsExpert&&env.AMPRE_VOW_TOKEN?reportStage(env,'broad_comp_recovery',18000,e=>collectBroadSoldPool(e,property,lead.lead_mode==='seller')).catch(()=>[]):Promise.resolve([])]);
-    report.external_research=result.research;
-    outside=result.comparables;
-    broad=recoveredPool;
-  }
-
   if (needsExpert && env.OPENAI_API_KEY && env.AMPRE_VOW_TOKEN && remainingReportMs(env)>5000) {
     try {
-      const recovered = await recoverExpertComparables(env, lead, property, report, requestId, outside, broad);
+      const recovered = await reportStage(env,'internal_comp_recovery',40000,e=>recoverExpertComparables(e,lead,property,report,requestId));
       if (recovered?.comparables?.length) report = applyExpertRecovery(report, recovered);
     } catch (error) {
       console.warn(JSON.stringify({ event: "v7_expert_comp_failed", request_id: requestId, error: String(error?.message || error).slice(0, 240) }));
+    }
+  }
+
+  // Complete both strict and broadened internal lookup before paying for web
+  // research. An unmatched subject still gets cited research, never invented facts.
+  if((report.comparables?.length||0)<3 && env.OPENAI_EXTERNAL_COMP_SEARCH==='true') {
+    const result=await researchExternalComparables(env,subjectForAi(property),{
+      eligibleSales:rows=>soldCandidates(property,rows),
+      matchesAddress:(address,row)=>{const parsed=sellerHistoryParsedAddress(address);return sellerHistoryMatches(parsed,row,parsed.city||property.city);}
+    });
+    report.external_research=result.research;
+    if(needsExpert && result.comparables.length && remainingReportMs(env)>5000) {
+      const retained=soldCandidates(property,[...(env.THM_REPORT_RUNTIME?.rawRows?.values()||[])]);
+      const selectedIds=new Set((report.comparables||[]).map(c=>c.listingKey));
+      const pool=[...new Map([...retained.filter(c=>selectedIds.has(c.listingKey)),...result.comparables].map(c=>[c.id,c])).values()];
+      try {const recovered=await selectExpertComparables(env,property,pool,lead.lead_mode==='seller');if(recovered?.comparables?.length)report=applyExpertRecovery(report,recovered);}catch{}
     }
   }
 
@@ -260,11 +265,8 @@ export function shouldUseExpertComp(report) {
   return report?.valuation?.available !== true || count < 3 || (/^(low|limited)$/.test(confidence) && (policy.sizeFallbackUsed || policy.missingSizeFallback || report.seller?.evidence?.archiveSubject || Number(policy.windowDays || 0) > 300));
 }
 
-async function recoverExpertComparables(env, lead, property, report, requestId, outside=[], broad=[]) {
-  const retained=soldCandidates(property,[...(env.THM_REPORT_RUNTIME?.rawRows?.values()||[])]);
-  // Broad feed recovery and outside discovery share the existing analysis
-  // window. Review the union once; a web failure cannot discard feed evidence.
-  const pool = report.external_research ? [...new Map([...retained,...broad,...outside].map(c=>[c.id,c])).values()].slice(0,60) : await collectBroadSoldPool(env, property, lead.lead_mode === "seller");
+async function recoverExpertComparables(env, lead, property, report, requestId) {
+  const pool = await collectBroadSoldPool(env, property, lead.lead_mode === "seller");
   let selected = null;
   if (pool.length) selected = await selectExpertComparables(env, property, pool, lead.lead_mode === "seller");
 
@@ -407,13 +409,18 @@ export function normalizeExpertResult(result, candidates, sourceType) {
   const byId = new Map(candidates.map(c => [String(c.id), c]));
   const rows = [];
   const seen = new Set();
+  const homes=new Set();
   for (const chosen of Array.isArray(result?.comparables) ? result.comparables : []) {
     const base = byId.get(String(chosen.id));
     if (!base || seen.has(String(base.id))) continue;
+    const parsed=sellerHistoryParsedAddress(base.address||'');
+    const home=sellerHomeKey({UnparsedAddress:base.address,StreetNumber:parsed.number,StreetName:parsed.name,StreetSuffix:parsed.suffix,StreetDirSuffix:parsed.direction,UnitNumber:parsed.unit,City:base.city||parsed.city})||normalizeAddress(base.address);
+    if(home&&homes.has(home))continue;
     const indication=money(chosen.adjusted_indication)||base.soldPrice;
     // Large unsupported model uplifts cannot manufacture sufficient evidence.
     if(Math.abs(indication/base.soldPrice-1)>0.35)continue;
     seen.add(String(base.id));
+    if(home)homes.add(home);
     rows.push({
       ...base,
       sourceType,

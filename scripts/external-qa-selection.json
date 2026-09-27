@@ -1,0 +1,202 @@
+[
+  {
+    "id": "seller-2",
+    "mode": "seller",
+    "addressHash": "932739202f355328f36bb28f0ba37aca9b1d2d2f9b5cc75e27b25fc053bfaa8a",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 5
+    }
+  },
+  {
+    "id": "seller-1",
+    "mode": "seller",
+    "addressHash": "78d8d0bbe540cf520e03fa0e29da1b848ff22ff4c1eb1839cda9e3cc325e4d95",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 4
+    }
+  },
+  {
+    "id": "seller-3",
+    "mode": "seller",
+    "addressHash": "ed6abc2cace5ba39ff6aa44790582ba3e17dc018177922fb8a6db074974d40a5",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 5
+    }
+  },
+  {
+    "id": "seller-4",
+    "mode": "seller",
+    "addressHash": "19fdb28086d40bfc13fe38d2fc8b1e3fb639f608b2eea7988804717fee7ebcbf",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 5
+    }
+  },
+  {
+    "id": "seller-5",
+    "mode": "seller",
+    "addressHash": "5cd54d43d5cf026233ee1260848a47c8c3338a66f5132568c7a97d0702e12395",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 5
+    }
+  },
+  {
+    "id": "seller-6",
+    "mode": "seller",
+    "addressHash": "7fdb68ed868550a057cf16ba1acec74d66b722840ef74d9b981bdc5c53a59f93",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 5
+    }
+  },
+  {
+    "id": "seller-7",
+    "mode": "seller",
+    "addressHash": "4dc728f3ac87dc76e583bd282a4f0b93e4012d982e73f3e96b28a37817e97cd9",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 8
+    }
+  },
+  {
+    "id": "seller-9",
+    "mode": "seller",
+    "addressHash": "1bf849bbc3e0cb0e803d51d363b99f76cd6d271bd09c584e42e4485fe1538457",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 4
+    }
+  },
+  {
+    "id": "seller-10",
+    "mode": "seller",
+    "addressHash": "bc9eb1ccd79076468978aec19bf26114e28ec80fdfaa9c63a5463f10d9089814",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 4
+    }
+  },
+  {
+    "id": "seller-8",
+    "mode": "seller",
+    "addressHash": "7051276f8094a3054b15f034bf9a51b46dbfbd359e1384ac330a1a99a551ee42",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 4
+    }
+  },
+  {
+    "id": "buyer-1",
+    "mode": "buyer",
+    "addressHash": "1e0259469a0271fe886d8fe1b2cc47a585bff147318453bbb4a7683325c9e236",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 3
+    }
+  },
+  {
+    "id": "buyer-3",
+    "mode": "buyer",
+    "addressHash": "025ebc8d6e59f6d496db6f0640282c8862ea822606032fe1440732b15b06b74c",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 4
+    }
+  },
+  {
+    "id": "buyer-2",
+    "mode": "buyer",
+    "addressHash": "eb39cb83f3d3f8fa203bd069b55d7a38556a5f24646a419cf569cf367f3c0064",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 5
+    }
+  },
+  {
+    "id": "buyer-5",
+    "mode": "buyer",
+    "addressHash": "ae062856792e2c99c8f976499ecdfa21085739574bb075cd7a59c73d81c1b5dd",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 5
+    }
+  },
+  {
+    "id": "buyer-4",
+    "mode": "buyer",
+    "addressHash": "9e7b17f6db1015ca999418c516005a1a571e86747428b7fe14b99f4e54fd6c2e",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 4
+    }
+  },
+  {
+    "id": "buyer-7",
+    "mode": "buyer",
+    "addressHash": "710ece5857b5374d8c5ccde949bd4a309c9930a8073227f686cb616c5804cc71",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 5
+    }
+  },
+  {
+    "id": "buyer-6",
+    "mode": "buyer",
+    "addressHash": "db14362fcd583fa802e804d95c0bafae4d43b1d55722774955289cd169a1f3fa",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 4
+    }
+  },
+  {
+    "id": "buyer-8",
+    "mode": "buyer",
+    "addressHash": "bb641f1c7726d5f0cdd9b2f9e9f7fd0c1b12133cf0b68093fcc842860e35abb4",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 3
+    }
+  },
+  {
+    "id": "buyer-9",
+    "mode": "buyer",
+    "addressHash": "c29bace344ca9df3eb4c7d9cdd6015fd06f4373041f7540012a809fa9dc6fe77",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 5
+    }
+  },
+  {
+    "id": "buyer-10",
+    "mode": "buyer",
+    "addressHash": "b476dce010635b3292d486b288c5b708ef79d199aaec82c8cdbfc76b62cc2c28",
+    "baseline": {
+      "ok": true,
+      "available": true,
+      "comps": 4
+    }
+  }
+]

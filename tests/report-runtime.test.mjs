@@ -63,6 +63,7 @@ test('production scheduler finalizes a weak-evidence condo, saves once, and neve
     if(u.hostname==='api.openai.com'){
       openaiCalls++;
       const name=body.text.format.name;
+      if(name==='thm_external_listing_lookup')return json({status:'completed',model:'gpt-5.6-luna',id:'synthetic-web-response',output:[{type:'web_search_call',status:'completed',action:{sources:[]}},{type:'message',content:[{type:'output_text',text:'{"listings":[]}'}]}],usage:{input_tokens:100,output_tokens:10}});
       if(name==='thm_buyer_narrative') narrativeValuation=JSON.parse(body.input[1].content).valuation;
       const out=name==='thm_expert_comps'?{confidence:'Moderate',market_read:'Fixture sold evidence reviewed.',comparables:rows.slice(0,4).map(r=>({id:r.ListingKey,weight:0.5,adjusted_indication:560000,selection_reason:'Same local market.',adjustment_reason:'Fixture adjustment.',adjustment_basis:'professional_judgment'}))}:narrative;
       return json({output_text:JSON.stringify(out),usage:{input_tokens:100,output_tokens:100}});
@@ -72,11 +73,12 @@ test('production scheduler finalizes a weak-evidence condo, saves once, and neve
   try{
     const env={SUPABASE_SERVICE_ROLE_KEY:'test-only',AMPRE_TOKEN:'test-only',AMPRE_VOW_TOKEN:'test-only',OPENAI_API_KEY:'test-only',GEMINI_API_KEY:'test-only',OPENROUTER_API_KEY:'test-only',AI:{run:async()=>({response:JSON.stringify(narrative)})}};
     const pending=[];await app.scheduled({},env,{waitUntil:p=>pending.push(p)});await Promise.all(pending);
-    assert.equal(saveCount,1);assert.equal(saved.version_label,'Toronto House Market Version 7.4');
+    assert.equal(saveCount,1);assert.equal(saved.version_label,'Toronto House Market Version 7.6');
     assert.equal(saved.comparables.length,4);assert.ok(saved.valuation.estimated_market_value>0);
     assert.equal(saved.model_policy.terra_review,false);assert.ok(saved.execution_telemetry.request_count<34);
     assert.deepEqual(narrativeValuation,saved.valuation,'Narrative must see the final published numbers and confidence');
     assert.equal(openaiCalls,2);assert.equal(saved.execution_telemetry.ai_usage.length,2);
+    assert.equal(saved.external_research,undefined,'Successful internal recovery must not trigger outside search');
     for(const c of saved.comparables)assert.equal(c.soldPrice,rows.find(r=>r.ListingKey===c.listingKey).ClosePrice);
     assert.equal('rawRows' in saved,false);assert.ok(!JSON.stringify(saved).includes('test-only'));
     console.log('REGRESSION_RESULT',JSON.stringify({requests:requestCount,openaiCalls,comps:saved.comparables.length}));

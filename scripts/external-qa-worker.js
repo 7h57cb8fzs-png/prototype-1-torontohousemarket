@@ -47,7 +47,7 @@ export default {async fetch(request,env){
   try{
     property=await reportStage(scoped,'mls_evidence',50000,e=>loadPropertyForReport(e,lead,'external-qa-'+c.id));
     if(c.forceFallback){property.comparableContext={...property.comparableContext,available:false,comparables:[],rangeLow:null,midpoint:null,rangeHigh:null};runtime.rawRows.clear();runtime.completedFilters.clear();runtime.queryCache.clear();}
-    report=await reportStage(scoped,'analysis',55000,e=>buildVersion7Report(e,lead,property,'external-qa-'+c.id));
+    report=await reportStage(scoped,'analysis',scoped.OPENAI_EXTERNAL_COMP_SEARCH==='true'?95000:55000,e=>buildVersion7Report(e,lead,property,'external-qa-'+c.id));
     rendered=c.mode==='seller'?sellerReportEmail(c.address,report):propertyReportEmail(c.address,{},report);
   }catch(e){error=String(e?.message||e);}
   return Response.json({case:c,report,error,telemetry:runtimeSummary(runtime),html:rendered?.html,text:rendered?.text},{headers:{'Cache-Control':'private, no-store','X-Robots-Tag':'noindex'}});
