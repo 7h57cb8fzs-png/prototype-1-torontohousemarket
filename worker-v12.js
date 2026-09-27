@@ -1,4 +1,5 @@
-import { createReportRuntime, reportFetch, reportStage, runtimeSummary } from './report-runtime.js';
+import { createReportRuntime, reportFetch, reportStage, runtimeSummary, remainingReportMs, retainReportRows } from './report-runtime.js';
+import {researchExternalComparables} from './external-comp-research.js';
 import legacyApp, {
   buildPropertyReport as buildPhase6Report,
   deliverEmailJob,
@@ -199,9 +200,20 @@ async function buildVersion7Report(env, lead, property, requestId) {
   const sellerVerified = lead.lead_mode !== "seller" || (report.seller?.evidence?.subjectMatched ?? report.seller?.evidence?.listingMatched) === true;
   const needsExpert = sellerVerified && !report.review_flags?.some(f=>f.code==='special_use_review') && shouldUseExpertComp(report);
 
-  if (needsExpert && env.OPENAI_API_KEY && env.AMPRE_VOW_TOKEN) {
+  let outside=[], broad=[];
+  if((report.comparables?.length||0)<3 && env.OPENAI_EXTERNAL_COMP_SEARCH==='true') {
+    const [result,recoveredPool]=await Promise.all([researchExternalComparables(env,subjectForAi(property),{
+      eligibleSales:rows=>soldCandidates(property,rows),
+      matchesAddress:(address,row)=>{const parsed=sellerHistoryParsedAddress(address);return sellerHistoryMatches(parsed,row,parsed.city||property.city);}
+    }),needsExpert&&env.AMPRE_VOW_TOKEN?reportStage(env,'broad_comp_recovery',18000,e=>collectBroadSoldPool(e,property,lead.lead_mode==='seller')).catch(()=>[]):Promise.resolve([])]);
+    report.external_research=result.research;
+    outside=result.comparables;
+    broad=recoveredPool;
+  }
+
+  if (needsExpert && env.OPENAI_API_KEY && env.AMPRE_VOW_TOKEN && remainingReportMs(env)>5000) {
     try {
-      const recovered = await recoverExpertComparables(env, lead, property, report, requestId);
+      const recovered = await recoverExpertComparables(env, lead, property, report, requestId, outside, broad);
       if (recovered?.comparables?.length) report = applyExpertRecovery(report, recovered);
     } catch (error) {
       console.warn(JSON.stringify({ event: "v7_expert_comp_failed", request_id: requestId, error: String(error?.message || error).slice(0, 240) }));
@@ -211,12 +223,12 @@ async function buildVersion7Report(env, lead, property, requestId) {
   // Establish one final numeric result before asking a model to explain it.
   if (typeof env.THM_FINALIZE_REPORT === 'function') report = await reportStage(env, 'decision_summary', 24000, e => env.THM_FINALIZE_REPORT(report, e));
   report=reviewElevationAdjustments(reviewRecentSale(report));
-  if (lead.lead_mode === "seller" && sellerVerified && report.comparables?.length >= 3) {
+  if (lead.lead_mode === "seller" && sellerVerified && report.comparables?.length >= 3 && remainingReportMs(env)>8000) {
     report = await enhanceSellerReport(env, lead, property, report, requestId).catch(error => {
       console.warn(JSON.stringify({ event: "v7_seller_ai_failed", request_id: requestId, error: String(error?.message || error).slice(0, 240) }));
       return report;
     });
-  } else if (lead.lead_mode !== "seller" && (report.review_flags?.length || report.expert_comp_mode?.used || report.ai_generation?.provider === "deterministic_fallback")) {
+  } else if (lead.lead_mode !== "seller" && remainingReportMs(env)>8000 && (report.review_flags?.length || report.expert_comp_mode?.used || report.ai_generation?.provider === "deterministic_fallback")) {
     const narrative = await openAiBuyerNarrative(env, report, property).catch(() => null);
     if (narrative) {
       report = {
@@ -248,18 +260,13 @@ export function shouldUseExpertComp(report) {
   return report?.valuation?.available !== true || count < 3 || (/^(low|limited)$/.test(confidence) && (policy.sizeFallbackUsed || policy.missingSizeFallback || report.seller?.evidence?.archiveSubject || Number(policy.windowDays || 0) > 300));
 }
 
-async function recoverExpertComparables(env, lead, property, report, requestId) {
-  const pool = await collectBroadSoldPool(env, property, lead.lead_mode === "seller");
+async function recoverExpertComparables(env, lead, property, report, requestId, outside=[], broad=[]) {
+  const retained=soldCandidates(property,[...(env.THM_REPORT_RUNTIME?.rawRows?.values()||[])]);
+  // Broad feed recovery and outside discovery share the existing analysis
+  // window. Review the union once; a web failure cannot discard feed evidence.
+  const pool = report.external_research ? [...new Map([...retained,...broad,...outside].map(c=>[c.id,c])).values()].slice(0,60) : await collectBroadSoldPool(env, property, lead.lead_mode === "seller");
   let selected = null;
   if (pool.length) selected = await selectExpertComparables(env, property, pool, lead.lead_mode === "seller");
-
-  if ((!selected?.comparables || selected.comparables.length < 3) && env.OPENAI_EXTERNAL_COMP_SEARCH !== "false") {
-    const external = await externalSoldResearch(env, property, report).catch(() => null);
-    if (external?.comparables?.length) {
-      const combined = mergeExpertResults(selected, external);
-      if (combined.comparables.length >= 2) selected = combined;
-    }
-  }
 
   if (!selected?.comparables?.length) return null;
   console.log(JSON.stringify({ event: "v7_expert_comp_used", request_id: requestId, candidates: pool.length, selected: selected.comparables.length, external: selected.comparables.filter(c => c.sourceType === "external").length }));
@@ -271,7 +278,7 @@ async function collectBroadSoldPool(env, property, seller = false) {
   if (!token) return [];
   const searches = [];
   const community = clean(property.cityRegion);
-  const city = clean(property.city).replace(/^Toronto\s+[CEW]\d{2}$/i, "Toronto");
+  const city = (clean(property.city)||'').replace(/^Toronto\s+[CEW]\d{2}$/i, "Toronto");
   const postal = String(property.postalCode || "").replace(/\s/g, "").slice(0, 3).toUpperCase();
   if (community && !/^(toronto )?[cew]\d{2}$/i.test(community)) searches.push(`contains(CityRegion,'${odata(community)}')`);
   if (/^[A-Z]\d[A-Z]$/.test(postal)) searches.push(`startswith(PostalCode,'${postal}')`);
@@ -326,6 +333,7 @@ async function tailQuery(filter, token, limit, env = {}) {
     if (!r.ok) break;
     const data = await r.json().catch(() => null);
     const page = Array.isArray(data?.value) ? data.value : [];
+    retainReportRows(env,page);
     rows.push(...page);
     if (page.length < 100) break;
     skip += 100;
@@ -395,50 +403,6 @@ async function selectExpertComparables(env, property, candidates, seller) {
   return normalizeExpertResult(result, candidates, "ampre_vow");
 }
 
-async function externalSoldResearch(env, property, report) {
-  const schema = externalSchema();
-  const subject = subjectForAi(property);
-  const prompt = `The licensed feed did not provide enough usable sold comparables for this GTA residential property. Search the web for genuine identifiable MLS sale evidence only. A result must identify a real property address, actual sold price, sold date, and a source URL. MLS number is strongly preferred. Do not use an AVM estimate, asking price, hypothetical property, or your memory as a sold comparable. Do not fabricate a transaction. Find up to 5 economically relevant sales and explain material differences. This is recovery evidence, so broader bedroom/lot/size differences are acceptable when professionally justified. If you cannot verify a genuine sale, return fewer results or none.`;
-  const result = await openAiJson(env, "thm_external_sales", schema, [
-    { role: "system", content: prompt },
-    { role: "user", content: JSON.stringify({ subject, existingEvidence: report.comparables || [] }) },
-  ], true);
-  const comps = (result?.comparables || []).filter(c => c && c.address && money(c.soldPrice) > 50000 && /^20\d{2}-\d{2}-\d{2}$/.test(c.soldDate || "") && /^https:\/\//i.test(c.sourceUrl || "")).map((c, i) => ({
-    id: `external-${i}`,
-    listingKey: /^[A-Z]\d{7,9}$/i.test(c.mlsNumber || "") ? String(c.mlsNumber).toUpperCase() : null,
-    address: clean(c.address),
-    propertySubType: clean(c.propertySubType),
-    soldPrice: money(c.soldPrice),
-    soldDate: c.soldDate,
-    beds: number(c.beds),
-    baths: number(c.baths),
-    livingAreaRange: clean(c.livingAreaRange),
-    lotWidth: number(c.lotWidth),
-    lotDepth: number(c.lotDepth),
-    sourceUrl: c.sourceUrl,
-    sourceType: "external",
-    adjusted_indication: money(c.adjusted_indication) || money(c.soldPrice),
-    adjustment_reason: clean(c.adjustment_reason),
-    selection_reason: clean(c.selection_reason),
-  }));
-  return { comparables: comps, market_read: clean(result?.market_read), confidence: "Limited" };
-}
-
-function mergeExpertResults(local, external) {
-  const rows = [...(local?.comparables || []), ...(external?.comparables || [])];
-  const seen = new Set();
-  return {
-    comparables: rows.filter(c => {
-      const key = normalizeAddress(c.address);
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).slice(0, 6),
-    market_read: [local?.market_read, external?.market_read].filter(Boolean).join(" "),
-    confidence: local?.confidence || external?.confidence || "Limited",
-  };
-}
-
 export function normalizeExpertResult(result, candidates, sourceType) {
   const byId = new Map(candidates.map(c => [String(c.id), c]));
   const rows = [];
@@ -487,6 +451,7 @@ export function applyExpertRecovery(report, expert) {
     adjustedIndication: c.adjusted_indication || c.soldPrice,
     evidenceSource: c.sourceType,
     sourceUrl: c.sourceUrl || null,
+    discoverySource: c.discoverySource || null,
   }));
   const indications = comps.map(c => Number(c.adjustedIndication)).filter(n => Number.isFinite(n) && n > 0).sort((a,b)=>a-b);
   if (indications.length < 3) {
@@ -601,7 +566,7 @@ async function openAiBuyerNarrative(env, report, property) {
 async function openAiJson(env, name, schema, input, webSearch) {
   if (!env.OPENAI_API_KEY) throw new Error("OpenAI is not configured.");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), webSearch || name === "thm_expert_comps" ? 28000 : 18000);
+  const timer = setTimeout(() => controller.abort(), Math.max(1,Math.min(name === "thm_expert_comps" ? 28000 : 18000,remainingReportMs(env)-2500)));
   try {
     const body = {
       model: String(env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL),
@@ -639,7 +604,7 @@ function expertSchema() {
     properties: {
       confidence: { type: "string", enum: ["Moderate", "Low", "Limited"] },
       market_read: { type: "string" },
-      comparables: { type: "array", minItems: 1, maxItems: 6, items: {
+      comparables: { type: "array", minItems: 0, maxItems: 6, items: {
         type: "object", additionalProperties: false,
         properties: {
           id: { type: "string" },
@@ -653,23 +618,6 @@ function expertSchema() {
       } },
     },
     required: ["confidence", "market_read", "comparables"],
-  };
-}
-
-function externalSchema() {
-  return {
-    type: "object", additionalProperties: false,
-    properties: {
-      market_read: { type: "string" },
-      comparables: { type: "array", maxItems: 5, items: {
-        type: "object", additionalProperties: false,
-        properties: {
-          address: { type: "string" }, mlsNumber: { type: ["string", "null"] }, propertySubType: { type: ["string", "null"] }, soldPrice: { type: "number" }, soldDate: { type: "string" }, sourceUrl: { type: "string" }, beds: { type: ["number", "null"] }, baths: { type: ["number", "null"] }, livingAreaRange: { type: ["string", "null"] }, lotWidth: { type: ["number", "null"] }, lotDepth: { type: ["number", "null"] }, adjusted_indication: { type: "number" }, selection_reason: { type: "string" }, adjustment_reason: { type: "string" },
-        },
-        required: ["address", "mlsNumber", "propertySubType", "soldPrice", "soldDate", "sourceUrl", "beds", "baths", "livingAreaRange", "lotWidth", "lotDepth", "adjusted_indication", "selection_reason", "adjustment_reason"],
-      } },
-    },
-    required: ["market_read", "comparables"],
   };
 }
 

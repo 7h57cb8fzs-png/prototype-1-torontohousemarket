@@ -4,9 +4,9 @@ import { homeChat } from './home-chat.js';
 import { homeSearch } from './discovery-search.js';
 import legacyApp, { deliverEmailJob } from './worker-v11.js';
 import reportCore, { processV7ReportJobs, buildVersion7Report } from './worker-v12.js';
-import { reportFetch, createReportRuntime, reportStage } from './report-runtime.js';
+import { reportFetch, createReportRuntime, reportStage, remainingReportMs } from './report-runtime.js';
 
-const VERSION='version-7.6-luna-lookup-history-20260926';
+const VERSION='version-7.6-luna-external-lookup-20260927';
 const LUNA='gpt-5.6-luna';
 const TERRA='gpt-5.6-terra';
 const OPENAI='https://api.openai.com/v1/responses';
@@ -33,6 +33,7 @@ export default {
       scheduler:'single report pipeline; no duplicate nested scheduler',
       seller_condition:'questionnaire saved for team verification; not valuation input',
       seller_input:'address_and_historical_mls_only',
+      external_comparable_search:'luna_web_search_with_mls_verification',
       address_input:'shared buyer/seller touch-first suggestions; condo unit-first input preserved'
     });
 
@@ -70,12 +71,12 @@ export default {
   }
 };
 
-export function coreEnv(env){return {...env,GEMINI_API_KEY:null,OPENROUTER_API_KEY:null,AI:null,OPENAI_MODEL:LUNA,OPENAI_EXTERNAL_COMP_SEARCH:'false',RESEND_API_KEY:null,THM_REPORT_SCHEDULED_ONLY:true,THM_FINALIZE_REPORT: finalizePayload};}
+export function coreEnv(env){return {...env,GEMINI_API_KEY:null,OPENROUTER_API_KEY:null,AI:null,OPENAI_MODEL:LUNA,OPENAI_EXTERNAL_COMP_SEARCH:env.OPENAI_EXTERNAL_COMP_SEARCH==='false'?'false':'true',RESEND_API_KEY:null,THM_REPORT_SCHEDULED_ONLY:true,THM_FINALIZE_REPORT: finalizePayload};}
 
 export async function finalizePayload(report,env){
   let p=decorate(report),cx=complexity(p);
   p.model_policy={primary:LUNA,terra_review:false,terra_threshold:'compound severe complexity only',complexity_score:cx.score,complexity_flags:cx.flags};
-  if(p.valuation?.available===true && cx.escalate && p.comparables?.length>=3 && env.OPENAI_API_KEY){try{p=applyTerra(p,await terra(env,p),cx);}catch(e){p.model_policy.terra_error=String(e?.message||e).slice(0,200);}}
+  if(p.valuation?.available===true && cx.escalate && p.comparables?.length>=3 && env.OPENAI_API_KEY && remainingReportMs(env)>24000){try{p=applyTerra(p,await terra(env,p),cx);}catch(e){p.model_policy.terra_error=String(e?.message||e).slice(0,200);}}
   p.version=7.6;p.version_label='Toronto House Market Version 7.6';
   p.ai_note=p.model_policy.terra_review?'Version 7.4 · exceptional-complexity Terra review':'Version 7.4 · primary path; Terra not used';
   return p;

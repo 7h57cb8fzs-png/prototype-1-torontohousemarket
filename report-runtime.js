@@ -23,6 +23,9 @@ export function runtimeSummary(runtime) {
     candidate_rows_retained: runtime.rawRows.size, stages: runtime.stages,
     ai_usage: runtime.aiUsage || [], lookup_recovery: runtime.lookupRecovery || [] };
 }
+export function remainingReportMs(env) {
+  return Math.max(0,Math.min(env?.THM_REPORT_RUNTIME?.deadline??Infinity,env?.THM_REPORT_STAGE_DEADLINE??Infinity)-Date.now());
+}
 export async function reportFetch(env, input, init = {}, lifecycle = false) {
   // AMPRE's OData query parser needs RFC 3986 spaces. Form-style '+' makes
   // operators invalid and turns multiword address literals into non-matches.
@@ -50,9 +53,9 @@ export async function reportStage(env, name, milliseconds, fn) {
   const r = env?.THM_REPORT_RUNTIME;
   if (!r) return fn(env);
   const began = Date.now();
-  const limit = Math.max(1, Math.min(milliseconds, r.deadline - began));
+  const limit = Math.max(1, Math.min(milliseconds, remainingReportMs(env)));
   const controller = new AbortController();
-  const scoped = { ...env, THM_REPORT_STAGE_SIGNAL: controller.signal };
+  const scoped = { ...env, THM_REPORT_STAGE_SIGNAL: AbortSignal.any([controller.signal,env.THM_REPORT_STAGE_SIGNAL].filter(Boolean)), THM_REPORT_STAGE_DEADLINE: began+limit };
   const stage = { name, started_ms: began - r.started, status: 'running' };
   r.stages.push(stage);
   let timer;
