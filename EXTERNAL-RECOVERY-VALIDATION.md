@@ -21,3 +21,6 @@ Validation:
 
 QA workflows: 36342181455 (before/draft), 36342733348 (final).
 Exact reviewed version promotion is controlled by external-publish.yml, with asset/auth/config/cron checks and rollback on failure.
+
+
+Published successfully by workflow 36343201271. Production bundle/version verified; all 16 checked public assets, admin authentication, existing bindings and cron preserved. No rollback required.
