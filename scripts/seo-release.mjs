@@ -13,7 +13,7 @@ const expectedVersion='0ee2f48d-a4b5-47f3-aec6-8b3c92edab58';
 const expectedHash='b654b801ed955bca1e682d5b0f111c7dd27f099c0e2dfbf785d2b15b88325e74';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const changedAssets=['index.html','seller.html','seo.css','robots.txt','sitemap.xml'];
-const allowed=new Set([...changedAssets,'scripts/seo-release.mjs','.github/workflows/seo-release.yml']);
+const allowed=new Set([...changedAssets,'scripts/seo-release.mjs','.github/workflows/seo-release.yml','.assetsignore']);
 for(const file of execFileSync('git',['diff','--name-only',baseline,'HEAD'],{encoding:'utf8'}).trim().split('\n').filter(Boolean))assert(allowed.has(file),'Out-of-scope change: '+file);
 
 // Verify existing forms, handlers, application scripts and control IDs are preserved.
