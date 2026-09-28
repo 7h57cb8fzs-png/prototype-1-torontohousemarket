@@ -73,6 +73,7 @@ if(!candidate){
  }finally{fs.rmSync(temp,{recursive:true,force:true});}
 }
 assert(candidate&&preview,'Reviewed preview is required');
+console.log('SEO_PREVIEW',JSON.stringify({candidate,preview}));
 const after=await version(candidate);
 assert.equal(moduleHash(after),expectedHash,'Server code changed during asset-only release');
 assert.deepEqual(bindingNames(after),bindingNames(before),'Existing bindings changed');
@@ -80,7 +81,7 @@ for(const [name,text] of Object.entries(plain))assert(after.bindings.some(b=>b.n
 assert(after.bindings.some(b=>b.name==='ASSETS'&&b.type==='assets'));
 async function verify(base){
  for(const file of assets)assert.equal(hash(await bytes(base,file)),hash(fs.readFileSync(file)),'Published asset mismatch: '+file);
- for(const p of ['/','/seller']){const r=await fetch(base+p,{signal:AbortSignal.timeout(20000)});assert.equal(r.status,200);assert.equal(new URL(r.url).pathname,p);assert(!(r.headers.get('x-robots-tag')||'').includes('noindex'));}
+ for(const p of ['/','/seller']){const r=await fetch(base+p,{signal:AbortSignal.timeout(20000)});assert.equal(r.status,200);assert.equal(new URL(r.url).pathname,p);if(base===live)assert(!(r.headers.get('x-robots-tag')||'').includes('noindex'),'Production indexing blocked');}
  const sitemap=await fetch(base+'/sitemap.xml');assert.equal(sitemap.status,200);assert(sitemap.headers.get('content-type')?.includes('xml'));assert.equal(await sitemap.text(),fs.readFileSync('sitemap.xml','utf8'));
  const robots=await fetch(base+'/robots.txt');assert.equal(robots.status,200);assert(robots.headers.get('content-type')?.includes('text/plain'));
  const api=await fetch(base+'/api/version').then(r=>r.json());assert.equal(api.version,'version-7.6-luna-external-lookup-20260927');assert.equal(api.external_comparable_search,'luna_web_search_with_mls_verification');
