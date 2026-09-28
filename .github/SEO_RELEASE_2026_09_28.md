@@ -19,10 +19,14 @@ Server module SHA-256: b654b801ed955bca1e682d5b0f111c7dd27f099c0e2dfbf785d2b15b8
 ## Verification
 All 29 public assets matched the reviewed source in preview and production. Sitemap returned 200 XML; robots returned 200 text/plain. Both public landing pages returned 200 with indexable production headers. Forms, existing JavaScript and control IDs unchanged. The deployed server module was reused byte for byte. Existing bindings/settings, cron and admin authentication preserved. No property reports, leads, emails or customer records created.
 
-## Google Search Console baseline and remaining step
+## Google Search Console baseline and completed submissions
 Observed before release: HTTPS homepage indexed; /seller unknown to Google. Page indexing report last updated September 20: one indexed page, two crawled but unindexed legacy URLs (HTTP homepage and an old M City condo blog URL).
 The sitemap was already submitted September 15 but showed Couldn't fetch and zero discovered pages. That exact sitemap URL now serves valid XML.
 Performance chart August 24–September 25: 2 clicks, 9 impressions. This is a small baseline, not evidence of ranking improvement.
-The browser transport disconnected after preview validation and before the new sitemap could be resubmitted or fresh indexing requested. Neither action is claimed complete. No visual browser review of the new FAQ sections was possible after that disconnection. Next action: reconnect Search Console for sc-domain:torontohousemarket.com, resubmit https://torontohousemarket.com/sitemap.xml, request indexing for / and /seller, then record results.
+Reconnected to the verified sc-domain:torontohousemarket.com property on September 28, 2026. Google confirmed “Sitemap submitted successfully” for https://torontohousemarket.com/sitemap.xml. The immediate sitemap report still showed the previous “Couldn't fetch” status, so submission acceptance is confirmed; a successful new Google fetch is not yet claimed.
+
+Google confirmed “Indexing requested” for both https://torontohousemarket.com/seller and https://torontohousemarket.com/. Both URLs were added to the priority crawl queue. The homepage was already indexed; /seller was unknown to Google at inspection. Indexing requests do not establish that the seller page is now indexed or that rankings improved.
+
+The prior browser disconnection is resolved. The new FAQ sections have source and deployment verification; no visual browser review is claimed in this release note.
 
 Do not rerun the old release workflow blindly: it pins the prior production version as a guard. Keep main/Phase 5 untouched and follow .github/PROJECT_PHASES.md for future changes.
