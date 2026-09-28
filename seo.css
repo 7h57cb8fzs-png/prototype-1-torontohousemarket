@@ -1,0 +1,11 @@
+/* Scoped report explanations; existing application layout and controls are unchanged. */
+.seo-guide{border-top:1px solid var(--line);color:var(--ink);padding:48px 0;background:var(--bg)}
+.seo-guide-inner{width:min(1100px,calc(100% - 40px));margin:auto;display:grid;grid-template-columns:1fr 1fr;gap:48px}
+.seller-wrap .seo-guide{margin-top:40px}.seller-wrap .seo-guide-inner{width:100%}
+.seo-guide h2{font:400 clamp(26px,3vw,36px)/1.2 Georgia,serif;letter-spacing:-.025em;margin:12px 0 16px;max-width:440px}
+.seo-guide p{font-size:15px;line-height:1.75;color:var(--muted);margin:12px 0;max-width:540px}
+.seo-guide a{color:var(--blue-dark);text-underline-offset:3px}.seo-guide .seo-team{font-size:13px}
+.seo-questions details{border-bottom:1px solid var(--line);padding:18px 0}.seo-questions details:first-child{border-top:1px solid var(--line)}
+.seo-questions summary{font-size:15px;line-height:1.5;font-weight:600;cursor:pointer;padding-right:8px;min-height:24px}
+.seo-questions summary:focus-visible,.seo-guide a:focus-visible{outline:2px solid var(--blue);outline-offset:5px}
+@media(max-width:700px){.seo-guide{padding:32px 0}.seo-guide-inner{grid-template-columns:1fr;gap:18px;width:calc(100% - 36px)}.seo-guide p,.seo-questions summary{font-size:16px}.seo-guide .seo-team{font-size:14px}}
