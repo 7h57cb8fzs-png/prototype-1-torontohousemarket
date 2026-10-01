@@ -17,7 +17,15 @@ if(new URL(request.url).pathname!=='/schema'||request.headers.get('Authorization
 const r=await fetch('https://query.ampre.ca/odata/$metadata',{headers:{Authorization:'Bearer '+env.AMPRE_VOW_TOKEN},signal:AbortSignal.timeout(15000)});
 const xml=await r.text(),entity=xml.match(/<EntityType\b[^>]*Name="Property"[\s\S]*?<\/EntityType>/)?.[0]||'';
 const fields=[...entity.matchAll(/<Property\b[^>]*Name="([^"]+)"[^>]*Type="([^"]+)"/g)].filter(m=>/Occup|Status|Expir|Terminat|Cancel|OffMarket|ListingContract|OnMarket|OriginalEntry|Street|UnitNumber|City|County|Parcel|Transaction|PropertyType/i.test(m[1])).map(m=>[m[1],m[2]]);
-return Response.json({status:r.status,fields},{headers:{'Cache-Control':'private, no-store'}});
+const probes=[];
+for(const filter of ["((MlsStatus eq 'Expired' or MlsStatus eq 'EXP') and ExpirationDate ge 2026-09-01) or ((MlsStatus eq 'Terminated' or MlsStatus eq 'TER') and TerminatedDate ge 2026-09-01)","OccupantType eq 'Owner'"]){
+ const q=await fetch('https://query.ampre.ca/odata/Property?'+new URLSearchParams({'$filter':filter,'$top':'1'}),{headers:{Authorization:'Bearer '+env.AMPRE_VOW_TOKEN},signal:AbortSignal.timeout(10000)});const b=await q.json().catch(()=>({}));
+ probes.push({querySupported:q.ok,http:q.status,returnedRecord:Array.isArray(b.value)&&b.value.length>0,fieldNames:Object.keys(b.value?.[0]||{}).filter(k=>/Occupant|MlsStatus|Date|City|Type/.test(k))});
+}
+const lookups={};for(const field of ['MlsStatus','OccupantType','PropertyType','TransactionType']){
+ const q=await fetch('https://query.ampre.ca/odata/Lookup?'+new URLSearchParams({'$filter':"LookupName eq '"+field+"'",'$top':'100'}),{headers:{Authorization:'Bearer '+env.AMPRE_VOW_TOKEN},signal:AbortSignal.timeout(10000)});const b=await q.json().catch(()=>({}));lookups[field]=q.ok?(b.value||[]).map(x=>({value:x.LookupValue,name:x.StandardLookupValue})):q.status;
+}
+return Response.json({status:r.status,fields,probes,lookups},{headers:{'Cache-Control':'private, no-store'}});
 }};`;
 try{
 writeFileSync(join(temp,'schema.js'),source,{mode:0o600});
@@ -26,6 +34,6 @@ config.main=join(temp,'schema.js');config.vars=Object.fromEntries(v.bindings.fil
 writeFileSync(join(temp,'wrangler.json'),JSON.stringify(config),{mode:0o600});
 let output;try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config',join(temp,'wrangler.json')],{encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch{throw Error('Schema preview upload failed; private config output withheld');}
 const preview=output.match(/Version Preview URL:\s*(https:\/\/[^\s]+)/i)?.[1];assert(preview);
-const r=await fetch(preview+'/schema',{headers:{Authorization:'Bearer '+nonce},signal:AbortSignal.timeout(30000)});assert(r.ok,'Schema preview unavailable');
+const r=await fetch(preview+'/schema',{headers:{Authorization:'Bearer '+nonce},signal:AbortSignal.timeout(100000)});assert(r.ok,'Schema preview unavailable');
 console.log('FIELD_SCHEMA',JSON.stringify(await r.json()));assert.equal(await active(),before);console.log('Production unchanged; no listing records requested or exported.');
 }finally{rmSync(temp,{recursive:true,force:true});}
