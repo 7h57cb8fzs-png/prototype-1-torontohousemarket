@@ -29,7 +29,8 @@ const lookups={};for(const field of ['MlsStatus','OccupantType','PropertyType','
 const testRequest=(action,body)=>new Request('https://internal.invalid/api/admin/prospects/'+action,{method:'POST',headers:{Authorization:'Bearer '+env.ADMIN_API_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
 const search=await adminProspects(testRequest('search',{}),env);const data=await search.json();
 const integration={searchSucceeded:search.ok,searchHttp:search.status,searchError:data.error||null,adminCredentialPresent:!!env.ADMIN_API_KEY,candidateAvailable:!!data.candidates?.length,continuationAvailable:!!data.cursor};
-if(data.candidates?.length){const verification=await adminProspects(testRequest('verify',{proof:data.candidates[0].proof}),env);const outcome=await verification.json();integration.verificationSucceeded=verification.ok;integration.recognizedOutcome=['qualified','excluded','unverified'].includes(outcome.result);}
+if(data.cursor){const next=await adminProspects(testRequest('search',{cursor:data.cursor}),env);integration.secondPageSucceeded=next.ok;}
+if(data.candidates?.length){const verification=await adminProspects(testRequest('verify',{proof:data.candidates[0].proof}),env);const outcome=await verification.json();integration.verificationSucceeded=verification.ok;integration.recognizedOutcome=['qualified','excluded','unverified'].includes(outcome.result);integration.historyCheckConclusive=['qualified','excluded'].includes(outcome.result);integration.verificationError=outcome.error||null;}
 return Response.json({status:r.status,fields,probes,lookups,integration},{headers:{'Cache-Control':'private, no-store'}});
 }};`;
 try{
