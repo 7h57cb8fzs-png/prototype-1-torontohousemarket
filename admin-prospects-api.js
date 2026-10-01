@@ -49,6 +49,7 @@ function summary(row,event=endEvent(row)){
  const address=[row.StreetNumber,row.StreetName,row.StreetSuffix,row.StreetDirPrefix,row.StreetDirSuffix].filter(Boolean).join(' ');
  return {listingKey:clean(row.ListingKey),address:address+(clean(row.UnitNumber)?' #'+clean(row.UnitNumber):''),city:clean(row.City),region:region(row),status:event?.status,eventDate:event?.date,eventField:event?.field,occupancy:clean(row.OccupantType),propertyType:clean(row.PropertySubType||row.PropertyType),askingPrice:Number(row.ListPrice)>0?Number(row.ListPrice):null};
 }
+const SELECT='ListingKey,MlsStatus,StandardStatus,ExpirationDate,TerminatedDate,OccupantType,TransactionType,PropertyType,PropertySubType,StreetNumber,StreetName,StreetSuffix,StreetDirPrefix,StreetDirSuffix,UnitNumber,City,PostalCode,ListPrice,ListingContractDate,OriginalEntryTimestamp,BackOnMarketEntryTimestamp,ParcelNumber';
 const KEEP=['ListingKey','MlsStatus','StandardStatus','ExpirationDate','TerminationDate','TerminatedDate','CancellationDate','OccupantType','TransactionType','PropertyType','PropertySubType','StreetNumber','StreetName','StreetSuffix','StreetDirPrefix','StreetDirSuffix','UnitNumber','City','PostalCode','ListPrice','ListingContractDate','OnMarketDate','OriginalEntryTimestamp','BackOnMarketEntryTimestamp','ParcelNumber'];
 const compact=row=>Object.fromEntries(KEEP.filter(k=>row[k]!=null).map(k=>[k,row[k]]));
 async function hmac(secret){return crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);}
@@ -58,7 +59,7 @@ async function seal(data,env){const p=b64(encoder.encode(JSON.stringify({...data
 async function unseal(value,kind,env){try{if(typeof value!=='string'||value.length>30000)throw Error();const [p,s]=value.split('.');if(!await crypto.subtle.verify('HMAC',await hmac(env.ADMIN_API_KEY),unb64(s),encoder.encode(p)))throw Error();const data=JSON.parse(new TextDecoder().decode(unb64(p)));if(data.kind!==kind||data.expires<Date.now())throw Error();return data;}catch{throw new Unavailable('This search expired. Start a fresh search.',400);}}
 function trusted(value){const u=new URL(value,BASE);if(u.origin!==new URL(BASE).origin||u.pathname!=='/odata/Property'||u.username||u.password)throw new Unavailable('The provider returned an invalid continuation link. Search is incomplete.');return u.href;}
 async function feed(env,url,text=false){
- let r;try{r=await fetch(url.replaceAll('+','%20'),{headers:{Authorization:'Bearer '+env.AMPRE_VOW_TOKEN,Accept:text?'application/xml':'application/json'},redirect:'error',signal:AbortSignal.timeout(18000)});}catch{throw new Unavailable('MLS connection timed out. No absence or relisting conclusion was made.',502);}
+ let r;try{r=await fetch(url.replaceAll('+','%20'),{headers:{Authorization:'Bearer '+env.AMPRE_VOW_TOKEN,Accept:text?'application/xml':'application/json'},redirect:'manual',signal:AbortSignal.timeout(45000)});}catch{throw new Unavailable((text?'MLS field-definition request':'MLS listing-page request')+' could not finish. No absence or relisting conclusion was made.',502);}
  if(!r.ok){await r.body?.cancel();throw new Unavailable(r.status===401||r.status===403?'The connected MLS credential does not grant this search.':'The MLS feed could not complete this query (HTTP '+r.status+'). Results are incomplete.',502);}
  // Bounded provider pages; never return raw provider responses or errors to the browser/logs.
  const reader=r.body.getReader();let size=0,parts=[];for(;;){const {value,done}=await reader.read();if(done)break;size+=value.byteLength;if(size>6000000){await reader.cancel();throw new Unavailable('MLS response exceeded the safe page size. Search is incomplete.');}parts.push(value);}
@@ -82,7 +83,7 @@ async function firstPage(env){
  // Owner is a confirmed lookup value. City aliases are reapplied strictly to every row.
  const cities=['Toronto','North York','Scarborough','Etobicoke','East York','York','Aurora','East Gwillimbury','Georgina','King','Markham','Newmarket','Richmond Hill','Vaughan','Whitchurch'];
  const scope=cities.map(city=>`contains(City,${quoted(city)})`).join(' or ');
- return BASE+'Property?'+new URLSearchParams({'$filter':`(${filter}) and OccupantType eq 'Owner' and TransactionType eq 'For Sale' and (${scope})`,'$top':'100','$count':'true','$orderby':'ListingKey'});
+ return BASE+'Property?'+new URLSearchParams({'$filter':`(${filter}) and OccupantType eq 'Owner' and TransactionType eq 'For Sale' and (${scope})`,'$top':'100','$count':'true','$orderby':'ListingKey','$select':SELECT});
 }
 function pageData(b){if(!Array.isArray(b.value))throw new Unavailable('MLS search returned an invalid page.');if(b.value.length>1000)throw new Unavailable('MLS returned more records than requested.');return b.value;}
 export function evaluateHistory(subject,rows,complete,today=torontoDay()){
@@ -129,7 +130,7 @@ async function verify(body,env){
  const matches=[],seenKeys=new Set(),deadline=Date.now()+45000;let complete=true;
  for(const filter of filters){
   if(Date.now()>deadline){complete=false;break;}
-  let url=BASE+'Property?'+new URLSearchParams({'$filter':filter,'$top':'100','$count':'true'}),count=0;const links=new Set();
+  let url=BASE+'Property?'+new URLSearchParams({'$filter':filter,'$top':'100','$count':'true','$orderby':'ListingKey','$select':SELECT}),count=0;const links=new Set();
   for(let p=0;url&&p<8;p++){
    if(Date.now()>deadline){complete=false;break;}
    if(links.has(url)){complete=false;break;}links.add(url);
