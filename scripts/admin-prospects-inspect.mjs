@@ -33,7 +33,7 @@ if(data.candidates?.length){const verification=await adminProspects(testRequest(
 return Response.json({status:r.status,fields,probes,lookups,integration},{headers:{'Cache-Control':'private, no-store'}});
 }};`;
 try{
-writeFileSync(join(temp,'schema.js'),source,{mode:0o600});
+writeFileSync(join(temp,'schema.js'),source,{mode:0o600});writeFileSync(join(temp,'admin-prospects-api.mjs'),readFileSync('admin-prospects-api.js')); 
 const config=JSON.parse(readFileSync('wrangler.jsonc','utf8'));delete config.secrets;delete config.assets;delete config.triggers;
 config.main=join(temp,'schema.js');config.vars=Object.fromEntries(v.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));config.vars.THM_SCHEMA_KEY=nonce;
 writeFileSync(join(temp,'wrangler.json'),JSON.stringify(config),{mode:0o600});
