@@ -22,3 +22,28 @@ jobs:
           AMPRE_VOW_TOKEN: ${{ secrets.AMPRE_VOW_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/admin-prospects-inspect.mjs
+  release:
+    if: contains(github.event.head_commit.message, '[prospects-preview]') || contains(github.event.head_commit.message, '[prospects-publish]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test protected admin search and existing admin operations
+        env:
+          ADMIN_TEST_JSDOM_PATH: ${{ runner.temp }}/thm-admin-test/node_modules/jsdom/lib/api.js
+        run: |
+          npm install --prefix "$RUNNER_TEMP/thm-admin-test" --no-save --package-lock=false jsdom@27.0.0
+          node --test tests/admin-prospects.test.mjs tests/admin-insights.test.mjs tests/admin-workspace.test.mjs
+      - name: Preserve public code and deploy reviewed admin changes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
+          CANDIDATE_VERSION_ID: ''
+          CANDIDATE_PREVIEW_URL: ''
+          PUBLISH: ${{ contains(github.event.head_commit.message, '[prospects-publish]') && 'true' || 'false' }}
+        run: node scripts/admin-prospects-release.mjs

@@ -65,7 +65,7 @@ test('5. Admin screens connect overview, marketing, exports, agent deletion and 
   else if(u.pathname.endsWith('/reports'))data=u.searchParams.has('copy')?{ok:true,copy:{report:{seller:{profile:lead.property_snapshot.sellerProfile},valuation:lead.report.valuation},html:'<p>Saved report</p>'}}:{ok:true,copies:[],current:{id:'current',status:'ready'}};
   return Response.json(data);
  };
- const files=['admin-view-model.js','admin-exports.js','admin-insights.js','admin-workspace.js'];
+ const files=['admin-view-model.js','admin-exports.js','admin-insights.js','admin-prospects.js','admin-workspace.js'];
  const code=files.map(f=>readFileSync(new URL('../'+f,import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace(/^export /gm,'')).join('\n');
  await w.eval('(async()=>{'+code+"\nstate.token='synthetic-test';await loadSetup();$('login').hidden=true;$('workspace').hidden=false;await changeView('leads');})()");
  const wait=async check=>{for(let i=0;i<30;i++){if(check())return;await new Promise(r=>setTimeout(r,5));}assert(check(),'Expected admin screen state');};

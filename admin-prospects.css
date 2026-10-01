@@ -1,0 +1,11 @@
+#prospectsView .prospect-intro{background:#fff;border:1px solid var(--line,#dedfd8);border-radius:18px;padding:24px;margin-bottom:20px}
+#prospectsView .prospect-intro h2{font:400 27px Georgia,serif;margin:0 0 10px}
+#prospectsView .prospect-intro p{max-width:780px;line-height:1.6}
+#prospectsView .prospect-rules{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}
+#prospectsView .prospect-rules span{background:#f1f5f2;border-radius:999px;padding:7px 12px;color:#245e57;font-size:13px}
+#prospectsView .prospect-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+#prospectsView .filterbar{flex-wrap:wrap}#prospectsView .check-label{white-space:normal}
+#prospectsView td{vertical-align:top;line-height:1.65}#prospectsView small{font-size:11px}
+#prospectsView td:first-child,#prospectsView th:first-child{width:auto;min-width:200px;padding-right:14px}#prospectsView table{min-width:850px}
+#prospectsView #prospectProgress{min-height:24px;line-height:1.6;font-size:14px;margin:16px 0}
+@media(max-width:650px){#prospectsView .prospect-intro{padding:18px}#prospectsView .filterbar>*{flex:1 1 140px}#prospectsView .prospect-actions button{flex:1 1 120px}}

@@ -1,3 +1,4 @@
+import { adminProspects } from './admin-prospects-api.js';
 import { processSellerMarketing, marketingUnsubscribe } from './seller-marketing.js';
 import { adminOps } from './admin-api.js';
 import { homeChat } from './home-chat.js';
@@ -15,6 +16,7 @@ const AUTOMATION_ROUTES=new Set(['/api/lead','/api/vow/accept-terms','/api/vow/a
 export default {
   async fetch(request,env,ctx){
     const url=new URL(request.url);
+    if(url.pathname.startsWith('/api/admin/prospects/')) return adminProspects(request,env);
     if(url.pathname==='/api/marketing/unsubscribe') return marketingUnsubscribe(request,env);
     if(url.pathname.startsWith('/api/admin/ops/')) return adminOps(request,env);
     if(url.pathname==='/api/home-chat' && request.method==='POST') return homeChat(request,env,ctx,legacyApp);
