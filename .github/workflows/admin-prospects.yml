@@ -20,4 +20,5 @@ jobs:
       - name: Read licensed field availability without exporting listing records
         env:
           AMPRE_VOW_TOKEN: ${{ secrets.AMPRE_VOW_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/admin-prospects-inspect.mjs
