@@ -18,3 +18,18 @@
 #prospectsView .prospect-scan-filters p:empty{display:none}
 #prospectsView .prospect-scan-filters:disabled{opacity:.65}
 @media(max-width:650px){#prospectsView .prospect-scan-filters{grid-template-columns:1fr}}
+
+#prospectsView .prospect-picker{border:1px solid var(--line,#dedfd8);border-radius:12px;align-self:start;background:#fff;min-width:0}
+#prospectsView .prospect-picker summary{padding:13px;cursor:pointer;font-size:13px;font-weight:600;line-height:1.6}
+#prospectsView .prospect-picker summary span{display:block;font-weight:400;color:#47665f;overflow-wrap:anywhere}
+#prospectsView .prospect-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:5px 10px 12px;max-height:270px;overflow:auto}
+#prospectsView .prospect-choices.districts{grid-template-columns:repeat(3,minmax(0,1fr))}
+#prospectsView .prospect-scan-filters .prospect-choice{flex-direction:row;align-items:center;font-weight:400;padding:7px 3px;gap:8px;line-height:1.4}
+#prospectsView .prospect-choice input{width:16px;height:16px;flex:0 0 16px;margin:0;accent-color:#245e57}
+#prospectsView .prospect-community-field{grid-column:1/-1;display:flex;flex-direction:column;gap:10px;min-width:0}
+#prospectsView .prospect-add{display:flex;gap:8px}#prospectsView .prospect-add input{flex:1;min-width:0}
+#prospectsView .prospect-chips{display:flex;gap:7px;flex-wrap:wrap}
+#prospectsView .prospect-chip{background:#edf4f0;color:#245e57;border:1px solid #b7cdc4;border-radius:20px;padding:7px 12px;white-space:normal;text-align:left;overflow-wrap:anywhere;max-width:100%;font-size:13px;cursor:pointer}
+#prospectsView .prospect-chip span{margin-left:8px}
+#prospectsView .prospect-date-presets{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
+#prospectsView .prospect-date-presets button{font-size:12px;padding:6px 10px;border:1px solid var(--line,#dedfd8);border-radius:20px}

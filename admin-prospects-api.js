@@ -3,6 +3,7 @@ const BASE='https://query.ampre.ca/odata/';
 export const SINCE='2026-09-01';
 const encoder=new TextEncoder();
 const YCities=new Set(['aurora','east gwillimbury','georgina','king','markham','newmarket','richmond hill','vaughan','whitchurch stouffville']);
+const DISTRICTS=[...Array.from({length:10},(_,i)=>'W'+String(i+1).padStart(2,'0')),...Array.from({length:15},(_,i)=>'C'+String(i+1).padStart(2,'0')).filter(v=>v!=='C05'),...Array.from({length:11},(_,i)=>'E'+String(i+1).padStart(2,'0'))];
 const MUNICIPALITIES=['Toronto','Aurora','East Gwillimbury','Georgina','King','Markham','Newmarket','Richmond Hill','Vaughan','Whitchurch-Stouffville'];
 const clean=v=>String(v??'').trim();
 const norm=v=>clean(v).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
@@ -34,11 +35,11 @@ export function identity(row){
  const road=street([row.StreetName,row.StreetSuffix,row.StreetDirPrefix,row.StreetDirSuffix].filter(Boolean).join(' '));
  return [city,number,road,u].join('|');
 }
-export function classifyCandidate(row,today=torontoDay()){
+export function classifyCandidate(row,today=torontoDay(),window={dateFrom:SINCE,dateTo:today}){
  const event=endEvent(row);
  if(!event)return {eligible:false,reason:'Other listing status'};
  if(!event.date)return {eligible:false,reason:'Missing expiry / termination date'};
- if(event.date<SINCE||event.date>today)return {eligible:false,reason:'Outside date window'};
+ if(event.date<window.dateFrom||event.date>window.dateTo||event.date>today)return {eligible:false,reason:'Outside date window'};
  if(!region(row))return {eligible:false,reason:'Outside Toronto / York'};
  if(!owner(row))return {eligible:false,reason:'Owner occupancy not explicitly recorded'};
  if(!/^for sale$|^sale$/i.test(clean(row.TransactionType)))return {eligible:false,reason:'Not a sale listing'};
@@ -77,21 +78,40 @@ async function schema(env){
  return {fields,termination};
 }
 const quoted=v=>"'"+clean(v).replaceAll("'","''")+"'";
-export function searchFilters(value={}){
+export function searchFilters(value={},today=torontoDay()){
  if(!value||typeof value!=='object'||Array.isArray(value))throw new Unavailable('Invalid scan filters.',400);
- const municipality=clean(value.municipality),community=clean(value.community).replace(/\s+/g,' ');
- if(municipality&&!MUNICIPALITIES.includes(municipality))throw new Unavailable('Choose a municipality in Toronto or York.',400);
- if(community.length>120||/[\x00-\x1f\x7f]/.test(community))throw new Unavailable('Enter a valid MLS community name.',400);
+ const many=(input,legacy,max,label)=>{
+  const list=input===undefined?(clean(legacy)?[legacy]:[]):input;
+  if(!Array.isArray(list)||list.length>max||list.some(v=>typeof v!=='string'))throw new Unavailable('Invalid '+label+' selections.',400);
+  return [...new Map(list.map(v=>{const name=clean(v).replace(/\s+/g,' ');return [norm(name),name];}).filter(([,v])=>v)).values()];
+ };
+ const municipalities=many(value.municipalities,value.municipality,10,'municipality'),districts=many(value.districts,null,35,'district').map(v=>v.toUpperCase()),communities=many(value.communities,value.community,40,'community');
+ if(municipalities.some(v=>!MUNICIPALITIES.includes(v)))throw new Unavailable('Choose municipalities in Toronto or York.',400);
+ if(districts.some(v=>!DISTRICTS.includes(v)))throw new Unavailable('Choose valid Toronto MLS districts.',400);
+ if(communities.some(v=>v.length>120||/[\x00-\x1f\x7f]/.test(v)))throw new Unavailable('Enter valid MLS community names.',400);
+ const date=(v,fallback)=>{const d=v===undefined?fallback:clean(v);if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||day(d)!==d||d<'1900-01-01'||d>today)throw new Unavailable('Choose valid dates from 1900 through today.',400);return d;};
+ const dateFrom=date(value.dateFrom,SINCE),dateTo=date(value.dateTo,today);
+ if(dateFrom>dateTo)throw new Unavailable('The start date must not be after the end date.',400);
+ const status=clean(value.status);if(!['','Expired','Terminated'].includes(status))throw new Unavailable('Choose Expired, Terminated or both statuses.',400);
  const price=(value,label)=>{if(value==null||value==='')return null;const n=typeof value==='number'?value:typeof value==='string'&&/^\d+(?:\.\d{1,2})?$/.test(value.trim())?Number(value):NaN;if(!Number.isFinite(n)||n<0||n>1e10)throw new Unavailable('Enter a valid '+label+' asking price.',400);return n;};
  const minPrice=price(value.minPrice,'minimum'),maxPrice=price(value.maxPrice,'maximum');
  if(minPrice!==null&&maxPrice!==null&&minPrice>maxPrice)throw new Unavailable('Minimum price must not exceed maximum price.',400);
- return {municipality,community,minPrice,maxPrice};
+ return {municipalities,districts,communities,dateFrom,dateTo,status,minPrice,maxPrice};
 }
 export function matchesFilters(row,filters){
- if(filters.municipality&&(filters.municipality==='Toronto'?region(row)!=='Toronto':norm(row.City)!==norm(filters.municipality)))return false;
- if(filters.community&&norm(row.CityRegion)!==norm(filters.community))return false;
+ const inMunicipality=filters.municipalities.some(v=>v==='Toronto'?region(row)==='Toronto':norm(row.City)===norm(v));
+ const inDistrict=filters.districts.some(v=>norm(row.City)===norm('Toronto '+v));
+ if((filters.municipalities.length||filters.districts.length)&&!inMunicipality&&!inDistrict)return false;
+ if(filters.communities.length&&!filters.communities.some(v=>norm(row.CityRegion)===norm(v)))return false;
+ if(filters.status&&endEvent(row)?.status!==filters.status)return false;
  if(filters.minPrice!==null||filters.maxPrice!==null){const n=Number(row.ListPrice);if(!Number.isFinite(n)||n<=0||filters.minPrice!==null&&n<filters.minPrice||filters.maxPrice!==null&&n>filters.maxPrice)return false;}
  return true;
+}
+export function dateBounds(field,type,from,to){
+ if(type==='Edm.Date')return `${field} ge ${from} and ${field} le ${to}`;
+ // Broad UTC edges followed by exact Toronto-day checks avoid DST omissions.
+ const next=new Date(to+'T00:00:00Z');next.setUTCDate(next.getUTCDate()+2);
+ return `${field} ge ${from}T00:00:00Z and ${field} lt ${next.toISOString()}`;
 }
 async function communityOptions(env){
  // Lookup vocabulary only: loading choices never scans property listings.
@@ -107,14 +127,17 @@ async function communityOptions(env){
 }
 async function firstPage(env,filters){
  const {fields,termination}=await schema(env);
- const after=field=>fields.get(field)==='Edm.Date'?SINCE:SINCE+'T04:00:00Z';
- const filter=`((MlsStatus eq 'Expired' or MlsStatus eq 'EXP') and ExpirationDate ge ${after('ExpirationDate')}) or ((MlsStatus eq 'Terminated' or MlsStatus eq 'TER') and ${termination} ge ${after(termination)})`;
- // Owner is a confirmed lookup value. City aliases are reapplied strictly to every row.
- const cities=['Toronto','North York','Scarborough','Etobicoke','East York','York','Aurora','East Gwillimbury','Georgina','King','Markham','Newmarket','Richmond Hill','Vaughan','Whitchurch'];
- const selected=filters.municipality==='Toronto'?cities.slice(0,6):filters.municipality?[filters.municipality==='Whitchurch-Stouffville'?'Whitchurch':filters.municipality]:cities;
- const scope=selected.map(city=>`contains(City,${quoted(city)})`).join(' or ');
+ const ranges=field=>dateBounds(field,fields.get(field),filters.dateFrom,filters.dateTo);
+ const expired=`((MlsStatus eq 'Expired' or MlsStatus eq 'EXP') and ${ranges('ExpirationDate')})`,terminated=`((MlsStatus eq 'Terminated' or MlsStatus eq 'TER') and ${ranges(termination)})`;
+ const filter=filters.status==='Expired'?expired:filters.status==='Terminated'?terminated:`${expired} or ${terminated}`;
+ // Municipalities and districts are a union; communities narrow that union.
+ const toronto=['Toronto','North York','Scarborough','Etobicoke','East York','York'];
+ const municipalities=filters.municipalities.length||filters.districts.length?filters.municipalities:MUNICIPALITIES;
+ const selected=[...new Set(municipalities.flatMap(v=>v==='Toronto'?toronto:[v==='Whitchurch-Stouffville'?'Whitchurch':v]))];
+ const areas=[...selected.map(city=>`contains(City,${quoted(city)})`),...filters.districts.map(d=>`City eq ${quoted('Toronto '+d)}`)];
+ const scope=areas.join(' or ');
  const extra=[];
- if(filters.community)extra.push(`tolower(CityRegion) eq ${quoted(filters.community.toLowerCase())}`);
+ if(filters.communities.length)extra.push('('+filters.communities.map(v=>`tolower(CityRegion) eq ${quoted(v.toLowerCase())}`).join(' or ')+')');
  if(filters.minPrice!==null)extra.push(`ListPrice ge ${filters.minPrice}`);
  if(filters.maxPrice!==null)extra.push(`ListPrice le ${filters.maxPrice}`);
  return BASE+'Property?'+new URLSearchParams({'$filter':`(${filter}) and OccupantType eq 'Owner' and TransactionType eq 'For Sale' and (${scope})${extra.length?' and '+extra.join(' and '):''}`,'$top':'100','$count':'true','$orderby':'ListingKey','$select':SELECT});
@@ -150,14 +173,14 @@ async function scan(body,env){
  const state=body.cursor?await unseal(body.cursor,'scan',env):{url:await firstPage(env,filters),filters,seen:0,startedAt:new Date().toISOString()};
  const scope=searchFilters(state.filters);
  const b=await feed(env,trusted(state.url)),rows=pageData(b),candidates=[],excluded={};
- for(const row of rows){const c=classifyCandidate(row);if(!c.eligible){excluded[c.reason]=(excluded[c.reason]||0)+1;continue;}if(!matchesFilters(row,scope)){excluded['Outside selected scan filters']=(excluded['Outside selected scan filters']||0)+1;continue;}const data=compact(row);candidates.push({...summary(data,c.event),proof:await seal({kind:'candidate',row:data},env)});}
+ for(const row of rows){const c=classifyCandidate(row,torontoDay(),scope);if(!c.eligible){excluded[c.reason]=(excluded[c.reason]||0)+1;continue;}if(!matchesFilters(row,scope)){excluded['Outside selected scan filters']=(excluded['Outside selected scan filters']||0)+1;continue;}const data=compact(row);candidates.push({...summary(data,c.event),proof:await seal({kind:'candidate',row:data,filters:scope},env)});}
  const next=b['@odata.nextLink'];if(next&&trusted(next)===trusted(state.url))throw new Unavailable('The MLS feed repeated a page. Search is incomplete.');const seen=state.seen+rows.length,total=Number(b['@odata.count']);
  // A full page without a continuation cannot establish completeness unless count confirms the end.
  const complete=!next&&(Number.isFinite(total)?seen>=total:rows.length<100);
- return {ok:true,filters:scope,candidates,excluded,pageId:b64(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(state.url)))),scanned:seen,sourceTotal:Number.isFinite(total)?total:null,startedAt:state.startedAt,checkedAt:new Date().toISOString(),since:SINCE,through:torontoDay(),complete,cursor:next?await seal({kind:'scan',url:trusted(next),filters:scope,seen,startedAt:state.startedAt},env):null,incompleteReason:!next&&!complete?'The MLS feed ended without proving all pages were returned.':null};
+ return {ok:true,filters:scope,candidates,excluded,pageId:b64(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(state.url)))),scanned:seen,sourceTotal:Number.isFinite(total)?total:null,startedAt:state.startedAt,checkedAt:new Date().toISOString(),since:scope.dateFrom,through:scope.dateTo,historyThrough:torontoDay(),complete,cursor:next?await seal({kind:'scan',url:trusted(next),filters:scope,seen,startedAt:state.startedAt},env):null,incompleteReason:!next&&!complete?'The MLS feed ended without proving all pages were returned.':null};
 }
 async function verify(body,env){
- const {row}=await unseal(body.proof,'candidate',env),c=classifyCandidate(row);if(!c.eligible)return {ok:true,...summary(row),result:'excluded',reason:c.reason};
+ const {row,filters:selection}=await unseal(body.proof,'candidate',env),scope=searchFilters(selection),c=classifyCandidate(row,torontoDay(),scope);if(!c.eligible)return {ok:true,...summary(row),result:'excluded',reason:c.reason};
  // Full street queries, all statuses and transaction types, preserve condo units and catch aliases.
  const token=clean(row.StreetName).split(/\s+/).sort((a,b)=>b.length-a.length)[0];
  const variants=[...new Set([token,token.toUpperCase(),token.toLowerCase()])];
