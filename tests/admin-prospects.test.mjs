@@ -1,8 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {adminProspects,classifyCandidate,evaluateHistory,identity,torontoDay} from '../admin-prospects-api.js';
+import {adminProspects,classifyCandidate,evaluateHistory,identity,torontoDay,searchFilters,matchesFilters} from '../admin-prospects-api.js';
 const row={ListingKey:'SYNTHETIC-1',MlsStatus:'Expired',StandardStatus:'Expired',ExpirationDate:'2026-09-01',OccupantType:'Owner',TransactionType:'For Sale',PropertyType:'Residential Freehold',PropertySubType:'Detached',StreetNumber:'123',StreetName:'Synthetic',StreetSuffix:'Rd',City:'Toronto C01',ListingContractDate:'2026-08-01'};
+test('scan scope validates prices and matches municipality, exact community and inclusive asking prices',()=>{
+ const filters=searchFilters({municipality:'Toronto',community:'  Test Community  ',minPrice:'500000',maxPrice:'1000000'});
+ assert(matchesFilters({...row,CityRegion:'TEST COMMUNITY',ListPrice:500000},filters));
+ assert(matchesFilters({...row,CityRegion:'Test Community',ListPrice:1000000},filters));
+ for(const patch of [{City:'Markham'},{CityRegion:'Other Community'},{CityRegion:null},{ListPrice:499999},{ListPrice:1000001},{ListPrice:null}])assert(!matchesFilters({...row,CityRegion:'Test Community',ListPrice:800000,...patch},filters));
+ assert(matchesFilters({...row,ListPrice:null},searchFilters()));
+ assert(matchesFilters({...row,City:'Whitchurch-Stouffville'},searchFilters({municipality:'Whitchurch-Stouffville'})));
+ for(const invalid of [{minPrice:100,maxPrice:99},{minPrice:-1},{minPrice:'1 or 1 eq 1'},{maxPrice:Infinity},{municipality:'Mississauga'},{community:'a'.repeat(121)}])assert.throws(()=>searchFilters(invalid));
+});
+test('scan filters reach the provider, remain signed across pages, and never restrict relisting history',async()=>{
+ const original=globalThis.fetch,calls=[];let pages=0;
+ const selected={...row,City:'Richmond Hill',CityRegion:'North Richvale',ListPrice:900000};
+ const next='https://webapi-green-gcp.ampre.ca/odata/Property?$skiptoken=second';
+ const meta='<EntityType Name="Property">'+['ListingKey','MlsStatus','ExpirationDate','TerminationDate','OccupantType','StreetName','City'].map(f=>`<Property Name="${f}" Type="${f.endsWith('Date')?'Edm.Date':'Edm.String'}"/>`).join('')+'</EntityType>';
+ globalThis.fetch=async(url)=>{const u=new URL(url);calls.push(u);if(u.pathname.endsWith('$metadata'))return new Response(meta);if(u.searchParams.get('$filter')?.includes('StreetName'))return Response.json({value:[selected,{...selected,ListingKey:'LATER',CityRegion:'Changed label',ListPrice:1200000,MlsStatus:'New',ListingContractDate:'2026-09-20'}],'@odata.count':2});pages++;return Response.json({value:[selected,{...selected,ListingKey:'WRONG',City:'Vaughan'},{...selected,ListingKey:'OVER',ListPrice:900001}],'@odata.count':6,...(pages===1?{'@odata.nextLink':next}:{})});};
+ const env={ADMIN_API_KEY:'test-admin',AMPRE_VOW_TOKEN:'private'},req=(action,body)=>new Request('https://example.invalid/api/admin/prospects/'+action,{method:'POST',headers:{Authorization:'Bearer test-admin'},body:JSON.stringify(body)});
+ try{
+  const filters={municipality:'Richmond Hill',community:'North Richvale',minPrice:900000,maxPrice:900000};
+  const b=await(await adminProspects(req('search',{filters}),env)).json();assert.equal(b.candidates.length,1);assert(b.cursor);
+  const expression=calls.find(u=>u.pathname.endsWith('Property')).searchParams.get('$filter');assert(expression.includes("contains(City,'Richmond Hill')"));assert(expression.includes("tolower(CityRegion) eq 'north richvale'"));assert(expression.includes('ListPrice ge 900000'));assert(expression.includes('ListPrice le 900000'));
+  const p=await(await adminProspects(req('search',{cursor:b.cursor,filters:{municipality:'Vaughan'}}),env)).json();assert.equal(p.complete,true);assert.deepEqual(p.filters,filters);assert.equal(p.candidates.length,1);
+  const v=await(await adminProspects(req('verify',{proof:b.candidates[0].proof}),env)).json();assert.equal(v.result,'excluded');
+  const history=calls.find(u=>u.searchParams.get('$filter')?.includes('StreetName')).searchParams.get('$filter');assert(!history.includes('CityRegion'));assert(!history.includes('ListPrice'));
+ }finally{globalThis.fetch=original;}
+});
+test('community suggestions read lookup vocabulary only and require admin authentication',async()=>{
+ const original=globalThis.fetch,calls=[];globalThis.fetch=async(url)=>{calls.push(new URL(url));return Response.json({value:[{LookupValue:'North Richvale'},{LookupValue:'Annex'},{LookupValue:'Annex'}]});};
+ const env={ADMIN_API_KEY:'test-admin',AMPRE_VOW_TOKEN:'private'},req=key=>new Request('https://example.invalid/api/admin/prospects/options',{method:'POST',headers:{Authorization:'Bearer '+key},body:'{}'});
+ try{assert.equal((await adminProspects(req('wrong'),env)).status,401);assert.equal(calls.length,0);const result=await(await adminProspects(req('test-admin'),env)).json();assert.deepEqual(result.communities,['Annex','North Richvale']);assert(calls.every(u=>u.pathname==='/odata/Lookup'));}finally{globalThis.fetch=original;}
+});
 test('date, status, geography and explicit occupancy gates',()=>{
  assert(classifyCandidate(row,'2026-10-01').eligible);
  for(const patch of [{ExpirationDate:'2026-08-31'},{ExpirationDate:'2026-10-02'},{ExpirationDate:null},{OccupantType:'Tenant'},{OccupantType:'Vacant'},{OccupantType:null},{OccupantType:'Owner/Tenant'},{City:'Richmond'},{City:'Mississauga'},{PropertyType:'Commercial'},{TransactionType:'For Lease'},{MlsStatus:'Cancelled'}])assert(!classifyCandidate({...row,...patch},'2026-10-01').eligible,JSON.stringify(patch));

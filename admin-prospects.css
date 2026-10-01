@@ -9,3 +9,12 @@
 #prospectsView td:first-child,#prospectsView th:first-child{width:auto;min-width:200px;padding-right:14px}#prospectsView table{min-width:850px}
 #prospectsView #prospectProgress{min-height:24px;line-height:1.6;font-size:14px;margin:16px 0}
 @media(max-width:650px){#prospectsView .prospect-intro{padding:18px}#prospectsView .filterbar>*{flex:1 1 140px}#prospectsView .prospect-actions button{flex:1 1 120px}}
+
+#prospectsView .prospect-scan-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;border:0;border-top:1px solid var(--line,#dedfd8);padding:18px 0 22px;margin:0;min-width:0}
+#prospectsView .prospect-scan-filters legend{font-weight:600;padding:0 12px 0 0}
+#prospectsView .prospect-scan-filters label{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600;min-width:0}
+#prospectsView .prospect-scan-filters input,#prospectsView .prospect-scan-filters select{width:100%;min-width:0;box-sizing:border-box}
+#prospectsView .prospect-scan-filters p{grid-column:1/-1;margin:0;font-weight:400}
+#prospectsView .prospect-scan-filters p:empty{display:none}
+#prospectsView .prospect-scan-filters:disabled{opacity:.65}
+@media(max-width:650px){#prospectsView .prospect-scan-filters{grid-template-columns:1fr}}

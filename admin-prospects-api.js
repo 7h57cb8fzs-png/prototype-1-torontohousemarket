@@ -3,6 +3,7 @@ const BASE='https://query.ampre.ca/odata/';
 export const SINCE='2026-09-01';
 const encoder=new TextEncoder();
 const YCities=new Set(['aurora','east gwillimbury','georgina','king','markham','newmarket','richmond hill','vaughan','whitchurch stouffville']);
+const MUNICIPALITIES=['Toronto','Aurora','East Gwillimbury','Georgina','King','Markham','Newmarket','Richmond Hill','Vaughan','Whitchurch-Stouffville'];
 const clean=v=>String(v??'').trim();
 const norm=v=>clean(v).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'private, no-store','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff'}});
@@ -47,10 +48,10 @@ export function classifyCandidate(row,today=torontoDay()){
 }
 function summary(row,event=endEvent(row)){
  const address=[row.StreetNumber,row.StreetName,row.StreetSuffix,row.StreetDirPrefix,row.StreetDirSuffix].filter(Boolean).join(' ');
- return {listingKey:clean(row.ListingKey),address:address+(clean(row.UnitNumber)?' #'+clean(row.UnitNumber):''),city:clean(row.City),region:region(row),status:event?.status,eventDate:event?.date,eventField:event?.field,occupancy:clean(row.OccupantType),propertyType:clean(row.PropertySubType||row.PropertyType),askingPrice:Number(row.ListPrice)>0?Number(row.ListPrice):null};
+ return {listingKey:clean(row.ListingKey),address:address+(clean(row.UnitNumber)?' #'+clean(row.UnitNumber):''),city:clean(row.City),community:clean(row.CityRegion),region:region(row),status:event?.status,eventDate:event?.date,eventField:event?.field,occupancy:clean(row.OccupantType),propertyType:clean(row.PropertySubType||row.PropertyType),askingPrice:Number(row.ListPrice)>0?Number(row.ListPrice):null};
 }
-const SELECT='ListingKey,MlsStatus,StandardStatus,ExpirationDate,TerminatedDate,OccupantType,TransactionType,PropertyType,PropertySubType,StreetNumber,StreetName,StreetSuffix,StreetDirPrefix,StreetDirSuffix,UnitNumber,City,PostalCode,ListPrice,ListingContractDate,OriginalEntryTimestamp,BackOnMarketEntryTimestamp,ParcelNumber';
-const KEEP=['ListingKey','MlsStatus','StandardStatus','ExpirationDate','TerminationDate','TerminatedDate','CancellationDate','OccupantType','TransactionType','PropertyType','PropertySubType','StreetNumber','StreetName','StreetSuffix','StreetDirPrefix','StreetDirSuffix','UnitNumber','City','PostalCode','ListPrice','ListingContractDate','OnMarketDate','OriginalEntryTimestamp','BackOnMarketEntryTimestamp','ParcelNumber'];
+const SELECT='ListingKey,MlsStatus,StandardStatus,ExpirationDate,TerminatedDate,OccupantType,TransactionType,PropertyType,PropertySubType,StreetNumber,StreetName,StreetSuffix,StreetDirPrefix,StreetDirSuffix,UnitNumber,City,CityRegion,PostalCode,ListPrice,ListingContractDate,OriginalEntryTimestamp,BackOnMarketEntryTimestamp,ParcelNumber';
+const KEEP=['ListingKey','MlsStatus','StandardStatus','ExpirationDate','TerminationDate','TerminatedDate','CancellationDate','OccupantType','TransactionType','PropertyType','PropertySubType','StreetNumber','StreetName','StreetSuffix','StreetDirPrefix','StreetDirSuffix','UnitNumber','City','CityRegion','PostalCode','ListPrice','ListingContractDate','OnMarketDate','OriginalEntryTimestamp','BackOnMarketEntryTimestamp','ParcelNumber'];
 const compact=row=>Object.fromEntries(KEEP.filter(k=>row[k]!=null).map(k=>[k,row[k]]));
 async function hmac(secret){return crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);}
 const b64=bytes=>btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
@@ -76,14 +77,47 @@ async function schema(env){
  return {fields,termination};
 }
 const quoted=v=>"'"+clean(v).replaceAll("'","''")+"'";
-async function firstPage(env){
+export function searchFilters(value={}){
+ if(!value||typeof value!=='object'||Array.isArray(value))throw new Unavailable('Invalid scan filters.',400);
+ const municipality=clean(value.municipality),community=clean(value.community).replace(/\s+/g,' ');
+ if(municipality&&!MUNICIPALITIES.includes(municipality))throw new Unavailable('Choose a municipality in Toronto or York.',400);
+ if(community.length>120||/[\x00-\x1f\x7f]/.test(community))throw new Unavailable('Enter a valid MLS community name.',400);
+ const price=(value,label)=>{if(value==null||value==='')return null;const n=typeof value==='number'?value:typeof value==='string'&&/^\d+(?:\.\d{1,2})?$/.test(value.trim())?Number(value):NaN;if(!Number.isFinite(n)||n<0||n>1e10)throw new Unavailable('Enter a valid '+label+' asking price.',400);return n;};
+ const minPrice=price(value.minPrice,'minimum'),maxPrice=price(value.maxPrice,'maximum');
+ if(minPrice!==null&&maxPrice!==null&&minPrice>maxPrice)throw new Unavailable('Minimum price must not exceed maximum price.',400);
+ return {municipality,community,minPrice,maxPrice};
+}
+export function matchesFilters(row,filters){
+ if(filters.municipality&&(filters.municipality==='Toronto'?region(row)!=='Toronto':norm(row.City)!==norm(filters.municipality)))return false;
+ if(filters.community&&norm(row.CityRegion)!==norm(filters.community))return false;
+ if(filters.minPrice!==null||filters.maxPrice!==null){const n=Number(row.ListPrice);if(!Number.isFinite(n)||n<=0||filters.minPrice!==null&&n<filters.minPrice||filters.maxPrice!==null&&n>filters.maxPrice)return false;}
+ return true;
+}
+async function communityOptions(env){
+ // Lookup vocabulary only: loading choices never scans property listings.
+ let url=BASE+'Lookup?'+new URLSearchParams({'$filter':"LookupName eq 'CityRegion'",'$top':'1000'});const names=new Set(),links=new Set();
+ for(let i=0;url&&i<30;i++){
+  const u=new URL(url,BASE);if(!['query.ampre.ca','webapi-green-gcp.ampre.ca'].includes(u.hostname)||!/^\/odata\/Lookup\/?$/i.test(u.pathname)||!['https:','http:'].includes(u.protocol)||u.port||u.username||u.password||u.hash)throw new Unavailable('Community choices are unavailable. You can enter an MLS community name.');u.protocol='https:';u.hostname='query.ampre.ca';
+  if(links.has(u.href))throw new Unavailable('Community choices are incomplete. You can enter an MLS community name.');links.add(u.href);
+  const data=await feed(env,u.href);for(const row of pageData(data)){const name=clean(row.LookupValue);if(name&&name.length<=120)names.add(name);}
+  url=data['@odata.nextLink']||null;
+ }
+ if(url)throw new Unavailable('Community choices are incomplete. You can enter an MLS community name.');
+ return {ok:true,communities:[...names].sort((a,b)=>a.localeCompare(b))};
+}
+async function firstPage(env,filters){
  const {fields,termination}=await schema(env);
  const after=field=>fields.get(field)==='Edm.Date'?SINCE:SINCE+'T04:00:00Z';
  const filter=`((MlsStatus eq 'Expired' or MlsStatus eq 'EXP') and ExpirationDate ge ${after('ExpirationDate')}) or ((MlsStatus eq 'Terminated' or MlsStatus eq 'TER') and ${termination} ge ${after(termination)})`;
  // Owner is a confirmed lookup value. City aliases are reapplied strictly to every row.
  const cities=['Toronto','North York','Scarborough','Etobicoke','East York','York','Aurora','East Gwillimbury','Georgina','King','Markham','Newmarket','Richmond Hill','Vaughan','Whitchurch'];
- const scope=cities.map(city=>`contains(City,${quoted(city)})`).join(' or ');
- return BASE+'Property?'+new URLSearchParams({'$filter':`(${filter}) and OccupantType eq 'Owner' and TransactionType eq 'For Sale' and (${scope})`,'$top':'100','$count':'true','$orderby':'ListingKey','$select':SELECT});
+ const selected=filters.municipality==='Toronto'?cities.slice(0,6):filters.municipality?[filters.municipality==='Whitchurch-Stouffville'?'Whitchurch':filters.municipality]:cities;
+ const scope=selected.map(city=>`contains(City,${quoted(city)})`).join(' or ');
+ const extra=[];
+ if(filters.community)extra.push(`tolower(CityRegion) eq ${quoted(filters.community.toLowerCase())}`);
+ if(filters.minPrice!==null)extra.push(`ListPrice ge ${filters.minPrice}`);
+ if(filters.maxPrice!==null)extra.push(`ListPrice le ${filters.maxPrice}`);
+ return BASE+'Property?'+new URLSearchParams({'$filter':`(${filter}) and OccupantType eq 'Owner' and TransactionType eq 'For Sale' and (${scope})${extra.length?' and '+extra.join(' and '):''}`,'$top':'100','$count':'true','$orderby':'ListingKey','$select':SELECT});
 }
 function pageData(b){if(!Array.isArray(b.value))throw new Unavailable('MLS search returned an invalid page.');if(b.value.length>1000)throw new Unavailable('MLS returned more records than requested.');return b.value;}
 export function evaluateHistory(subject,rows,complete,today=torontoDay()){
@@ -112,13 +146,15 @@ export function evaluateHistory(subject,rows,complete,today=torontoDay()){
  return {result:'qualified',reason:'No subsequent listing found in the connected MLS history'};
 }
 async function scan(body,env){
- const state=body.cursor?await unseal(body.cursor,'scan',env):{url:await firstPage(env),seen:0,startedAt:new Date().toISOString()};
+ const filters=body.cursor?null:searchFilters(body.filters);
+ const state=body.cursor?await unseal(body.cursor,'scan',env):{url:await firstPage(env,filters),filters,seen:0,startedAt:new Date().toISOString()};
+ const scope=searchFilters(state.filters);
  const b=await feed(env,trusted(state.url)),rows=pageData(b),candidates=[],excluded={};
- for(const row of rows){const c=classifyCandidate(row);if(!c.eligible){excluded[c.reason]=(excluded[c.reason]||0)+1;continue;}const data=compact(row);candidates.push({...summary(data,c.event),proof:await seal({kind:'candidate',row:data},env)});}
+ for(const row of rows){const c=classifyCandidate(row);if(!c.eligible){excluded[c.reason]=(excluded[c.reason]||0)+1;continue;}if(!matchesFilters(row,scope)){excluded['Outside selected scan filters']=(excluded['Outside selected scan filters']||0)+1;continue;}const data=compact(row);candidates.push({...summary(data,c.event),proof:await seal({kind:'candidate',row:data},env)});}
  const next=b['@odata.nextLink'];if(next&&trusted(next)===trusted(state.url))throw new Unavailable('The MLS feed repeated a page. Search is incomplete.');const seen=state.seen+rows.length,total=Number(b['@odata.count']);
  // A full page without a continuation cannot establish completeness unless count confirms the end.
  const complete=!next&&(Number.isFinite(total)?seen>=total:rows.length<100);
- return {ok:true,candidates,excluded,pageId:b64(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(state.url)))),scanned:seen,sourceTotal:Number.isFinite(total)?total:null,startedAt:state.startedAt,checkedAt:new Date().toISOString(),since:SINCE,through:torontoDay(),complete,cursor:next?await seal({kind:'scan',url:trusted(next),seen,startedAt:state.startedAt},env):null,incompleteReason:!next&&!complete?'The MLS feed ended without proving all pages were returned.':null};
+ return {ok:true,filters:scope,candidates,excluded,pageId:b64(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(state.url)))),scanned:seen,sourceTotal:Number.isFinite(total)?total:null,startedAt:state.startedAt,checkedAt:new Date().toISOString(),since:SINCE,through:torontoDay(),complete,cursor:next?await seal({kind:'scan',url:trusted(next),filters:scope,seen,startedAt:state.startedAt},env):null,incompleteReason:!next&&!complete?'The MLS feed ended without proving all pages were returned.':null};
 }
 async function verify(body,env){
  const {row}=await unseal(body.proof,'candidate',env),c=classifyCandidate(row);if(!c.eligible)return {ok:true,...summary(row),result:'excluded',reason:c.reason};
@@ -152,6 +188,7 @@ export async function adminProspects(request,env){
  try{
   const text=await request.text();if(text.length>35000)throw new Unavailable('Request is too large.',413);let body;try{body=JSON.parse(text)}catch{throw new Unavailable('Invalid request.',400);}
   const path=new URL(request.url).pathname;
+  if(path==='/api/admin/prospects/options')return json(await communityOptions(env));
   if(path==='/api/admin/prospects/search')return json(await scan(body,env));
   if(path==='/api/admin/prospects/verify')return json(await verify(body,env));
   return json({ok:false,error:'Unknown admin search action.'},404);
