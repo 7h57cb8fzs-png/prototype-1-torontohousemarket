@@ -1,20 +1,31 @@
+import {readFileSync,writeFileSync,mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {execFileSync} from 'node:child_process';
+import {randomBytes} from 'node:crypto';
 import assert from 'node:assert/strict';
-let token=process.env.AMPRE_VOW_TOKEN;
-if(!token&&process.env.CLOUDFLARE_API_TOKEN){
- const root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
- const cf=async path=>{const r=await fetch(root+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});const d=await r.json();assert(r.ok&&d.success,'Cloudflare read failed');return d.result;};
- const deployments=await cf('/workers/scripts/prototype-1-torontohousemarket/deployments');
- const id=deployments.deployments[0].versions[0].version_id;
- const v=await cf('/workers/workers/prototype-1-torontohousemarket/versions/'+id+'?include=modules');
- console.log('current production version',id);
- console.log('credential binding types',v.bindings.filter(b=>['AMPRE_VOW_TOKEN','ADMIN_API_KEY'].includes(b.name)).map(b=>({name:b.name,type:b.type})));
- token=v.bindings.find(b=>b.name==='AMPRE_VOW_TOKEN'&&b.type==='plain_text')?.text;
-}
-assert(token,'MLS credential remains protected in Cloudflare; schema must be checked inside the Worker');
-const base='https://query.ampre.ca/odata/';
-async function get(path){const r=await fetch(base+path,{headers:{Authorization:'Bearer '+token},signal:AbortSignal.timeout(30000)});return {r,text:await r.text()};}
-const meta=await get('$metadata');
-console.log('metadata HTTP',meta.r.status);
-const entity=meta.text.match(/<EntityType\b[^>]*Name="Property"[\s\S]*?<\/EntityType>/)?.[0]||'';
-console.log('relevant fields', [...entity.matchAll(/<Property\b[^>]*Name="([^"]+)"[^>]*Type="([^"]+)"/g)].filter(m=>/Occup|Status|Expir|Terminat|Cancel|OffMarket|ListingContract|OnMarket|OriginalEntry|Street|UnitNumber|City|County|Parcel|Transaction|PropertyType/i.test(m[1])).map(m=>[m[1],m[2]]));
-assert(meta.r.ok,'Metadata request failed');
+const worker='prototype-1-torontohousemarket',root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
+async function cf(path){const r=await fetch(root+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});const d=await r.json();assert(r.ok&&d.success,'Cloudflare read failed');return d.result;}
+async function active(){const d=await cf('/workers/scripts/'+worker+'/deployments');return d.deployments[0].versions[0].version_id;}
+const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');
+assert.equal(before,'ba600012-6f10-49d9-8c13-475194e963af');
+// Isolated, never-promoted preview. The credential stays inside its existing Worker binding.
+// A dedicated short-lived key protects metadata-only inspection; it cannot access listing rows.
+const nonce=randomBytes(32).toString('hex'),temp=mkdtempSync(join(tmpdir(),'thm-schema-'));
+const source=String.raw`export default {async fetch(request,env){
+if(new URL(request.url).pathname!=='/schema'||request.headers.get('Authorization')!=='Bearer '+env.THM_SCHEMA_KEY)return new Response('Not found',{status:404});
+const r=await fetch('https://query.ampre.ca/odata/$metadata',{headers:{Authorization:'Bearer '+env.AMPRE_VOW_TOKEN},signal:AbortSignal.timeout(15000)});
+const xml=await r.text(),entity=xml.match(/<EntityType\b[^>]*Name="Property"[\s\S]*?<\/EntityType>/)?.[0]||'';
+const fields=[...entity.matchAll(/<Property\b[^>]*Name="([^"]+)"[^>]*Type="([^"]+)"/g)].filter(m=>/Occup|Status|Expir|Terminat|Cancel|OffMarket|ListingContract|OnMarket|OriginalEntry|Street|UnitNumber|City|County|Parcel|Transaction|PropertyType/i.test(m[1])).map(m=>[m[1],m[2]]);
+return Response.json({status:r.status,fields},{headers:{'Cache-Control':'private, no-store'}});
+}};`;
+try{
+writeFileSync(join(temp,'schema.js'),source,{mode:0o600});
+const config=JSON.parse(readFileSync('wrangler.jsonc','utf8'));delete config.secrets;delete config.assets;delete config.triggers;
+config.main=join(temp,'schema.js');config.vars=Object.fromEntries(v.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));config.vars.THM_SCHEMA_KEY=nonce;
+writeFileSync(join(temp,'wrangler.json'),JSON.stringify(config),{mode:0o600});
+let output;try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config',join(temp,'wrangler.json')],{encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch{throw Error('Schema preview upload failed; private config output withheld');}
+const preview=output.match(/Version Preview URL:\s*(https:\/\/[^\s]+)/i)?.[1];assert(preview);
+const r=await fetch(preview+'/schema',{headers:{Authorization:'Bearer '+nonce},signal:AbortSignal.timeout(30000)});assert(r.ok,'Schema preview unavailable');
+console.log('FIELD_SCHEMA',JSON.stringify(await r.json()));assert.equal(await active(),before);console.log('Production unchanged; no listing records requested or exported.');
+}finally{rmSync(temp,{recursive:true,force:true});}
