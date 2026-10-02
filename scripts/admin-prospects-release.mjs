@@ -6,10 +6,10 @@ import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',live='https://torontohousemarket.com';
 const root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
-const expectedVersion='058d67d7-242f-41ff-ad90-e7ab1986f90f',expectedHash='b654b801ed955bca1e682d5b0f111c7dd27f099c0e2dfbf785d2b15b88325e74';
+const expectedVersion='91c867a9-1d98-401d-a237-01237b8a4d79',expectedHash='b654b801ed955bca1e682d5b0f111c7dd27f099c0e2dfbf785d2b15b88325e74';
 const hash=v=>createHash('sha256').update(v).digest('hex');
-const beforeRef=execFileSync('git',['rev-parse','bf2d27b3fb2def248b96001d31355a02c9d23e71'],{encoding:'utf8'}).trim();
-const allowed=new Set(['admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css','admin-prospects-api.js','tests/admin-prospects.test.mjs','scripts/admin-prospects-inspect.mjs','scripts/admin-prospects-release.mjs','.github/workflows/admin-prospects.yml']);
+const beforeRef=execFileSync('git',['rev-parse','b330867b65d57515aa5fc7c0378520d7e988be42'],{encoding:'utf8'}).trim();
+const allowed=new Set(['admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css','admin-prospects-api.js','tests/admin-prospects.test.mjs','tests/admin-condition.test.mjs','supabase/manual/admin-prospect-assessments.sql','scripts/admin-prospects-inspect.mjs','scripts/admin-prospects-release.mjs','.github/workflows/admin-prospects.yml']);
 for(const f of execFileSync('git',['diff','--name-only',beforeRef,'HEAD'],{encoding:'utf8'}).trim().split('\n').filter(Boolean))assert(allowed.has(f),'Out-of-scope change: '+f);
 assert.equal(fs.readFileSync('worker-v22.js','utf8'),execFileSync('git',['show',beforeRef+':worker-v22.js'],{encoding:'utf8'}),'Existing worker behavior changed');
 async function cf(p,method='GET',body){const r=await fetch(root+p,{method,headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000)});const d=await r.json();assert(r.ok&&d.success,'Cloudflare request failed '+r.status);return d.result;}
@@ -44,7 +44,7 @@ assert.equal(modules.size,3);assert.equal(hash(modules.get('existing.mjs')),expe
 assert.deepEqual(names(after),names(before));for(const [name,text] of Object.entries(plain))assert(after.bindings.some(b=>b.name===name&&b.type==='plain_text'&&b.text===text),'Existing setting changed');
 async function verify(base){
  for(const f of assets)assert.equal(hash(await bytes(base,f)),hash(fs.readFileSync(f)),'Asset mismatch: '+f);
- for(const p of ['/api/admin/prospects/options','/api/admin/prospects/search','/api/admin/prospects/verify','/api/admin/ops/counts']){const r=await fetch(base+p,{method:p.includes('/prospects/')?'POST':'GET',headers:{'Content-Type':'application/json'},...(p.includes('/prospects/')?{body:'{}'}:{}),signal:AbortSignal.timeout(20000)});assert.equal(r.status,401,'Admin auth failed: '+p);}
+ for(const p of ['/api/admin/prospects/condition','/api/admin/prospects/options','/api/admin/prospects/search','/api/admin/prospects/verify','/api/admin/ops/counts']){const r=await fetch(base+p,{method:p.includes('/prospects/')?'POST':'GET',headers:{'Content-Type':'application/json'},...(p.includes('/prospects/')?{body:'{}'}:{}),signal:AbortSignal.timeout(20000)});assert.equal(r.status,401,'Admin auth failed: '+p);}
  const v=await fetch(base+'/api/version').then(r=>r.json());assert.equal(v.version,'version-7.6-luna-external-lookup-20260927');
  for(const f of ['admin-prospects-api.js','scripts/admin-prospects-inspect.mjs'])assert.equal((await fetch(base+'/'+f)).status,404,'Server source exposed');
  console.log('VERIFY',JSON.stringify({base,assets:assets.length,publicCodeUnchanged:true,adminAuthRequired:true}));
