@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {adminProspects,screenRemarks,conditionPhotos,validatePhotoAssessment} from '../admin-prospects-api.js';
 const row={ListingKey:'SYNTHETIC-CONDITION',MlsStatus:'Expired',StandardStatus:'Expired',ExpirationDate:'2026-09-15',OccupantType:'Owner',TransactionType:'For Sale',PropertyType:'Residential Freehold',StreetNumber:'123',StreetName:'Synthetic',StreetSuffix:'Rd',City:'Toronto C01',ListingContractDate:'2026-08-01',PublicRemarks:'Needs TLC. Original kitchen cabinets and worn flooring.'};
 const media=Array.from({length:4},(_,i)=>({ResourceRecordKey:row.ListingKey,ResourceName:'Property',MediaKey:'photo-'+i+'-m',MediaType:'image/jpeg',MediaURL:'https://photos.example.com/'+i+'.jpg',ImageSizeDescription:'Medium',Order:i}));
-const output={category:'needs_renovation',note:'Kitchen cabinets appear dated; consider refreshing doors and hardware.',reason:'Visible dated cabinet finishes.',confidence:'medium',interiorPhotoCount:3,areas:[{area:'Kitchen',observation:'Dated cabinets.',suggestion:'Consider a cabinet refresh.',photoNumbers:[2]}]};
+const output={category:'needs_renovation',note:'Kitchen cabinets appear dated; consider refreshing doors and hardware.',reason:'Visible dated cabinet finishes.',confidence:'medium',interiorPhotoCount:3,roomsSeen:['kitchen','bathroom','living area'],areas:[{area:'Kitchen',observation:'Dated cabinets.',suggestion:'Consider a cabinet refresh.',photoNumbers:[2]}]};
 test('remarks distinguish broad updates, partial updates, negation and conflicting descriptions, with grounded notes',()=>{
  assert.equal(screenRemarks({PublicRemarks:'Fully renovated throughout.'}).category,'no_obvious_renovation');
  assert.equal(screenRemarks({PrivateRemarks:'Handyman special. Needs TLC.'}).category,'needs_renovation');
@@ -22,6 +22,7 @@ test('photo classifications require useful interior evidence and valid reference
  assert.equal(validatePhotoAssessment({...output,category:'no_obvious_renovation',interiorPhotoCount:2,areas:[]},photos).category,'unable_to_assess');
  assert.throws(()=>validatePhotoAssessment({...output,areas:[{...output.areas[0],photoNumbers:[99]}]},photos));
  assert.throws(()=>validatePhotoAssessment({...output,note:null},photos));
+ assert.equal(validatePhotoAssessment({...output,category:'no_obvious_renovation',roomsSeen:['living area','bedroom']},photos).category,'unable_to_assess');
 });
 test('authenticated qualified results only; remarks are free, photo estimates do not charge, saved reviews reuse and manual overrides persist',async()=>{
  const original=globalThis.fetch,db=new Map();let paid=0,detail=0;
