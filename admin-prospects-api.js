@@ -201,7 +201,7 @@ async function verify(body,env){
   if(url)complete=false;
  }
  const outcome=evaluateHistory(row,matches,complete);
- const reviewProof=outcome.result==='qualified'?await seal({kind:'qualified',listingKey:clean(row.ListingKey),identity:identity(row),filters:scope,day:torontoDay()},env,12*3600000):undefined;
+ const reviewProof=outcome.result==='qualified'?await seal({kind:'qualified',listingKey:clean(row.ListingKey),identity:identity(row),event:endEvent(row),filters:scope,day:torontoDay()},env,12*3600000):undefined;
  return {ok:true,...summary(row),...outcome,reviewProof,checkedAt:new Date().toISOString(),coverage:'Connected MLS records only. Owner occupancy is the listing declaration; current occupancy requires confirmation.'};
 }
 
@@ -217,11 +217,11 @@ export function screenRemarks(row){
  const positives=[],negatives=[],partial=[];
  for(const s of sentences(row)){
   if(negated.test(s.text)||aspirational.test(s.text))continue;
-  if(positive.test(s.text))positives.push(s);
+  if(positive.test(s.text)&&![...s.text.matchAll(/\b(?:19|20)\d{2}\b/g)].some(m=>Number(m[0])<Number(torontoDay().slice(0,4))-10))positives.push(s);
   if(negative.test(s.text))negatives.push(s);
   if(/\b(?:kitchen|bathroom|flooring|floors|cabinets|paint|lighting|fixtures)\b/i.test(s.text)&&/\b(?:dated|worn|damaged|original|replace|replacement|updated|renovated|new)\b/i.test(s.text))partial.push(s);
  }
- const conflict=positives.length&&negatives.length;
+ const conflict=positives.length&&(negatives.length||partial.some(s=>/\b(?:dated|worn|damaged|original|replace|replacement)\b/i.test(s.text)));
  const category=conflict?'unable_to_assess':negatives.length?'needs_renovation':positives.length?'no_obvious_renovation':'unable_to_assess';
  const evidence=[...negatives,...positives,...partial].filter((s,i,a)=>a.findIndex(t=>t.field===s.field&&t.text===s.text)===i).slice(0,4);
  const areas=[];
@@ -235,13 +235,13 @@ async function assessmentDB(env,query='',init={}){
  if(!env.SUPABASE_SERVICE_ROLE_KEY)throw new Unavailable('Private assessment storage is unavailable. No photo review was started.',503);
  const r=await fetch((env.SUPABASE_URL||'https://pwbtxyavjjotxtvegrqe.supabase.co')+'/rest/v1/admin_prospect_assessments'+query,{...init,headers:{'Content-Type':'application/json',apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.SUPABASE_SERVICE_ROLE_KEY,...init.headers},signal:AbortSignal.timeout(12000)});
  if(!r.ok){await r.body?.cancel();throw new Unavailable('Private assessment storage could not complete the request. Please try again.',503);}
- return r.status===204?[]:r.json();
+ const text=await r.text();if(!text.trim())return [];try{return JSON.parse(text);}catch{throw new Unavailable('Private assessment storage returned an invalid response.',503);}
 }
 async function assessmentSubject(body,env){
  const proof=await unseal(body.reviewProof,'qualified',env);
  if(proof.day!==torontoDay())throw new Unavailable('Refresh the search before reviewing these listings on a new day.',400);
  const listing=await feed(env,BASE+'Property('+quoted(proof.listingKey)+')');
- if(clean(listing.ListingKey)!==proof.listingKey||!classifyCandidate(listing,torontoDay(),proof.filters).eligible||identity(listing)!==proof.identity)throw new Unavailable('This listing changed. Run the search again before reviewing it.',409);
+ if(clean(listing.ListingKey)!==proof.listingKey||!classifyCandidate(listing,torontoDay(),proof.filters).eligible||identity(listing)!==proof.identity||JSON.stringify(endEvent(listing))!==JSON.stringify(proof.event))throw new Unavailable('This listing changed. Run the search again before reviewing it.',409);
  const fingerprint=b64(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(JSON.stringify([CONDITION_VERSION,listing.ListingKey,listing.ModificationTimestamp,listing.PhotosChangeTimestamp,...REMARK_FIELDS.map(f=>listing[f]||'')])))));
  return {listing,proof,fingerprint};
 }
@@ -295,10 +295,16 @@ async function conditionReview(body,env){
  if(!env.OPENAI_API_KEY)throw new Unavailable('Photo review is not configured. Free remarks screening is available.',503);
  const photos=await assessmentMedia(env,key);
  if(!photos.length){const assessment={...remarks,category:'unable_to_assess',label:CONDITION_LABELS.unable_to_assess,note:'No accessible listing photos are available for review.',source:'photos',reason:'No photo AI call was made.',photos:[],confidence:'low'};return {ok:true,assessment,noCharge:true};}
- if(mode==='quote')return {ok:true,photoCount:photos.length,estimatedUsd:0.10,quote:await seal({kind:'photo-quote',listingKey:key,fingerprint,photoKeys:photos.map(p=>p.key)},env)};
+ if(mode==='quote'){
+  const attempts=await assessmentDB(env,'?'+new URLSearchParams({listing_key:'eq.'+key,fingerprint:'eq.'+fingerprint,mode:'eq.photos',select:'state,lock_id,updated_at',limit:'1'}));
+  const prior=attempts[0],retry=prior&&(prior.state==='failed'||prior.state==='pending'&&Date.now()-Date.parse(prior.updated_at)>300000);
+  if(prior?.state==='pending'&&!retry)throw new Unavailable('A photo review is already running. Load saved assessments shortly.',409);
+  return {ok:true,photoCount:photos.length,estimatedUsd:0.10,retryWarning:!!retry,quote:await seal({kind:'photo-quote',listingKey:key,fingerprint,photoKeys:photos.map(p=>p.key),retryLock:retry?prior.lock_id:null},env)};
+ }
  const quote=await unseal(body.quote,'photo-quote',env);
  if(quote.listingKey!==key||quote.fingerprint!==fingerprint||JSON.stringify(quote.photoKeys)!==JSON.stringify(photos.map(p=>p.key)))throw new Unavailable('The listing or photos changed. Request a new review estimate.',409);
  const cacheKey=[key,fingerprint,'photos'].join(':'),lock=crypto.randomUUID();
+ if(quote.retryLock)await assessmentDB(env,'?'+new URLSearchParams({cache_key:'eq.'+cacheKey,lock_id:'eq.'+quote.retryLock,state:'in.(failed,pending)'}),{method:'DELETE'});
  const reserved=await assessmentDB(env,'?on_conflict=cache_key',{method:'POST',headers:{Prefer:'resolution=ignore-duplicates,return=representation'},body:JSON.stringify({cache_key:cacheKey,listing_key:key,fingerprint,mode:'photos',state:'pending',lock_id:lock})});
  if(!reserved.length)throw new Unavailable('A photo review is already running or awaiting recovery. Check remarks to load any saved result; please do not pay for another review.',409);
  try{

@@ -24,12 +24,12 @@ export function initAdminProspects({$,post,esc,money}){
   if(running||reviewing)return;const selected=qualifiedPicked();if(!selected.length)return;
   plans=[];$('prospectPhotoEstimate').hidden=true;$('prospectError').hidden=true;reviewing=true;const id=++reviewGeneration;let done=0,errors=0;render();
   try{for(const r of selected){if(id!==reviewGeneration)return;$('prospectConditionProgress').textContent=(mode==='quote'?'Preparing photos for ':'Checking remarks for ')+r.address+' · '+done+'/'+selected.length;
-    try{const answer=await conditionPost(r,mode);if(id!==reviewGeneration)return;if(answer.assessment)r.assessment=answer.assessment;else if(answer.quote)plans.push({row:r,quote:answer.quote,estimatedUsd:answer.estimatedUsd,photoCount:answer.photoCount});}
+    try{const answer=await conditionPost(r,mode);if(id!==reviewGeneration)return;if(answer.assessment)r.assessment=answer.assessment;else if(answer.quote)plans.push({row:r,quote:answer.quote,estimatedUsd:answer.estimatedUsd,photoCount:answer.photoCount,retryWarning:answer.retryWarning});}
     catch(e){if(id!==reviewGeneration)return;errors++;problem(e.message);}
     done++;render();
    }
    $('prospectConditionProgress').textContent=done+' homes checked.'+(errors?' '+errors+' could not be reviewed.':'');
-   if(mode==='quote'&&plans.length){$('prospectPhotoEstimateText').textContent=`Review ${plans.length} homes with GPT-4.1 mini (${plans.reduce((n,p)=>n+p.photoCount,0)} photos). Planning estimate: up to about US$${plans.reduce((n,p)=>n+p.estimatedUsd,0).toFixed(2)}. Actual token billing may differ. Saved photo reviews were skipped. Brief upgrade notes are included.`;$('prospectPhotoEstimate').hidden=false;}
+   if(mode==='quote'&&plans.length){$('prospectPhotoEstimateText').textContent=`Review ${plans.length} homes with GPT-4.1 mini (${plans.reduce((n,p)=>n+p.photoCount,0)} photos). Planning estimate: up to about US$${plans.reduce((n,p)=>n+p.estimatedUsd,0).toFixed(2)}. Actual token billing may differ. Saved photo reviews were skipped. Brief upgrade notes are included.${plans.some(p=>p.retryWarning)?' A previous attempt failed or timed out and may have incurred a charge. Starting again authorizes a new paid attempt.':''}`;$('prospectPhotoEstimate').hidden=false;}
   }finally{if(id===reviewGeneration){reviewing=false;render();}}
  }
  async function photoReview(){

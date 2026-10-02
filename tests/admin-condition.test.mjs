@@ -8,7 +8,7 @@ const output={category:'needs_renovation',note:'Kitchen cabinets appear dated; c
 test('remarks distinguish broad updates, partial updates, negation and conflicting descriptions, with grounded notes',()=>{
  assert.equal(screenRemarks({PublicRemarks:'Fully renovated throughout.'}).category,'no_obvious_renovation');
  assert.equal(screenRemarks({PrivateRemarks:'Handyman special. Needs TLC.'}).category,'needs_renovation');
- for(const text of ['New roof. Sold as-is.','Renovated kitchen.','Not fully renovated.','Could be fully renovated.','No renovation needed.','Fully renovated. Needs TLC.'])assert.equal(screenRemarks({PublicRemarks:text}).category,'unable_to_assess',text);
+ for(const text of ['New roof. Sold as-is.','Renovated kitchen.','Not fully renovated.','Could be fully renovated.','No renovation needed.','Fully renovated. Needs TLC.','Fully renovated in 1980.','Fully renovated. Original kitchen and worn flooring.'])assert.equal(screenRemarks({PublicRemarks:text}).category,'unable_to_assess',text);
  const result=screenRemarks(row);assert.equal(result.category,'needs_renovation');assert.match(result.note,/kitchen|flooring/i);assert(result.evidence.every(e=>row[e.field].includes(e.text)));assert(!result.note.includes('bathroom'));
 });
 test('photos preserve listing identity, deduplicate variants and sample across gallery',()=>{
@@ -30,7 +30,8 @@ test('authenticated qualified results only; remarks are free, photo estimates do
   const u=new URL(url);
   if(u.hostname.endsWith('supabase.co')){
    const payload=init.body?JSON.parse(init.body):null;
-   if(init.method==='POST'){if(init.headers.Prefer.includes('ignore-duplicates')&&db.has(payload.cache_key))return Response.json([]);db.set(payload.cache_key,payload);return init.headers.Prefer.includes('representation')?Response.json([payload]):new Response(null,{status:204});}
+   if(init.method==='POST'){if(init.headers.Prefer.includes('ignore-duplicates')&&db.has(payload.cache_key))return Response.json([]);db.set(payload.cache_key,payload);return init.headers.Prefer.includes('representation')?Response.json([payload]):new Response(null,{status:201});}
+   if(u.searchParams.get('mode'))return Response.json([...db.values()].filter(x=>x.mode==='photos'));
    return Response.json([...db.values()].filter(x=>x.state==='ready').map(x=>({mode:x.mode,assessment:x.assessment})));
   }
   if(u.hostname==='api.openai.com'){paid++;const p=JSON.parse(init.body);assert.equal(p.model,'gpt-4.1-mini');assert.equal(p.store,false);assert.equal(p.messages[1].content.filter(c=>c.type==='image_url').length,4);assert.equal(p.response_format.json_schema.strict,true);return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(output)}}],usage:{prompt_tokens:1000,completion_tokens:100}});}
