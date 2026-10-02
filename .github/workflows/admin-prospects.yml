@@ -1,7 +1,7 @@
 name: THM admin expired listings
 on:
   push:
-    branches: [phase-6]
+    branches: [phase-6, admin-renovation-review]
 permissions:
   contents: read
 concurrency:
@@ -38,12 +38,12 @@ jobs:
           ADMIN_TEST_JSDOM_PATH: ${{ runner.temp }}/thm-admin-test/node_modules/jsdom/lib/api.js
         run: |
           npm install --prefix "$RUNNER_TEMP/thm-admin-test" --no-save --package-lock=false jsdom@27.0.0
-          node --test tests/admin-prospects.test.mjs tests/admin-insights.test.mjs tests/admin-workspace.test.mjs
+          node --test tests/admin-condition.test.mjs tests/admin-prospects.test.mjs tests/admin-insights.test.mjs tests/admin-workspace.test.mjs
       - name: Preserve public code and deploy reviewed admin changes
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 80022b7ed0560b75d96cc593b0cfaf22
-          CANDIDATE_VERSION_ID: '91c867a9-1d98-401d-a237-01237b8a4d79'
-          CANDIDATE_PREVIEW_URL: 'https://91c867a9-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev'
-          PUBLISH: ${{ contains(github.event.head_commit.message, '[prospects-publish]') && 'true' || 'false' }}
+          CANDIDATE_VERSION_ID: 'cac5bc75-ca3a-4b92-aa51-c2d8102dd79b'
+          CANDIDATE_PREVIEW_URL: 'https://cac5bc75-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev'
+          PUBLISH: ${{ github.ref == 'refs/heads/phase-6' && contains(github.event.head_commit.message, '[prospects-publish]') && 'true' || 'false' }}
         run: node scripts/admin-prospects-release.mjs
