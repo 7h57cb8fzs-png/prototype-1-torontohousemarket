@@ -327,7 +327,10 @@ export async function mailingSubject(reviewProof,env){
  const {listing,proof}=await assessmentSubject({reviewProof},env);
  const checked=await verify({proof:await seal({kind:'candidate',row:compact(listing),filters:proof.filters},env)},env);
  if(checked.result!=='qualified')throw new Unavailable('This property no longer qualifies, or its history is incomplete. Refresh the search.',409);
- return {...checked,propertyIdentity:identity(listing),mailingAddress:{addressLine1:[listing.StreetNumber,listing.StreetName,listing.StreetSuffix,listing.StreetDirPrefix,listing.StreetDirSuffix].filter(Boolean).join(' '),addressLine2:clean(listing.UnitNumber)?'Unit '+clean(listing.UnitNumber):'',city:region(listing)==='Toronto'?'Toronto':clean(listing.City),provinceOrState:'ON',postalOrZip:clean(listing.PostalCode),countryCode:'CA'}};
+ // OwnerName is the MLS owner field. Keep the full name intact; never substitute agent names.
+ const ownerName=typeof listing.OwnerName==='string'?listing.OwnerName.trim():'';
+ const recipient=ownerName.length<=150&&!/[\x00-\x1f\x7f]/.test(ownerName)&&!/^\s*(?:n\/?a|unknown|withheld|not (?:available|provided|disclosed))\s*$/i.test(ownerName)?{firstName:ownerName}:{};
+ return {...checked,propertyIdentity:identity(listing),mailingAddress:{...recipient,addressLine1:[listing.StreetNumber,listing.StreetName,listing.StreetSuffix,listing.StreetDirPrefix,listing.StreetDirSuffix].filter(Boolean).join(' '),addressLine2:clean(listing.UnitNumber)?'Unit '+clean(listing.UnitNumber):'',city:region(listing)==='Toronto'?'Toronto':clean(listing.City),provinceOrState:'ON',postalOrZip:clean(listing.PostalCode),countryCode:'CA'}};
 }
 
 export async function adminProspects(request,env){

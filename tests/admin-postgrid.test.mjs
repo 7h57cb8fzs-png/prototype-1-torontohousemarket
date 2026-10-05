@@ -39,6 +39,9 @@ test('auth, test-only gating, revalidation, atomic duplicate reservation and unc
   assert.equal((await call('create',{mode:'live'})).status,403);assert.equal(reads,0);
   const search=await (await adminProspects(request('prospects/search'),env)).json();const checked=await(await adminProspects(request('prospects/verify',{proof:search.candidates[0].proof}),env)).json();assert.equal(checked.result,'qualified');
   const subject=await call('subject',{reviewProof:checked.reviewProof});assert.equal(subject.address.city,'Toronto');assert.equal(subject.address.postalOrZip,'M5V 2T6');
+  row.ListAgentFullName='Synthetic Listing Agent';assert.equal((await call('subject',{reviewProof:checked.reviewProof})).address.firstName,'');
+  row.OwnerName='Synthetic Owner & Second Owner';assert.equal((await call('subject',{reviewProof:checked.reviewProof})).address.firstName,'Synthetic Owner & Second Owner');
+  row.OwnerName='Withheld';assert.equal((await call('subject',{reviewProof:checked.reviewProof})).address.firstName,undefined);delete row.OwnerName;delete row.ListAgentFullName;
   const body={mode:'test',confirmed:true,to:address,from:address,pdfBase64:pdf,pdfName:'synthetic.pdf',color:true,doubleSided:true,reviewProof:subject.reviewProof};
   assert.equal((await call('create',{...body,reviewProof:'forged'})).status,409);assert.equal(sends,0);
   const results=await Promise.all([call('create',body),call('create',body)]);assert(results.every(x=>x.ok));assert.equal(sends,1);assert.equal(results.filter(x=>x.duplicate).length,1);

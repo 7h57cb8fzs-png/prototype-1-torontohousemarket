@@ -33,7 +33,7 @@ const historyResponse=await adminPostgrid(req('postgrid/history'),env),history=a
 const order=(history.orders||[]).find(o=>o.postgridId);let refreshed=false;
 if(order){const response=await adminPostgrid(req('postgrid/refresh',{id:order.id}),env);refreshed=response.ok;}
 const deletion=await adminPostgrid(req('postgrid/delete',{confirmed:true,ids:[crypto.randomUUID()]}),env),deleted=await deletion.json();
-return Response.json({connected:true,subjectSucceeded:true,historySucceeded:historyResponse.ok,deletionSucceeded:deletion.ok&&deleted.deletedIds?.length===0,recordDetailsAvailable:!!history.orders?.[0]?.sender,testOnly:(history.orders||[]).every(o=>o.mode==='test'),refreshSucceeded:!order||refreshed},{headers:{'Cache-Control':'private, no-store'}});
+return Response.json({connected:true,subjectSucceeded:true,recipientNameAvailable:!!subject.address?.firstName,historySucceeded:historyResponse.ok,deletionSucceeded:deletion.ok&&deleted.deletedIds?.length===0,recordDetailsAvailable:!!history.orders?.[0]?.sender,testOnly:(history.orders||[]).every(o=>o.mode==='test'),refreshSucceeded:!order||refreshed},{headers:{'Cache-Control':'private, no-store'}});
 }};`;
 try{
 writeFileSync(join(temp,'probe.mjs'),source,{mode:0o600});writeFileSync(join(temp,'admin-prospects-api.mjs'),readFileSync('admin-prospects-api.js'));writeFileSync(join(temp,'admin-postgrid-api.mjs'),readFileSync('admin-postgrid-api.js','utf8').replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'"));

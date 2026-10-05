@@ -6,7 +6,7 @@
 #prospectsView .prospect-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 #prospectsView .filterbar{flex-wrap:wrap}#prospectsView .check-label{white-space:normal}
 #prospectsView td{vertical-align:top;line-height:1.65}#prospectsView small{font-size:11px}
-#prospectsView td:first-child,#prospectsView th:first-child{width:auto;min-width:200px;padding-right:14px}#prospectsView table{min-width:850px}
+#prospectsView td:first-child,#prospectsView th:first-child{width:44px;min-width:44px;padding-right:10px}#prospectsView td:nth-child(2),#prospectsView th:nth-child(2){min-width:180px}#prospectsView table{min-width:850px}
 #prospectsView #prospectProgress{min-height:24px;line-height:1.6;font-size:14px;margin:16px 0}
 @media(max-width:650px){#prospectsView .prospect-intro{padding:18px}#prospectsView .filterbar>*{flex:1 1 140px}#prospectsView .prospect-actions button{flex:1 1 120px}}
 
