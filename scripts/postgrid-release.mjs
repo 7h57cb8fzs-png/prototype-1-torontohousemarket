@@ -22,7 +22,8 @@ const names=v=>v.bindings.filter(b=>b.name!=='ASSETS').map(b=>b.name+':'+b.type)
 const patterns=fs.readFileSync('.assetsignore','utf8').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 function ignored(file){return patterns.some(p=>p.endsWith('/**')?file.startsWith(p.slice(0,-2)):new RegExp('^'+p.split('*').map(v=>v.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('.*')+'$').test(file));}
 const assets=execFileSync('git',['ls-files','-z'],{encoding:'utf8'}).split('\0').filter(p=>p&&!p.startsWith('.')&&!ignored(p));
-async function bytes(base,file){const r=await fetch(base+'/'+(file==='index.html'?'':file)+'?prospects='+process.env.GITHUB_SHA,{signal:AbortSignal.timeout(20000)});assert(r.ok,'Asset request failed: '+file+' HTTP '+r.status);return Buffer.from(await r.arrayBuffer());}
+let assetCheck=0;
+async function bytes(base,file){const r=await fetch(base+'/'+(file==='index.html'?'':file)+'?prospects='+process.env.GITHUB_SHA+'&check='+assetCheck,{signal:AbortSignal.timeout(20000)});assert(r.ok,'Asset request failed: '+file+' HTTP '+r.status);return Buffer.from(await r.arrayBuffer());}
 const changed=new Set(['admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css','admin-postgrid.js','admin-postgrid.css']),added=new Set();
 for(const f of assets.filter(p=>!added.has(p)))assert.equal(hash(await bytes(live,f)),hash(changed.has(f)?execFileSync('git',['show',beforeRef+':'+f]):fs.readFileSync(f)),'Production asset drift: '+f);
 for(const name of ['admin-prospects-api.mjs','admin-postgrid-api.mjs'])assert.equal(hash(beforeModules.get(name)),hash(execFileSync('git',['show',beforeRef+':'+name.replace('.mjs','.js')],{encoding:'utf8'}).replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'")),'Existing admin module drift');
@@ -43,6 +44,7 @@ const after=await version(candidate),modules=new Map(after.modules.map(m=>[m.nam
 assert.equal(modules.size,4);assert.equal(hash(modules.get('existing.mjs')),expectedHash,'Public server code changed');assert.equal(hash(modules.get('admin-prospects-api.mjs')),hash(fs.readFileSync('admin-prospects-api.js')));assert.equal(hash(modules.get('entry.mjs')),hash(entry));assert.equal(hash(modules.get('admin-postgrid-api.mjs')),hash(fs.readFileSync('admin-postgrid-api.js','utf8').replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'")));
 assert.deepEqual(names(after),names(before));for(const [name,text] of Object.entries(plain))assert(after.bindings.some(b=>b.name===name&&b.type==='plain_text'&&b.text===text),'Existing setting changed');
 async function verify(base){
+ assetCheck++; // Use a fresh cache key after promotion; preflight fetched the old deployment.
  for(const f of assets)assert.equal(hash(await bytes(base,f)),hash(fs.readFileSync(f)),'Asset mismatch: '+f);
  for(const p of ['/api/admin/postgrid/status','/api/admin/postgrid/create','/api/admin/postgrid/history','/api/admin/prospects/condition','/api/admin/prospects/options','/api/admin/prospects/search','/api/admin/prospects/verify','/api/admin/ops/counts']){const r=await fetch(base+p,{method:!p.includes('/ops/')?'POST':'GET',headers:{'Content-Type':'application/json'},...(!p.includes('/ops/')?{body:'{}'}:{}),signal:AbortSignal.timeout(20000)});assert.equal(r.status,401,'Admin auth failed: '+p);}
  const v=await fetch(base+'/api/version').then(r=>r.json());assert.equal(v.version,'version-7.6-luna-external-lookup-20260927');
@@ -54,6 +56,6 @@ const review={candidate,preview,rollback:beforeId,publicServerHash:expectedHash,
 if(process.env.PUBLISH!=='true')process.exit(0);
 try{
  await cf(`/workers/scripts/${worker}/deployments`,'POST',{strategy:'percentage',versions:[{version_id:candidate,percentage:100}]});
- let failure;for(let i=0;i<4;i++){try{await verify(live);failure=null;break;}catch(e){failure=e;if(i<3)await new Promise(r=>setTimeout(r,2500));}}if(failure)throw failure;
+ let failure;for(let i=0;i<10;i++){try{await verify(live);failure=null;break;}catch(e){failure=e;if(i<9)await new Promise(r=>setTimeout(r,5000));}}if(failure)throw failure;
  assert.equal(await active(),candidate);assert.deepEqual(await cf(`/workers/scripts/${worker}/schedules`),schedule);console.log('POSTGRID_PUBLISHED',JSON.stringify(review));
 }catch(e){if(await active()===candidate)await cf(`/workers/scripts/${worker}/deployments`,'POST',{strategy:'percentage',versions:[{version_id:beforeId,percentage:100}]});throw e;}
