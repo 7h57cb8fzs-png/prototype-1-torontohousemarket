@@ -28,6 +28,14 @@ for(const binding of ['AMPRE_VOW_TOKEN','AMPRE_TOKEN']){
  const r=await fetch(url.replaceAll('+','%20'),{headers,redirect:'manual'});const data=await r.json();
  result[binding].sampleStatus=r.status;result[binding].sampleCount=data.value?.length||0;result[binding].recordNameFields=[...new Set((data.value||[]).flatMap(row=>Object.keys(row)))].filter(n=>/name|seller|owner|vendor/i.test(n));
  result[binding].populatedFields=fields.filter(n=>(data.value||[]).some(row=>typeof row[n]==='string'&&row[n].trim()));
+ if(fields.includes('OwnerName')){
+  const selectedUrl=new URL(url.replaceAll('+','%20'));selectedUrl.searchParams.set('$select','ListingKey,OwnerName');const selectedResponse=await fetch(selectedUrl.href.replaceAll('+','%20'),{headers,redirect:'manual'});const selected=await selectedResponse.json();
+  result[binding].explicitOwnerSelect={http:selectedResponse.status,count:selected.value?.length||0,namesAvailable:(selected.value||[]).filter(row=>typeof row.OwnerName==='string'&&row.OwnerName.trim()).length};
+  const key=data.value?.[0]?.ListingKey;if(typeof key==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(key)){
+   const response=await fetch(base+"Property('"+key+"')",{headers,redirect:'manual'});const item=await response.json();result[binding].singleProperty={http:response.status,ownerFieldPresent:Object.hasOwn(item,'OwnerName'),nameAvailable:typeof item.OwnerName==='string'&&!!item.OwnerName.trim()};
+  }
+ }
+
 }
 return Response.json(result,{headers:{'Cache-Control':'private, no-store'}});
 }};`;
