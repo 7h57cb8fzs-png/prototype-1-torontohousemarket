@@ -42,7 +42,7 @@ async function pg(env,path,options={}){
  }return r.json();
 }
 function safeUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password?u.href:null;}catch{return null;}}
-function orderView(row){return {id:row.id,listingKey:row.listing_key,property:row.property_address,recipient:row.recipient,pdfName:row.pdf_name,status:row.status,postgridId:row.postgrid_id,previewUrl:safeUrl(row.preview_url),createdAt:row.created_at,error:row.error,mode:'test'};}
+function orderView(row){return {id:row.id,listingKey:row.listing_key,property:row.property_address,recipient:row.recipient,sender:row.sender,printOptions:row.print_options,updatedAt:row.updated_at,pdfName:row.pdf_name,status:row.status,postgridId:row.postgrid_id,previewUrl:safeUrl(row.preview_url),createdAt:row.created_at,error:row.error,mode:'test'};}
 async function update(env,id,values){return (await db(env,'?id=eq.'+encodeURIComponent(id),'PATCH',{...values,updated_at:new Date().toISOString()}))[0];}
 async function create(body,env){
  testKey(env);if(body.mode&&body.mode!=='test')fail('Live sending is disabled.',403);if(body.confirmed!==true)fail('Review the recipient and PDF before creating a test order.');

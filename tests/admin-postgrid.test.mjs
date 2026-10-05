@@ -50,18 +50,51 @@ test('auth, test-only gating, revalidation, atomic duplicate reservation and unc
   const previous=sends;await Promise.all([call('create',bad),call('create',bad)]);assert.equal(sends,previous+1,'Concurrent rejected retries reserve once');
  }finally{globalThis.fetch=original;}
 });
-test('UI requires selected recipients and review; per-recipient PDF overrides common PDF; clear removes private data',async()=>{
+async function uiHarness(){
  const {JSDOM}=await import(process.env.ADMIN_TEST_JSDOM_PATH||'/tmp/thm-test-deps/node_modules/jsdom/lib/api.js');
- const dom=new JSDOM('<section id="prospectsView"></section>',{runScripts:'outside-only',url:'https://test.invalid'}),w=dom.window,d=w.document,$=id=>d.getElementById(id);let selected=[],calls=[];
- w.URL.createObjectURL=()=> 'blob:synthetic';w.URL.revokeObjectURL=()=>{};
+ const dom=new JSDOM('<main><section id="prospectsView"></section></main>',{runScripts:'outside-only',url:'https://test.invalid'}),w=dom.window,d=w.document,$=id=>d.getElementById(id);const calls=[],saved=[],opened=[];let selection=[],subjectHook=null;
+ w.URL.createObjectURL=()=> 'blob:synthetic';w.URL.revokeObjectURL=()=>{};w.open=()=>({opener:null,location:{replace:url=>opened.push(url)},close(){}});
  w.eval(readFileSync(new URL('../admin-postgrid.js',import.meta.url),'utf8').replace(/^export /gm,'')+';window.init=initAdminPostgrid');
- const app=w.init({$,esc:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),getSelected:()=>selected,post:async(path,body)=>{calls.push({path,body});if(path.endsWith('/status'))return {connected:true};if(path.endsWith('/subject'))return {reviewProof:'fresh',address};return {order:{id:'synthetic',recipient:body.to,pdfName:body.pdfName,status:'ready',property:'Synthetic'}};}});
- await $('mailPrepare').onclick();assert.match($('mailError').textContent,/Select qualified/);assert.equal(calls.length,0);
- selected=[{address:'<script>unsafe</script>',reviewProof:'proof',listingKey:'synthetic'}];await $('mailPrepare').onclick();assert.equal($('mailForm').hidden,false);assert.equal(d.querySelector('script'),null);
- for(const [key,value]of Object.entries(address))$('mail-from-'+key).value=value;
+ const post=async(path,body)=>{calls.push({path,body});if(path.endsWith('/status'))return {connected:true};if(path.endsWith('/subject'))return subjectHook?subjectHook(body):{reviewProof:'fresh-'+body.reviewProof,address:{...address,firstName:'',lastName:''}};if(path.endsWith('/history'))return {orders:saved};if(path.endsWith('/refresh'))return {order:{...saved.find(o=>o.id===body.id),previewUrl:'https://example.com/fresh-preview.pdf'}};
+  const order={id:'order-'+saved.length,postgridId:'letter_'+saved.length,recipient:body.to,sender:body.from,pdfName:body.pdfName,status:'ready',property:body.reviewProof,createdAt:'2026-10-05T12:00:00Z'};saved.unshift(order);return {order};};
+ const app=w.init({$,esc:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),getSelected:()=>selection,post});
+ const set=rows=>{selection=rows.map(key=>({address:key==='A'?'<script>unsafe</script>':key+' Road',reviewProof:key,listingKey:key}));app.selectionChanged();};
+ const fill=()=>{for(const [key,value]of Object.entries(address))if($('mail-from-'+key))$('mail-from-'+key).value=value;selection.forEach((_,i)=>{if($('mail-to-'+i+'-firstName'))$('mail-to-'+i+'-firstName').value='Recipient '+i;});};
  const file=name=>new w.File(['%PDF-1.4 synthetic document\n%%EOF'],name,{type:'application/pdf'});
- $('mailCommonPdf').onchange({target:{files:[file('common.pdf')]}});$('mailRecipients').onchange({target:{dataset:{mailFile:'0'},files:[file('personal.pdf')]}});
- await $('mailForm').onsubmit({preventDefault(){}});assert.equal(calls.filter(x=>x.path.endsWith('/create')).length,0);
- $('mailConfirm').checked=true;await $('mailForm').onsubmit({preventDefault(){}});const created=calls.find(x=>x.path.endsWith('/create'));assert.equal(created.body.pdfName,'personal.pdf');assert.equal(created.body.reviewProof,'fresh');assert.equal(created.body.mode,'test');assert($('mailResults').textContent.includes('personal.pdf'));
- app.clear();assert.equal($('mailResults').textContent,'');assert.equal($('mailRecipients').textContent,'');assert.equal($('mailForm').hidden,true);dom.window.close();
+ const submit=async()=>{$('mailConfirm').checked=true;await $('mailForm').onsubmit({preventDefault(){}});};
+ const wait=()=>new Promise(r=>setTimeout(r,250));
+ return {dom,w,d,$,app,set,fill,file,submit,wait,calls,saved,opened,hook(fn){subjectHook=fn;}};
+}
+test('mass and customized modes send the chosen PDFs, default to Golestan Team, and keep history separate',async()=>{
+ const h=await uiHarness(),{$,app,dom}=h;
+ try{
+  assert.equal($('mail-from-companyName').value,'Golestan Team');assert.equal($('mailHistoryView').hidden,true);
+  await $('mailPrepare').onclick();assert.match($('mailError').textContent,/Select qualified/);
+  h.set(['A','B']);await $('mailPrepare').onclick();h.fill();assert.equal(h.d.querySelector('script'),null);assert.equal($('mailForm').hidden,false);
+  $('mailCommonPdf').onchange({target:{files:[h.file('shared.pdf')]}});await $('mailForm').onsubmit({preventDefault(){}});assert.equal(h.calls.filter(x=>x.path.endsWith('/create')).length,0);
+  await h.submit();let made=h.calls.filter(x=>x.path.endsWith('/create'));assert.deepEqual(made.map(x=>x.body.pdfName),['shared.pdf','shared.pdf']);assert(made.every(x=>x.body.from.companyName==='Golestan Team'&&x.body.mode==='test'));
+  $('mailModeCustom').checked=true;$('mailModeCustom').onchange();assert.equal($('mailSharedUpload').hidden,true);
+  for(let i=0;i<2;i++)$('mailRecipients').onchange({target:{dataset:{mailFile:String(i)},files:[h.file('custom-'+i+'.pdf')]}});
+  await h.submit();made=h.calls.filter(x=>x.path.endsWith('/create'));assert.deepEqual(made.slice(2).map(x=>x.body.pdfName),['custom-0.pdf','custom-1.pdf']);
+  await $('mailHistory').onclick();assert.equal($('mailHistoryView').hidden,false);assert.equal($('postgridPanel').querySelector('#mailHistoryResults'),null);assert.match($('mailHistoryCount').textContent,/4 records/);
+  $('mailHistorySearch').value='custom-1';$('mailHistorySearch').oninput();assert.equal($('mailHistoryResults').querySelectorAll('.mail-result').length,1);
+  $('mailHistoryResults').querySelector('[data-mail-preview]').click();await h.wait();assert.deepEqual(h.opened,['https://example.com/fresh-preview.pdf']);
+  app.clear();assert.equal($('mailResults').textContent,'');assert.equal($('mailRecipients').textContent,'');assert.equal($('mailForm').hidden,true);assert.equal($('mail-from-companyName').value,'Golestan Team');
+ }finally{app.clear();dom.window.close();}
+});
+test('selection changes retain matching drafts and shared PDF, discard removed recipients, and never send stale selections',async()=>{
+ const h=await uiHarness(),{$,app,dom}=h;
+ try{
+  h.set(['A','B']);await $('mailPrepare').onclick();h.fill();$('mail-to-1-firstName').value='Keep this name';$('mailCommonPdf').onchange({target:{files:[h.file('shared.pdf')]}});$('mailConfirm').checked=true;
+  h.set(['B','C']);assert.equal($('mailConfirm').checked,false);await h.wait();assert.equal($('mail-to-0-firstName').value,'Keep this name');assert.equal($('mail-to-1-firstName').value,'');assert.equal($('mail-from-companyName').value,'Golestan Team');assert.match($('mail-file-1').textContent,/shared.pdf/);
+  $('mail-to-1-firstName').value='New recipient';await h.submit();const made=h.calls.filter(x=>x.path.endsWith('/create'));assert.deepEqual(made.map(x=>x.body.reviewProof),['fresh-B','fresh-C']);
+  h.set([]);await h.wait();assert.equal($('mailForm').hidden,true);assert.equal($('mailRecipients').textContent,'');
+  h.set(['D']);await h.wait();assert.equal($('mail-to-0-firstName').value,'');assert.match($('mail-file-0').textContent,/shared.pdf/);
+ }finally{app.clear();dom.window.close();}
+});
+test('sign-out and rapid selection changes ignore late recipient responses',async()=>{
+ const h=await uiHarness(),{$,app,dom}=h;let resolve;
+ try{
+  h.set(['A']);h.hook(()=>new Promise(r=>resolve=r));const pending=$('mailPrepare').onclick();await Promise.resolve();app.clear();resolve({reviewProof:'late',address});await pending;assert.equal($('mailForm').hidden,true);assert.equal($('mailRecipients').textContent,'');assert.equal($('mailStatus').textContent,'');
+ }finally{app.clear();dom.window.close();}
 });

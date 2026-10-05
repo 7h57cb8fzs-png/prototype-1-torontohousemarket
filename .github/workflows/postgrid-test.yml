@@ -21,7 +21,19 @@ jobs:
         run: npm install --prefix /tmp/thm-test-deps --no-save --package-lock=false jsdom@27.0.0
       - name: Test admin and mailing safeguards
         run: node --test tests/admin-postgrid.test.mjs tests/admin-prospects.test.mjs tests/admin-condition.test.mjs tests/admin-workspace.test.mjs
-      - name: Verify PostGrid test connection and synthetic PDF order
+      - name: Install browser test harness
+        if: "!contains(github.event.head_commit.message, '[postgrid-inspect]')"
+        run: npm install --prefix /tmp/thm-browser-deps --no-save --package-lock=false playwright@1.51.1
+      - name: Verify desktop and mobile mailing layouts
+        if: "!contains(github.event.head_commit.message, '[postgrid-inspect]')"
+        run: node tests/admin-postgrid.visual.cjs
+      - uses: actions/upload-artifact@v4
+        if: "!contains(github.event.head_commit.message, '[postgrid-inspect]')"
+        with:
+          name: postgrid-ui-preview
+          path: /tmp/postgrid-*.png
+          retention-days: 5
+      - name: Verify test connection, recipient preparation and mailing history
         if: "!contains(github.event.head_commit.message, '[postgrid-publish]') && !contains(github.event.head_commit.message, '[postgrid-inspect]')"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -36,6 +48,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PUBLISH: ${{ contains(github.event.head_commit.message, '[postgrid-publish]') }}
-          CANDIDATE_VERSION_ID: 9e9a9254-69c8-4d7b-8681-f81d02b37ab8
-          CANDIDATE_PREVIEW_URL: https://9e9a9254-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev
         run: node scripts/postgrid-release.mjs

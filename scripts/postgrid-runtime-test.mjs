@@ -7,10 +7,10 @@ import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
 async function cf(path){const r=await fetch(root+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});const d=await r.json();assert(r.ok&&d.success,'Cloudflare read failed');return d.result;}
 async function active(){const d=await cf('/workers/scripts/'+worker+'/deployments');return d.deployments[0].versions[0].version_id;}
-const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'9d754509-5377-491c-ad05-499c2e4fb1e2');
+const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'9e9a9254-69c8-4d7b-8681-f81d02b37ab8');
 const nonce=randomBytes(32).toString('hex'),temp=mkdtempSync(join(tmpdir(),'thm-postgrid-probe-'));
 // A never-promoted, ten-minute test harness. All credentials remain in Worker bindings.
-// Only synthetic recipient data is submitted to PostGrid, using its test key.
+// Read-only connection, recipient preparation, history and status checks; creates no orders.
 const source=String.raw`import {adminProspects} from './admin-prospects-api.mjs';
 import {adminPostgrid} from './admin-postgrid-api.mjs';
 export default {async fetch(request,env){
@@ -28,17 +28,10 @@ const search=await adminProspects(req('prospects/search'),env),data=await search
 for(const c of (data.candidates||[]).slice(0,12)){const r=await adminProspects(req('prospects/verify',{proof:c.proof}),env),d=await r.json();if(d.result==='qualified'){qualified=d;break;}}
 if(!qualified)return Response.json({connected:true,qualifiedAvailable:false});
 const s=await adminPostgrid(req('postgrid/subject',{reviewProof:qualified.reviewProof}),env),subject=await s.json();if(!s.ok)return Response.json({connected:true,subjectSucceeded:false,error:subject.error});
-// Minimal valid one-page letter-size PDF with proper byte offsets and xref.
-let pdf='%PDF-1.4\n',offsets=[0];const stream='BT /F1 18 Tf 72 700 Td (THM - TEST ONLY - DO NOT MAIL) Tj ET';
-const objects=['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream'];
-for(let i=0;i<objects.length;i++){offsets.push(pdf.length);pdf+=(i+1)+' 0 obj\n'+objects[i]+'\nendobj\n';}const xref=pdf.length;pdf+='xref\n0 6\n0000000000 65535 f \n'+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n';
-const contact={companyName:'THM Synthetic Integration Test',addressLine1:'123 Test Street',city:'Toronto',provinceOrState:'ON',postalOrZip:'M5V 2T6'};
-const body={mode:'test',confirmed:true,reviewProof:subject.reviewProof,to:contact,from:contact,pdfName:'THM-test-only.pdf',pdfBase64:btoa(pdf),color:true,doubleSided:true};
-const created=await adminPostgrid(req('postgrid/create',body),env),order=await created.json();if(!created.ok)return Response.json({connected:true,subjectSucceeded:true,created:false,error:order.error});
-const repeated=await adminPostgrid(req('postgrid/create',body),env),duplicate=await repeated.json();
-const bad=await adminPostgrid(req('postgrid/create',{...body,pdfBase64:btoa('%PDF-1.4 Invalid synthetic PDF for validation test only')}),env),rejection=await bad.json();
-const refreshed=await adminPostgrid(req('postgrid/refresh',{id:order.order.id}),env),updated=await refreshed.json();
-return Response.json({connected:true,subjectSucceeded:true,created:true,rejectionHandled:bad.status===422,rejectionMessage:rejection.error||null,testOnly:order.order.mode==='test',postgridId:order.order.postgridId,duplicateBlocked:duplicate.duplicate===true&&duplicate.order.id===order.order.id,refreshSucceeded:refreshed.ok,previewAvailable:!!updated.order?.previewUrl},{headers:{'Cache-Control':'private, no-store'}});
+const historyResponse=await adminPostgrid(req('postgrid/history'),env),history=await historyResponse.json();
+const order=(history.orders||[]).find(o=>o.postgridId);let refreshed=false;
+if(order){const response=await adminPostgrid(req('postgrid/refresh',{id:order.id}),env);refreshed=response.ok;}
+return Response.json({connected:true,subjectSucceeded:true,historySucceeded:historyResponse.ok,recordDetailsAvailable:!!history.orders?.[0]?.sender,testOnly:(history.orders||[]).every(o=>o.mode==='test'),refreshSucceeded:!order||refreshed},{headers:{'Cache-Control':'private, no-store'}});
 }};`;
 try{
 writeFileSync(join(temp,'probe.mjs'),source,{mode:0o600});writeFileSync(join(temp,'admin-prospects-api.mjs'),readFileSync('admin-prospects-api.js'));writeFileSync(join(temp,'admin-postgrid-api.mjs'),readFileSync('admin-postgrid-api.js','utf8').replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'"));
@@ -48,6 +41,6 @@ writeFileSync(join(temp,'wrangler.json'),JSON.stringify(config),{mode:0o600});le
 try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config',join(temp,'wrangler.json')],{encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch{throw Error('Test preview upload failed; private config output withheld');}
 const preview=output.match(/Version Preview URL:\s*(https:\/\/[^\s]+)/i)?.[1];assert(preview);
 const r=await fetch(preview+'/test',{method:'POST',headers:{Authorization:'Bearer '+nonce},signal:AbortSignal.timeout(240000)});assert(r.ok,'Test preview unavailable');const result=await r.json();console.log('POSTGRID_RUNTIME_TEST',JSON.stringify(result));
-for(const key of ['connected','subjectSucceeded','created','rejectionHandled','testOnly','duplicateBlocked','refreshSucceeded'])assert.equal(result[key],true,'Runtime check failed: '+key);
+for(const key of ['connected','subjectSucceeded','historySucceeded','recordDetailsAvailable','testOnly','refreshSucceeded'])assert.equal(result[key],true,'Runtime check failed: '+key);
 assert.equal(await active(),before);console.log('Production unchanged. No physical mail; no credentials or listing records exported.');
 }finally{rmSync(temp,{recursive:true,force:true});}

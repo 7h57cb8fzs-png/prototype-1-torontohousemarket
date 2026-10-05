@@ -25,7 +25,7 @@ for(const binding of ['AMPRE_VOW_TOKEN','AMPRE_TOKEN']){
  result[binding]={http:meta.status,fields};
  if(!meta.ok)continue;
  const url=base+'Property?'+new URLSearchParams({'$top':'10','$filter':"(MlsStatus eq 'Expired' or MlsStatus eq 'Terminated') and OccupantType eq 'Owner'",'$orderby':'ModificationTimestamp desc'});
- const r=await fetch(url,{headers,redirect:'manual'});const data=await r.json();
+ const r=await fetch(url.replaceAll('+','%20'),{headers,redirect:'manual'});const data=await r.json();
  result[binding].sampleStatus=r.status;result[binding].sampleCount=data.value?.length||0;
  result[binding].populatedFields=fields.filter(n=>(data.value||[]).some(row=>typeof row[n]==='string'&&row[n].trim()));
 }
