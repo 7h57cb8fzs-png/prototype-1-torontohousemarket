@@ -1,4 +1,5 @@
-import {initAdminProspects} from './admin-prospects.js?v=4';
+import {initAdminPostgrid} from './admin-postgrid.js?v=1';
+import {initAdminProspects} from './admin-prospects.js?v=5';
 import {initAdminInsights} from './admin-insights.js';
 import {esc,money,human,renovation,sellerFields,valuation,cleanNotes,phone} from './admin-view-model.js';
 const $=id=>document.getElementById(id),state={token:'',view:'leads',rows:[],agents:[],counts:{},page:1,size:25,total:0,selected:new Set(),lead:null,detailTab:'overview',request:0,detailRequest:0,copyRequest:0,manualKey:null};
@@ -16,7 +17,7 @@ function showDialog(id){$(id).showModal();}
 function closeDialog(id){$(id).close();if(id==='detailDialog'){state.detailRequest++;state.copyRequest++;}}
 document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close)));
 $('loginForm').addEventListener('submit',async e=>{e.preventDefault();await busy($('loginSubmit'),async()=>{state.token=$('key').value.trim();$('loginError').textContent='';try{await loadSetup();$('key').value='';$('login').hidden=true;$('workspace').hidden=false;await changeView('leads');}catch(e){$('loginError').textContent=e.message;state.token='';}});});
-$('signOut').addEventListener('click',()=>{state.token='';state.rows=[];state.lead=null;state.selected.clear();state.request++;state.detailRequest++;state.copyRequest++;document.querySelectorAll('dialog[open]').forEach(d=>d.close());$('tableBody').replaceChildren();$('detailContent').replaceChildren();insights.clear();prospects.clear();$('workspace').hidden=true;$('login').hidden=false;$('key').focus();});
+$('signOut').addEventListener('click',()=>{state.token='';state.rows=[];state.lead=null;state.selected.clear();state.request++;state.detailRequest++;state.copyRequest++;document.querySelectorAll('dialog[open]').forEach(d=>d.close());$('tableBody').replaceChildren();$('detailContent').replaceChildren();insights.clear();prospects.clear();postgrid.clear();$('workspace').hidden=true;$('login').hidden=false;$('key').focus();});
 async function loadSetup(){const [agents,settings,counts]=await Promise.all([api('/api/admin/ops/agents'),api('/api/admin/settings'),api('/api/admin/ops/counts')]);state.agents=agents.agents||[];state.assignmentMethod=agents.assignmentMethod;state.counts=counts;$('ownerEmail').value=settings.settings?.owner_notification_email||'';updateCounts();}
 function updateCounts(){const c=state.counts,q=c.queue||{};$('navActive').textContent=c.active??0;$('navArchive').textContent=c.archived??0;$('navQueue').textContent=(q.queued||0)+(q.processing||0)+(q.failed||0)+(q.blocked||0);}
 $('refresh').addEventListener('click',()=>busy($('refresh'),async()=>{try{await loadSetup();if(state.view==='agents')renderAgents();else if(state.view==='overview')await insights.loadOverview();else if(state.view==='marketing')await insights.loadMarketing();else if(state.view==='prospects')prospects.render();else if(state.view!=='settings')await loadList();}catch(e){message(e.message,true);}}));
@@ -77,3 +78,4 @@ function renderSellerMarketing(){
 const insights=initAdminInsights({state,$,api,post,busy,date,esc,human,message,showDialog,closeDialog,loadSetup,loadList,renderAgents,openLead,download,changeView});
 
 const prospects=initAdminProspects({$,post,esc,money});
+const postgrid=initAdminPostgrid({$,post,esc,getSelected:prospects.getSelected});

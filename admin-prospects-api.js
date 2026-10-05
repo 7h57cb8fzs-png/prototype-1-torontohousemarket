@@ -322,6 +322,14 @@ async function conditionReview(body,env){
  }
 }
 
+// Used only by the authenticated PostGrid module. Recheck current listing and all-status history.
+export async function mailingSubject(reviewProof,env){
+ const {listing,proof}=await assessmentSubject({reviewProof},env);
+ const checked=await verify({proof:await seal({kind:'candidate',row:compact(listing),filters:proof.filters},env)},env);
+ if(checked.result!=='qualified')throw new Unavailable('This property no longer qualifies, or its history is incomplete. Refresh the search.',409);
+ return {...checked,propertyIdentity:identity(listing),mailingAddress:{addressLine1:[listing.StreetNumber,listing.StreetName,listing.StreetSuffix,listing.StreetDirPrefix,listing.StreetDirSuffix].filter(Boolean).join(' '),addressLine2:clean(listing.UnitNumber)?'Unit '+clean(listing.UnitNumber):'',city:region(listing)==='Toronto'?'Toronto':clean(listing.City),provinceOrState:'ON',postalOrZip:clean(listing.PostalCode),countryCode:'CA'}};
+}
+
 export async function adminProspects(request,env){
  const key=clean(env.ADMIN_API_KEY),actual=request.headers.get('Authorization')||'';
  const a=new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(actual))),b=new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode('Bearer '+key)));let delta=0;for(let i=0;i<a.length;i++)delta|=a[i]^b[i];
