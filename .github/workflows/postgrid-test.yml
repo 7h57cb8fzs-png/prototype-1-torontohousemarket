@@ -1,0 +1,21 @@
+name: THM PostGrid test integration
+on:
+  push:
+    branches: [feature/postgrid-test-20261005]
+permissions:
+  contents: read
+concurrency:
+  group: thm-postgrid-test
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Inspect live version and secret presence without exposing values
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/postgrid-inspect.mjs
