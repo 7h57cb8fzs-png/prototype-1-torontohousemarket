@@ -51,7 +51,7 @@ export function initAdminPostgrid({$,post,esc,getSelected,onOpenHistory,onNewMai
   if(busy==='send')return;clearTimeout(timer);saveDrafts();const rows=selected(),drafts=new Map(entries.map(e=>[e.row.listingKey+':'+e.row.reviewProof,e]));const epoch=++generation;selectionKey=keyOf(rows);const nextEntries=[];stop=false;error('');resetReview();$('mailResults').replaceChildren();
   if(!rows.length){entries=[];setBusy('');renderRecipients();$('mailStatus').textContent='Select properties above to continue. Your sender details and mailing settings are kept.';return;}
   if(rows.length>100){entries=[];setBusy('');renderRecipients();error('Prepare up to 100 recipients at a time.');return;}
-  opened=true;setBusy('prepare');$('mailForm').hidden=true;
+  opened=true;$('mailSelectionNote').textContent='Recipient cards follow your selection. Sender details and the shared PDF stay in place.';setBusy('prepare');$('mailForm').hidden=true;
   try{for(const row of rows){if(stop||epoch!==generation)break;const old=drafts.get(row.listingKey+':'+row.reviewProof);if(old){nextEntries.push(old);continue;}
     $('mailStatus').textContent='Loading recipient '+(nextEntries.length+1)+' of '+rows.length+' · '+row.address;
     const result=await call('subject',{reviewProof:row.reviewProof});if(epoch!==generation)return;
@@ -72,7 +72,7 @@ export function initAdminPostgrid({$,post,esc,getSelected,onOpenHistory,onNewMai
  $('mailStop').onclick=()=>{stop=true;$('mailStatus').textContent='Stopping after the current request finishes.';};
  $('mailCommonPdf').onchange=e=>{try{shared=checkFile(e.target.files[0]);error('');showFiles();}catch(err){shared=null;e.target.value='';showFiles();error(err.message);}};
  $('mailRecipients').onchange=e=>{const index=e.target.dataset.mailFile;if(index!==undefined){try{entries[Number(index)].file=checkFile(e.target.files[0]);error('');showFiles();}catch(err){entries[Number(index)].file=null;e.target.value='';showFiles();error(err.message);}}else resetReview();};
- $('mailRecipients').oninput=resetReview;$('mailSender').oninput=resetReview;$('mailColor').onchange=resetReview;$('mailDuplex').onchange=resetReview;
+ $('mailRecipients').oninput=e=>{resetReview();const card=e.target.closest('.mail-recipient');if(card){const recipient=readContact(card);card.querySelector('.mail-name-note').textContent=recipient.firstName||recipient.companyName?'Review recipient':'Recipient name required';}};$('mailSender').oninput=resetReview;$('mailColor').onchange=resetReview;$('mailDuplex').onchange=resetReview;
  for(const id of ['mailModeMass','mailModeCustom'])$(id).onchange=showFiles;
  const base64=file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('Could not read the PDF.'));reader.readAsDataURL(file);});
  const name=c=>[c?.firstName,c?.lastName,c?.companyName].filter(Boolean).join(' ');
