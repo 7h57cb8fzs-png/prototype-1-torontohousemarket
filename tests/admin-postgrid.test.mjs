@@ -18,7 +18,7 @@ test('auth, test-only gating, revalidation, atomic duplicate reservation and unc
  globalThis.fetch=async(url,init={})=>{
   const u=new URL(url);reads++;
   if(u.hostname==='api.postgrid.com'){
-   assert.equal(init.headers['x-api-key'],env.POSTGRID_TEST_API_KEY);assert.equal(init.redirect,'error');
+   assert.equal(init.headers['x-api-key'],env.POSTGRID_TEST_API_KEY);assert.equal(init.redirect,'manual');
    if(init.method==='POST'){sends++;assert(init.headers['Idempotency-Key']);assert.equal(init.body.get('to[countryCode]'),'CA');assert.equal(init.body.get('addressPlacement'),'insert_blank_page');assert.equal(init.body.get('pdf').type,'application/pdf');if(providerFails)throw Error('synthetic private error');return Response.json({id:'letter_synthetic'+sends,live:false,status:'ready',url:'https://example.com/preview.pdf'});}
    return Response.json({data:[]});
   }

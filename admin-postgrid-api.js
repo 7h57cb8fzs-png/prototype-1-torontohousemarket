@@ -32,7 +32,7 @@ async function db(env,query='',method='GET',body,prefer='return=representation')
  if(!r.ok){await r.body?.cancel();fail('Private mailing history could not be saved or loaded.',503);}const text=await r.text();return text?JSON.parse(text):[];
 }
 async function pg(env,path,options={}){
- const r=await fetch(API+path,{...options,headers:{'x-api-key':testKey(env),...options.headers},redirect:'error',signal:AbortSignal.timeout(45000)});
+ const r=await fetch(API+path,{...options,headers:{'x-api-key':testKey(env),...options.headers},redirect:'manual',signal:AbortSignal.timeout(45000)});
  if(!r.ok){await r.body?.cancel();fail('PostGrid request failed (HTTP '+r.status+'). Check the test dashboard before retrying.',502);}return r.json();
 }
 function safeUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password?u.href:null;}catch{return null;}}
