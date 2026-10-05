@@ -6,9 +6,9 @@ import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',live='https://torontohousemarket.com';
 const root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
-const expectedVersion='991fc107-c4aa-4604-8e93-6ef7e5b7032b',expectedHash='bf69231bba3db7074320186b2920983a16639146a363d3ea760157197b1fb0fa';
+const expectedVersion='9d754509-5377-491c-ad05-499c2e4fb1e2',expectedHash='bf69231bba3db7074320186b2920983a16639146a363d3ea760157197b1fb0fa';
 const hash=v=>createHash('sha256').update(v).digest('hex');
-const beforeRef=execFileSync('git',['rev-parse','c8056ad7ce6ec21f96333c5f88fe20e5f6183613'],{encoding:'utf8'}).trim();
+const beforeRef=execFileSync('git',['rev-parse','7e213fd21fd4ae72a6a746390c84d0d502bf9498'],{encoding:'utf8'}).trim();
 const allowed=new Set(['.assetsignore','admin.html','admin-workspace.js','admin-prospects.js','admin-prospects-api.js','admin-postgrid-api.js','admin-postgrid.js','admin-postgrid.css','tests/admin-postgrid.test.mjs','tests/admin-prospects.test.mjs','supabase/manual/admin-postgrid-orders.sql','scripts/postgrid-inspect.mjs','scripts/postgrid-runtime-test.mjs','scripts/postgrid-release.mjs','.github/workflows/postgrid-test.yml']);
 for(const f of execFileSync('git',['diff','--name-only',beforeRef,'HEAD'],{encoding:'utf8'}).trim().split('\n').filter(Boolean))assert(allowed.has(f),'Out-of-scope change: '+f);
 assert.equal(fs.readFileSync('worker-v22.js','utf8'),execFileSync('git',['show',beforeRef+':worker-v22.js'],{encoding:'utf8'}),'Existing worker behavior changed');
@@ -16,15 +16,16 @@ async function cf(p,method='GET',body){const r=await fetch(root+p,{method,header
 async function active(){const d=await cf(`/workers/scripts/${worker}/deployments`);assert.equal(d.deployments[0].versions.length,1);assert.equal(d.deployments[0].versions[0].percentage,100);return d.deployments[0].versions[0].version_id;}
 const version=id=>cf(`/workers/workers/${worker}/versions/${id}?include=modules`);
 const beforeId=await active(),before=await version(beforeId),schedule=await cf(`/workers/scripts/${worker}/schedules`);
-assert.equal(beforeId,expectedVersion,'Production changed; stop and reconcile');assert.equal(before.modules.length,1);const beforeModules=new Map(before.modules.map(m=>[m.name,Buffer.from(m.content_base64,'base64')]));const existing=beforeModules.get('worker-v22.js');assert.equal(hash(existing),expectedHash);assert(before.bindings.some(b=>b.name==='POSTGRID_TEST_API_KEY'&&b.type==='secret_text'),'Test secret missing');
+assert.equal(beforeId,expectedVersion,'Production changed; stop and reconcile');assert.equal(before.modules.length,4);const beforeModules=new Map(before.modules.map(m=>[m.name,Buffer.from(m.content_base64,'base64')]));const existing=beforeModules.get('existing.mjs');assert.equal(hash(existing),expectedHash);assert(before.bindings.some(b=>b.name==='POSTGRID_TEST_API_KEY'&&b.type==='secret_text'),'Test secret missing');
 const plain=Object.fromEntries(before.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));
 const names=v=>v.bindings.filter(b=>b.name!=='ASSETS').map(b=>b.name+':'+b.type).sort();
 const patterns=fs.readFileSync('.assetsignore','utf8').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
 function ignored(file){return patterns.some(p=>p.endsWith('/**')?file.startsWith(p.slice(0,-2)):new RegExp('^'+p.split('*').map(v=>v.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('.*')+'$').test(file));}
 const assets=execFileSync('git',['ls-files','-z'],{encoding:'utf8'}).split('\0').filter(p=>p&&!p.startsWith('.')&&!ignored(p));
 async function bytes(base,file){const r=await fetch(base+'/'+(file==='index.html'?'':file)+'?prospects='+process.env.GITHUB_SHA,{signal:AbortSignal.timeout(20000)});assert(r.ok,'Asset request failed: '+file+' HTTP '+r.status);return Buffer.from(await r.arrayBuffer());}
-const changed=new Set(['admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css']),added=new Set(['admin-postgrid.js','admin-postgrid.css']);
+const changed=new Set(['admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css']),added=new Set();
 for(const f of assets.filter(p=>!added.has(p)))assert.equal(hash(await bytes(live,f)),hash(changed.has(f)?execFileSync('git',['show',beforeRef+':'+f]):fs.readFileSync(f)),'Production asset drift: '+f);
+for(const name of ['admin-prospects-api.mjs','admin-postgrid-api.mjs'])assert.equal(hash(beforeModules.get(name)),hash(execFileSync('git',['show',beforeRef+':'+name.replace('.mjs','.js')],{encoding:'utf8'}).replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'")),'Existing admin module drift');
 let candidate=process.env.CANDIDATE_VERSION_ID,preview=process.env.CANDIDATE_PREVIEW_URL;
 const entry="import existing from './existing.mjs';\nimport {adminPostgrid} from './admin-postgrid-api.mjs';\nexport default {...existing,fetch(request,env,ctx){if(new URL(request.url).pathname.startsWith('/api/admin/postgrid/'))return adminPostgrid(request,env);return existing.fetch(request,env,ctx);}};\n";
 if(!candidate){

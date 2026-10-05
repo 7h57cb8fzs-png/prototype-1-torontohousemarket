@@ -14,18 +14,18 @@ test('PDF limits handle large uploads; Canadian addresses validate and discard e
  assert.equal(contact({...address,postalOrZip:'m5v2t6',secret:'drop'}).postalOrZip,'M5V 2T6');assert.equal(contact({...address,secret:'drop'}).secret,undefined);assert.throws(()=>contact({...address,postalOrZip:'invalid'}));
 });
 test('auth, test-only gating, revalidation, atomic duplicate reservation and uncertain outcomes',async()=>{
- const original=globalThis.fetch,db=new Map();let sends=0,reads=0,relisted=false,providerFails=false;
+ const original=globalThis.fetch,db=new Map();let sends=0,reads=0,relisted=false,providerFails=false,providerRejects=false;
  globalThis.fetch=async(url,init={})=>{
   const u=new URL(url);reads++;
   if(u.hostname==='api.postgrid.com'){
    assert.equal(init.headers['x-api-key'],env.POSTGRID_TEST_API_KEY);assert.equal(init.redirect,'manual');
-   if(init.method==='POST'){sends++;assert(init.headers['Idempotency-Key']);assert.equal(init.body.get('to[countryCode]'),'CA');assert.equal(init.body.get('addressPlacement'),'insert_blank_page');assert.equal(init.body.get('pdf').type,'application/pdf');if(providerFails)throw Error('synthetic private error');return Response.json({id:'letter_synthetic'+sends,live:false,status:'ready',url:'https://example.com/preview.pdf'});}
+   if(init.method==='POST'){sends++;assert(init.headers['Idempotency-Key']);assert.equal(init.body.get('to[countryCode]'),'CA');assert.equal(init.body.get('addressPlacement'),'insert_blank_page');assert.equal(init.body.get('pdf').type,'application/pdf');if(providerRejects){await new Promise(r=>setTimeout(r,20));return Response.json({error:{message:'PDF page size invalid '+env.POSTGRID_TEST_API_KEY}},{status:400});}if(providerFails)throw Error('synthetic private error');return Response.json({id:'letter_synthetic'+sends,live:false,status:'ready',url:'https://example.com/preview.pdf'});}
    return Response.json({data:[]});
   }
   if(u.hostname.endsWith('supabase.co')){
    const data=init.body?JSON.parse(init.body):null;
    if(init.method==='POST'){if(db.has(data.fingerprint))return Response.json([]);db.set(data.fingerprint,{...data,created_at:new Date().toISOString()});return Response.json([db.get(data.fingerprint)]);}
-   const rows=[...db.values()].filter(x=>(!u.searchParams.has('fingerprint')||'eq.'+x.fingerprint===u.searchParams.get('fingerprint'))&&(!u.searchParams.has('id')||'eq.'+x.id===u.searchParams.get('id')));
+   const rows=[...db.values()].filter(x=>(!u.searchParams.has('status')||'eq.'+x.status===u.searchParams.get('status'))&&(!u.searchParams.has('fingerprint')||'eq.'+x.fingerprint===u.searchParams.get('fingerprint'))&&(!u.searchParams.has('id')||'eq.'+x.id===u.searchParams.get('id')));
    if(init.method==='PATCH')rows.forEach(x=>Object.assign(x,data));return Response.json(rows);
   }
   if(u.pathname.endsWith('$metadata'))return new Response('<EntityType Name="Property">'+['ListingKey','MlsStatus','ExpirationDate','TerminationDate','OccupantType','StreetName','City'].map(f=>`<Property Name="${f}" Type="Edm.String"/>`).join('')+'</EntityType>');
@@ -46,6 +46,8 @@ test('auth, test-only gating, revalidation, atomic duplicate reservation and unc
   relisted=true;assert.equal((await call('create',{...body,color:false})).status,409);assert.equal(sends,1);relisted=false;
   providerFails=true;assert.equal((await call('create',{...body,color:false})).status,502);assert.equal(sends,2);const retry=await call('create',{...body,color:false});assert(retry.duplicate);assert.equal(retry.order.status,'needs_review');assert.equal(sends,2);
   assert.equal((await call('create',{...body,confirmed:false})).status,400);
+  providerFails=false;providerRejects=true;const bad={...body,doubleSided:false};const rejection=await call('create',bad);assert.equal(rejection.status,422);assert.match(rejection.error,/PDF page size invalid/);assert(!rejection.error.includes(env.POSTGRID_TEST_API_KEY));assert.equal([...db.values()].filter(x=>x.status==='rejected').length,1);
+  const previous=sends;await Promise.all([call('create',bad),call('create',bad)]);assert.equal(sends,previous+1,'Concurrent rejected retries reserve once');
  }finally{globalThis.fetch=original;}
 });
 test('UI requires selected recipients and review; per-recipient PDF overrides common PDF; clear removes private data',async()=>{

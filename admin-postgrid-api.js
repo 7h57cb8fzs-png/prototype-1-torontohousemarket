@@ -33,7 +33,13 @@ async function db(env,query='',method='GET',body,prefer='return=representation')
 }
 async function pg(env,path,options={}){
  const r=await fetch(API+path,{...options,headers:{'x-api-key':testKey(env),...options.headers},redirect:'manual',signal:AbortSignal.timeout(45000)});
- if(!r.ok){await r.body?.cancel();fail('PostGrid request failed (HTTP '+r.status+'). Check the test dashboard before retrying.',502);}return r.json();
+ if(!r.ok){
+  let data;try{data=await r.json();}catch{}
+  let detail=typeof data?.error?.message==='string'?data.error.message:typeof data?.message==='string'?data.message:'';
+  detail=detail.replaceAll(testKey(env),'[redacted]').replace(/(?:test|live)_sk_[A-Za-z0-9_-]+/gi,'[redacted]').replace(/[\x00-\x1f\x7f]/g,' ').slice(0,600);
+  const rejected=[400,422].includes(r.status),error=new MailError('PostGrid '+(rejected?'rejected the test request':'request failed')+' (HTTP '+r.status+').'+(detail?' '+detail:' Check the test dashboard for details.'),rejected?422:502);
+  error.rejected=rejected;throw error;
+ }return r.json();
 }
 function safeUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password?u.href:null;}catch{return null;}}
 function orderView(row){return {id:row.id,listingKey:row.listing_key,property:row.property_address,recipient:row.recipient,pdfName:row.pdf_name,status:row.status,postgridId:row.postgrid_id,previewUrl:safeUrl(row.preview_url),createdAt:row.created_at,error:row.error,mode:'test'};}
@@ -45,15 +51,15 @@ async function create(body,env){
  const options={color:body.color,doubleSided:body.doubleSided,addressPlacement:'insert_blank_page',size:'us_letter'};
  let subject;try{subject=await mailingSubject(body.reviewProof,env);}catch{fail('The property could not be reverified. Refresh the expired/terminated search before mailing.',409);}
  const digest=await hash(bytes),fingerprint=await hash(JSON.stringify(['test',subject.propertyIdentity,to,from,digest,options]));
- const prior=await db(env,'?fingerprint=eq.'+fingerprint+'&limit=1');if(prior.length)return {ok:true,duplicate:true,order:orderView(prior[0])};
- const id=crypto.randomUUID(),pdfName=String(body.pdfName||'letter.pdf').replace(/[^a-zA-Z0-9 ._-]/g,'_').slice(0,120);
- const reserved=await db(env,'?on_conflict=fingerprint','POST',{id,fingerprint,mode:'test',listing_key:subject.listingKey,property_address:subject.address,recipient:to,sender:from,pdf_name:pdfName,pdf_hash:digest,print_options:options,status:'submitting'},'resolution=ignore-duplicates,return=representation');
+ const prior=await db(env,'?fingerprint=eq.'+fingerprint+'&limit=1');if(prior.length&&prior[0].status!=='rejected')return {ok:true,duplicate:true,order:orderView(prior[0])};
+ const id=prior[0]?.id||crypto.randomUUID(),pdfName=String(body.pdfName||'letter.pdf').replace(/[^a-zA-Z0-9 ._-]/g,'_').slice(0,120);
+ const reserved=prior.length?await db(env,'?id=eq.'+encodeURIComponent(id)+'&status=eq.rejected','PATCH',{status:'submitting',error:null,updated_at:new Date().toISOString()}):await db(env,'?on_conflict=fingerprint','POST',{id,fingerprint,mode:'test',listing_key:subject.listingKey,property_address:subject.address,recipient:to,sender:from,pdf_name:pdfName,pdf_hash:digest,print_options:options,status:'submitting'},'resolution=ignore-duplicates,return=representation');
  if(!reserved.length){const existing=await db(env,'?fingerprint=eq.'+fingerprint+'&limit=1');return {ok:true,duplicate:true,order:orderView(existing[0])};}
  const form=new FormData();for(const [prefix,c]of [['to',to],['from',from]])for(const [k,v]of Object.entries(c))form.append(prefix+'['+k+']',v);
  for(const [k,v]of Object.entries(options))form.append(k,String(v));form.append('pdf',new Blob([bytes],{type:'application/pdf'}),pdfName);form.append('description','THM TEST '+id);form.append('metadata[thm_job_id]',id);form.append('metadata[thm_listing_key]',subject.listingKey);
  let order;
  try{order=await pg(env,'/letters',{method:'POST',headers:{'Idempotency-Key':id},body:form});if(order.live!==false||!/^letter_[A-Za-z0-9]+$/.test(order.id||''))fail('PostGrid returned an unexpected order. Check the dashboard.',502);}
- catch(error){await update(env,id,{status:'needs_review',error:'Submission outcome needs checking in the PostGrid test dashboard. Automatic resubmission is blocked.'}).catch(()=>{});throw error;}
+ catch(error){await update(env,id,{status:error.rejected?'rejected':'needs_review',error:error.rejected?error.message:'Submission outcome needs checking in the PostGrid test dashboard. Automatic resubmission is blocked.'}).catch(()=>{});throw error;}
  const saved=await update(env,id,{postgrid_id:order.id,status:order.status||'ready',preview_url:safeUrl(order.url),error:null});return {ok:true,order:orderView(saved)};
 }
 export async function adminPostgrid(request,env){
