@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
 async function cf(path){const r=await fetch(root+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});const d=await r.json();assert(r.ok&&d.success,'Cloudflare read failed');return d.result;}
 async function active(){const d=await cf('/workers/scripts/'+worker+'/deployments');return d.deployments[0].versions[0].version_id;}
-const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'e7f52561-e3c4-45de-a612-8328540abaa4');
+const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'22620825-0f31-4220-87a2-e8b3b97d8c14');
 const nonce=randomBytes(32).toString('hex'),temp=mkdtempSync(join(tmpdir(),'thm-postgrid-probe-'));
 // A never-promoted, ten-minute test harness. All credentials remain in Worker bindings.
 // Read-only seller-field metadata and presence counts. No names or addresses are logged.
@@ -24,17 +24,18 @@ for(const binding of ['AMPRE_VOW_TOKEN','AMPRE_TOKEN']){
  const fields=[...block.matchAll(/<Property\b[^>]*\bName="([^"]+)"/g)].map(m=>m[1]).filter(n=>/seller|owner|vendor/i.test(n));
  result[binding]={http:meta.status,fields,nameFields:[...block.matchAll(/<Property\b[^>]*\bName="([^"]+)"/g)].map(m=>m[1]).filter(n=>/name/i.test(n)),relatedEntities:[...xml.matchAll(/<EntityType\b[^>]*\bName="([^"]+)"/g)].map(m=>m[1]).filter(n=>/seller|owner|party|contact/i.test(n))};
  if(!meta.ok)continue;
- const url=base+'Property?'+new URLSearchParams({'$top':'10','$filter':"(MlsStatus eq 'Expired' or MlsStatus eq 'Terminated') and OccupantType eq 'Owner'",'$orderby':'ModificationTimestamp desc'});
- const r=await fetch(url.replaceAll('+','%20'),{headers,redirect:'manual'});const data=await r.json();
- result[binding].sampleStatus=r.status;result[binding].sampleCount=data.value?.length||0;result[binding].recordNameFields=[...new Set((data.value||[]).flatMap(row=>Object.keys(row)))].filter(n=>/name|seller|owner|vendor/i.test(n));
- result[binding].populatedFields=fields.filter(n=>(data.value||[]).some(row=>typeof row[n]==='string'&&row[n].trim()));
- if(fields.includes('OwnerName')){
-  const selectedUrl=new URL(url.replaceAll('+','%20'));selectedUrl.searchParams.set('$select','ListingKey,OwnerName');const selectedResponse=await fetch(selectedUrl.href.replaceAll('+','%20'),{headers,redirect:'manual'});const selected=await selectedResponse.json();
-  result[binding].explicitOwnerSelect={http:selectedResponse.status,count:selected.value?.length||0,namesAvailable:(selected.value||[]).filter(row=>typeof row.OwnerName==='string'&&row.OwnerName.trim()).length};
-  const key=data.value?.[0]?.ListingKey;if(typeof key==='string'&&/^[A-Za-z0-9_-]{1,80}$/.test(key)){
-   const response=await fetch(base+"Property('"+key+"')",{headers,redirect:'manual'});const item=await response.json();result[binding].singleProperty={http:response.status,ownerFieldPresent:Object.hasOwn(item,'OwnerName'),nameAvailable:typeof item.OwnerName==='string'&&!!item.OwnerName.trim()};
+ const ownerTag=block.match(/<Property\b[^>]*\bName="OwnerName"[^>]*>/)?.[0]||'';
+ result[binding].ownerFieldType=ownerTag.match(/\bType="([^"]+)"/)?.[1]||null;
+ result[binding].targets=[];
+ for(const key of ['N13642122','N13687590']){
+  const target={};
+  for(const [label,suffix]of [['full',''],['explicit','?$select=ListingKey,OwnerName']]){
+   const response=await fetch(base+"Property('"+key+"')"+suffix,{headers,redirect:'manual',signal:AbortSignal.timeout(30000)});let item;try{item=await response.json();}catch{}
+   target[label]={http:response.status,matchingListing:item?.ListingKey===key,ownerFieldPresent:item?Object.hasOwn(item,'OwnerName'):false,ownerValueType:item?.OwnerName===null?'null':Array.isArray(item?.OwnerName)?'array':typeof item?.OwnerName,nameLength:typeof item?.OwnerName==='string'?item.OwnerName.trim().length:null};
   }
+  result[binding].targets.push(target);
  }
+
 
 }
 return Response.json(result,{headers:{'Cache-Control':'private, no-store'}});
