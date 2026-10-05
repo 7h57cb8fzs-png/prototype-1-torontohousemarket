@@ -98,3 +98,15 @@ test('sign-out and rapid selection changes ignore late recipient responses',asyn
   h.set(['A']);h.hook(()=>new Promise(r=>resolve=r));const pending=$('mailPrepare').onclick();await Promise.resolve();app.clear();resolve({reviewProof:'late',address});await pending;assert.equal($('mailForm').hidden,true);assert.equal($('mailRecipients').textContent,'');assert.equal($('mailStatus').textContent,'');
  }finally{app.clear();dom.window.close();}
 });
+
+test('selection changes during recipient loading never copy a removed property name onto another card',async()=>{
+ const h=await uiHarness(),{$,app,dom}=h;let resolve;
+ try{
+  h.set(['A','B']);await $('mailPrepare').onclick();h.fill();$('mail-to-0-firstName').value='Only for A';$('mail-to-1-firstName').value='Only for B';
+  h.hook(body=>body.reviewProof==='C'?new Promise(r=>resolve=r):{reviewProof:'fresh-'+body.reviewProof,address:{...address,firstName:'',lastName:''}});
+  h.set(['B','C']);await h.wait();assert.equal(typeof resolve,'function');
+  h.set(['B','D']);await h.wait();assert.equal($('mail-to-0-firstName').value,'Only for B');assert.equal($('mail-to-1-firstName').value,'');
+  resolve({reviewProof:'late-C',address:{...address,firstName:'Only for C'}});await Promise.resolve();await Promise.resolve();
+  assert.equal($('mail-to-0-firstName').value,'Only for B');assert.equal($('mail-to-1-firstName').value,'');assert.equal(h.d.querySelectorAll('.mail-recipient').length,2);
+ }finally{app.clear();dom.window.close();}
+});

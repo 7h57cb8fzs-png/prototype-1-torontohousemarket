@@ -48,16 +48,16 @@ export function initAdminPostgrid({$,post,esc,getSelected,onOpenHistory,onNewMai
  }
  async function connection(){const epoch=generation,info=await call('status');if(epoch!==generation)return;$('mailConnectionStatus').textContent=info.connected?'Connected · test orders only':'PostGrid is not connected.';}
  async function prepare(){
-  if(busy==='send')return;clearTimeout(timer);saveDrafts();const rows=selected(),drafts=new Map(entries.map(e=>[e.row.listingKey+':'+e.row.reviewProof,e]));const epoch=++generation;selectionKey=keyOf(rows);entries=[];stop=false;error('');resetReview();$('mailResults').replaceChildren();
-  if(!rows.length){setBusy('');renderRecipients();$('mailStatus').textContent='Select properties above to continue. Your sender details and mailing settings are kept.';return;}
-  if(rows.length>100){setBusy('');renderRecipients();error('Prepare up to 100 recipients at a time.');return;}
+  if(busy==='send')return;clearTimeout(timer);saveDrafts();const rows=selected(),drafts=new Map(entries.map(e=>[e.row.listingKey+':'+e.row.reviewProof,e]));const epoch=++generation;selectionKey=keyOf(rows);const nextEntries=[];stop=false;error('');resetReview();$('mailResults').replaceChildren();
+  if(!rows.length){entries=[];setBusy('');renderRecipients();$('mailStatus').textContent='Select properties above to continue. Your sender details and mailing settings are kept.';return;}
+  if(rows.length>100){entries=[];setBusy('');renderRecipients();error('Prepare up to 100 recipients at a time.');return;}
   opened=true;setBusy('prepare');$('mailForm').hidden=true;
-  try{for(const row of rows){if(stop||epoch!==generation)break;const old=drafts.get(row.listingKey+':'+row.reviewProof);if(old){entries.push(old);continue;}
-    $('mailStatus').textContent='Loading recipient '+(entries.length+1)+' of '+rows.length+' · '+row.address;
+  try{for(const row of rows){if(stop||epoch!==generation)break;const old=drafts.get(row.listingKey+':'+row.reviewProof);if(old){nextEntries.push(old);continue;}
+    $('mailStatus').textContent='Loading recipient '+(nextEntries.length+1)+' of '+rows.length+' · '+row.address;
     const result=await call('subject',{reviewProof:row.reviewProof});if(epoch!==generation)return;
-    entries.push({row,reviewProof:result.reviewProof,address:{...result.address},file:null});
+    nextEntries.push({row,reviewProof:result.reviewProof,address:{...result.address},file:null});
    }
-   if(epoch!==generation)return;renderRecipients();$('mailStatus').textContent=stop?'Loading stopped. Prepare selected letters again to finish.':entries.length+' recipients loaded. Review names and PDFs before creating test orders.';
+   if(epoch!==generation)return;entries=nextEntries;renderRecipients();$('mailStatus').textContent=stop?'Loading stopped. Prepare selected letters again to finish.':entries.length+' recipients loaded. Review names and PDFs before creating test orders.';
   }catch(e){if(epoch===generation){entries=[];renderRecipients();error(e.message);}}
   finally{if(epoch===generation)setBusy('');}
  }
