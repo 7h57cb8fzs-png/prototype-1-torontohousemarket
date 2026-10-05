@@ -80,7 +80,7 @@ test('mass and customized modes send the chosen PDFs, default to Golestan Team, 
  try{
   assert.equal($('mail-from-companyName').value,'Golestan Team');assert.equal($('mail-from-addressLine1').value,'1053 McNicoll Ave');assert.equal($('mail-from-city').value,'Toronto');assert.equal($('mail-from-postalOrZip').value,'M1W 3W6');assert.equal($('mailHistoryView').hidden,true);
   await $('mailPrepare').onclick();assert.match($('mailError').textContent,/Select qualified/);
-  h.set(['A','B']);await $('mailPrepare').onclick();h.fill();assert.equal(h.d.querySelector('script'),null);assert.equal($('mailForm').hidden,false);
+  h.set(['A','B']);await $('mailPrepare').onclick();assert.equal($('mail-to-0-firstName').value,'Current Homeowner');assert.equal($('mail-to-1-firstName').value,'Current Homeowner');h.fill();assert.equal(h.d.querySelector('script'),null);assert.equal($('mailForm').hidden,false);
   $('mailCommonPdf').onchange({target:{files:[h.file('shared.pdf')]}});await $('mailForm').onsubmit({preventDefault(){}});assert.equal(h.calls.filter(x=>x.path.endsWith('/create')).length,0);
   await h.submit();let made=h.calls.filter(x=>x.path.endsWith('/create'));assert.deepEqual(made.map(x=>x.body.pdfName),['shared.pdf','shared.pdf']);assert(made.every(x=>x.body.from.companyName==='Golestan Team'&&x.body.mode==='test'));
   $('mailModeCustom').checked=true;$('mailModeCustom').onchange();assert.equal($('mailSharedUpload').hidden,true);
@@ -96,10 +96,10 @@ test('selection changes retain matching drafts and shared PDF, discard removed r
  const h=await uiHarness(),{$,app,dom}=h;
  try{
   h.set(['A','B']);await $('mailPrepare').onclick();h.fill();$('mail-to-1-firstName').value='Keep this name';$('mailCommonPdf').onchange({target:{files:[h.file('shared.pdf')]}});$('mailConfirm').checked=true;
-  h.set(['B','C']);assert.equal($('mailConfirm').checked,false);await h.wait();assert.equal($('mail-to-0-firstName').value,'Keep this name');assert.equal($('mail-to-1-firstName').value,'');assert.equal($('mail-from-companyName').value,'Golestan Team');assert.match($('mail-file-1').textContent,/shared.pdf/);
+  h.set(['B','C']);assert.equal($('mailConfirm').checked,false);await h.wait();assert.equal($('mail-to-0-firstName').value,'Keep this name');assert.equal($('mail-to-1-firstName').value,'Current Homeowner');assert.equal($('mail-from-companyName').value,'Golestan Team');assert.match($('mail-file-1').textContent,/shared.pdf/);
   $('mail-to-1-firstName').value='New recipient';await h.submit();const made=h.calls.filter(x=>x.path.endsWith('/create'));assert.deepEqual(made.map(x=>x.body.reviewProof),['fresh-B','fresh-C']);
   h.set([]);await h.wait();assert.equal($('mailForm').hidden,true);assert.equal($('mailRecipients').textContent,'');
-  h.set(['D']);await h.wait();assert.equal($('mail-to-0-firstName').value,'');assert.match($('mail-file-0').textContent,/shared.pdf/);
+  h.set(['D']);await h.wait();assert.equal($('mail-to-0-firstName').value,'Current Homeowner');assert.match($('mail-file-0').textContent,/shared.pdf/);
  }finally{app.clear();dom.window.close();}
 });
 test('sign-out and rapid selection changes ignore late recipient responses',async()=>{
@@ -115,9 +115,9 @@ test('selection changes during recipient loading never copy a removed property n
   h.set(['A','B']);await $('mailPrepare').onclick();h.fill();$('mail-to-0-firstName').value='Only for A';$('mail-to-1-firstName').value='Only for B';
   h.hook(body=>body.reviewProof==='C'?new Promise(r=>resolve=r):{reviewProof:'fresh-'+body.reviewProof,address:{...address,firstName:'',lastName:''}});
   h.set(['B','C']);await h.wait();assert.equal(typeof resolve,'function');
-  h.set(['B','D']);await h.wait();assert.equal($('mail-to-0-firstName').value,'Only for B');assert.equal($('mail-to-1-firstName').value,'');
+  h.set(['B','D']);await h.wait();assert.equal($('mail-to-0-firstName').value,'Only for B');assert.equal($('mail-to-1-firstName').value,'Current Homeowner');
   resolve({reviewProof:'late-C',address:{...address,firstName:'Only for C'}});await Promise.resolve();await Promise.resolve();
-  assert.equal($('mail-to-0-firstName').value,'Only for B');assert.equal($('mail-to-1-firstName').value,'');assert.equal(h.d.querySelectorAll('.mail-recipient').length,2);
+  assert.equal($('mail-to-0-firstName').value,'Only for B');assert.equal($('mail-to-1-firstName').value,'Current Homeowner');assert.equal(h.d.querySelectorAll('.mail-recipient').length,2);
  }finally{app.clear();dom.window.close();}
 });
 

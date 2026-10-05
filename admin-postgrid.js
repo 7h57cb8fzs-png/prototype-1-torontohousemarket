@@ -12,7 +12,7 @@ export function initAdminPostgrid({$,post,esc,getSelected,onOpenHistory,onNewMai
  <p class="mail-help">8.5 × 11-inch pages · PDF up to 8 MB · a separate address page is added.</p>
  <div class="mail-options"><label><input type="checkbox" id="mailColor" checked> Colour</label><label><input type="checkbox" id="mailDuplex" checked> Double-sided</label></div></section>
  <section class="mail-step"><div class="mail-step-heading"><span>2</span><div><h3>Return address</h3><p>The sender information printed on each mailing.</p></div></div><div id="mailSender" class="mail-contact"></div></section>
- <section class="mail-step"><div class="mail-step-heading"><span>3</span><div><h3>Review recipients</h3><p id="mailRecipientHelp">Names and addresses fill from the listing when available. Enter any missing recipient name and confirm the correct recipient before mailing.</p></div></div><div id="mailRecipients"></div></section>
+ <section class="mail-step"><div class="mail-step-heading"><span>3</span><div><h3>Review recipients</h3><p id="mailRecipientHelp">When no recipient name is available, letters are addressed to “Current Homeowner”. You can edit each name before mailing.</p></div></div><div id="mailRecipients"></div></section>
  <div class="mail-submit-bar"><label class="mail-confirm"><input type="checkbox" id="mailConfirm" required> I reviewed the recipient names, addresses and PDFs for these test orders.</label><div class="mail-actions"><button id="mailCreate" class="primary" type="submit">Create test orders</button><span id="mailReadyCount"></span></div></div>
  </fieldset></form><button id="mailStop" class="secondary" type="button" hidden>Stop after current request</button><section id="mailResults" aria-live="polite"></section>`;
  history.innerHTML=`<header class="mail-heading"><div><p class="mail-eyebrow">POSTGRID</p><h2>Mailing history</h2><p>Test orders, documents and status in one place. Nothing is printed or mailed.</p></div><button id="mailNew" class="primary" type="button">Prepare new letters</button></header>
@@ -55,7 +55,8 @@ export function initAdminPostgrid({$,post,esc,getSelected,onOpenHistory,onNewMai
   try{for(const row of rows){if(stop||epoch!==generation)break;const old=drafts.get(row.listingKey+':'+row.reviewProof);if(old){nextEntries.push(old);continue;}
     $('mailStatus').textContent='Loading recipient '+(nextEntries.length+1)+' of '+rows.length+' · '+row.address;
     const result=await call('subject',{reviewProof:row.reviewProof});if(epoch!==generation)return;
-    nextEntries.push({row,reviewProof:result.reviewProof,address:{...result.address},file:null});
+    const address={...result.address};if(![address.firstName,address.lastName,address.companyName].some(v=>String(v||'').trim()))address.firstName='Current Homeowner';
+    nextEntries.push({row,reviewProof:result.reviewProof,address,file:null});
    }
    if(epoch!==generation)return;entries=nextEntries;renderRecipients();$('mailStatus').textContent=stop?'Loading stopped. Prepare selected letters again to finish.':entries.length+' recipients loaded. Review names and PDFs before creating test orders.';
   }catch(e){if(epoch===generation){entries=[];renderRecipients();error(e.message);}}
