@@ -2,7 +2,7 @@ const {chromium}=require(process.env.POSTGRID_PLAYWRIGHT_PATH||'/tmp/thm-browser
 const fs=require('fs'),http=require('http'),path=require('path');
 const root=process.cwd();
 (async()=>{
- const server=http.createServer((req,res)=>{const name=new URL(req.url,'http://localhost').pathname.slice(1);if(!['admin-postgrid.js','admin-postgrid.css','admin-workspace.css'].includes(name)){res.writeHead(404).end();return;}res.setHeader('Content-Type',name.endsWith('.css')?'text/css':'text/javascript');res.end(fs.readFileSync(path.join(root,name)));});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const server=http.createServer((req,res)=>{const name=new URL(req.url,'http://localhost').pathname.slice(1);if(!name){res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><head></head><body></body></html>');return;}if(!['admin-postgrid.js','admin-postgrid.css','admin-workspace.css'].includes(name)){res.writeHead(404).end();return;}res.setHeader('Content-Type',name.endsWith('.css')?'text/css':'text/javascript');res.end(fs.readFileSync(path.join(root,name)));});await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await chromium.launch({headless:true,executablePath:require('child_process').execFileSync('which',['google-chrome'],{encoding:'utf8'}).trim(),args:['--no-sandbox']});const page=await browser.newPage({viewport:{width:1365,height:1000}});let errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:'+server.address().port);
  await page.setContent('<link rel="stylesheet" href="/admin-workspace.css"><link rel="stylesheet" href="/admin-postgrid.css"><main style="max-width:1060px;margin:28px auto;padding:0 18px"><section id="prospectsView"></section></main>');
