@@ -17,7 +17,13 @@ export default {async fetch(request,env){
 if(request.method!=='POST'||new URL(request.url).pathname!=='/test'||request.headers.get('Authorization')!=='Bearer '+env.THM_POSTGRID_PROBE||Date.now()>Number(env.THM_POSTGRID_PROBE_EXPIRY))return new Response('Not found',{status:404});
 const req=(action,body={})=>new Request('https://internal.invalid/api/admin/'+action,{method:'POST',headers:{Authorization:'Bearer '+env.ADMIN_API_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
 const check=await adminPostgrid(req('postgrid/status'),env),connection=await check.json();
-if(!check.ok)return Response.json({connected:false,error:connection.error});
+if(!check.ok){
+ const diagnostics={};
+ for(const [name,url,headers]of [['storage',(env.SUPABASE_URL||'https://pwbtxyavjjotxtvegrqe.supabase.co')+'/rest/v1/admin_postgrid_orders?select=id&limit=1',{apikey:env.SUPABASE_SERVICE_ROLE_KEY,Authorization:'Bearer '+env.SUPABASE_SERVICE_ROLE_KEY}],['postgrid','https://api.postgrid.com/print-mail/v1/letters?limit=1',{'x-api-key':String(env.POSTGRID_TEST_API_KEY||'').trim()}]]){
+  try{const r=await fetch(url,{headers,redirect:'manual',signal:AbortSignal.timeout(15000)});diagnostics[name]={status:r.status,contentType:r.headers.get('Content-Type')};try{await r.json();diagnostics[name].json=true;}catch{diagnostics[name].json=false;}}catch(e){diagnostics[name]={errorType:e.name};}
+ }
+ return Response.json({connected:false,error:connection.error,diagnostics});
+}
 const search=await adminProspects(req('prospects/search'),env),data=await search.json();let qualified;
 for(const c of (data.candidates||[]).slice(0,12)){const r=await adminProspects(req('prospects/verify',{proof:c.proof}),env),d=await r.json();if(d.result==='qualified'){qualified=d;break;}}
 if(!qualified)return Response.json({connected:true,qualifiedAvailable:false});
