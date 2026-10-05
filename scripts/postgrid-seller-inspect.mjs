@@ -21,8 +21,8 @@ for(const binding of ['AMPRE_VOW_TOKEN','AMPRE_TOKEN']){
  const headers={Authorization:'Bearer '+env[binding]};
  const meta=await fetch(base+'$metadata',{headers,redirect:'manual'});const xml=await meta.text();
  const block=xml.match(/<EntityType Name="Property"[^>]*>([\s\S]*?)<\/EntityType>/)?.[1]||'';
- const fields=[...block.matchAll(/<Property Name="([^"]+)"/g)].map(m=>m[1]).filter(n=>/seller|owner|vendor/i.test(n));
- result[binding]={http:meta.status,fields,nameFields:[...block.matchAll(/<Property Name="([^"]+)"/g)].map(m=>m[1]).filter(n=>/name/i.test(n)),relatedEntities:[...xml.matchAll(/<EntityType Name="([^"]+)"/g)].map(m=>m[1]).filter(n=>/seller|owner|party|contact/i.test(n))};
+ const fields=[...block.matchAll(/<Property\b[^>]*\bName="([^"]+)"/g)].map(m=>m[1]).filter(n=>/seller|owner|vendor/i.test(n));
+ result[binding]={http:meta.status,fields,nameFields:[...block.matchAll(/<Property\b[^>]*\bName="([^"]+)"/g)].map(m=>m[1]).filter(n=>/name/i.test(n)),relatedEntities:[...xml.matchAll(/<EntityType\b[^>]*\bName="([^"]+)"/g)].map(m=>m[1]).filter(n=>/seller|owner|party|contact/i.test(n))};
  if(!meta.ok)continue;
  const url=base+'Property?'+new URLSearchParams({'$top':'10','$filter':"(MlsStatus eq 'Expired' or MlsStatus eq 'Terminated') and OccupantType eq 'Owner'",'$orderby':'ModificationTimestamp desc'});
  const r=await fetch(url.replaceAll('+','%20'),{headers,redirect:'manual'});const data=await r.json();
