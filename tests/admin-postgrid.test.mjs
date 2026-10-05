@@ -25,7 +25,7 @@ test('auth, test-only gating, revalidation, atomic duplicate reservation and unc
   if(u.hostname.endsWith('supabase.co')){
    const data=init.body?JSON.parse(init.body):null;
    if(init.method==='POST'){if(db.has(data.fingerprint))return Response.json([]);db.set(data.fingerprint,{...data,created_at:new Date().toISOString()});return Response.json([db.get(data.fingerprint)]);}
-   const rows=[...db.values()].filter(x=>(!u.searchParams.has('status')||'eq.'+x.status===u.searchParams.get('status'))&&(!u.searchParams.has('fingerprint')||'eq.'+x.fingerprint===u.searchParams.get('fingerprint'))&&(!u.searchParams.has('id')||'eq.'+x.id===u.searchParams.get('id')));
+   const idFilter=u.searchParams.get('id');const rows=[...db.values()].filter(x=>(!u.searchParams.has('deleted_at')||!x.deleted_at)&&(!u.searchParams.has('mode')||'eq.'+x.mode===u.searchParams.get('mode'))&&(!u.searchParams.has('status')||'eq.'+x.status===u.searchParams.get('status'))&&(!u.searchParams.has('fingerprint')||'eq.'+x.fingerprint===u.searchParams.get('fingerprint'))&&(!idFilter||(idFilter.startsWith('in.(')?idFilter.slice(4,-1).split(',').includes(x.id):'eq.'+x.id===idFilter)));
    if(init.method==='PATCH')rows.forEach(x=>Object.assign(x,data));return Response.json(rows);
   }
   if(u.pathname.endsWith('$metadata'))return new Response('<EntityType Name="Property">'+['ListingKey','MlsStatus','ExpirationDate','TerminationDate','OccupantType','StreetName','City'].map(f=>`<Property Name="${f}" Type="Edm.String"/>`).join('')+'</EntityType>');
@@ -43,6 +43,13 @@ test('auth, test-only gating, revalidation, atomic duplicate reservation and unc
   assert.equal((await call('create',{...body,reviewProof:'forged'})).status,409);assert.equal(sends,0);
   const results=await Promise.all([call('create',body),call('create',body)]);assert(results.every(x=>x.ok));assert.equal(sends,1);assert.equal(results.filter(x=>x.duplicate).length,1);
   assert(!JSON.stringify([...db.values()]).includes(pdf));assert(!JSON.stringify(results).includes(env.POSTGRID_TEST_API_KEY));
+  const orderId=results[0].order.id;
+  assert.equal((await call('delete',{ids:[orderId]})).status,400);
+  assert.equal((await call('delete',{confirmed:true,ids:['bad),mode.eq.live']})).status,400);
+  assert.equal((await call('delete',{confirmed:true,ids:Array(101).fill(orderId)})).status,400);
+  const removed=await call('delete',{confirmed:true,ids:[orderId,orderId]});assert.deepEqual(removed.deletedIds,[orderId]);assert.equal(sends,1);assert.equal(db.size,1);assert([...db.values()][0].deleted_at);
+  assert.equal((await call('history')).orders.length,0);assert.equal((await call('refresh',{id:orderId})).status,404);
+  const restored=await call('create',body);assert.equal(restored.duplicate,true);assert.equal(sends,1);assert.equal(restored.order.deletedAt,null);assert.equal((await call('history')).orders.length,1);
   relisted=true;assert.equal((await call('create',{...body,color:false})).status,409);assert.equal(sends,1);relisted=false;
   providerFails=true;assert.equal((await call('create',{...body,color:false})).status,502);assert.equal(sends,2);const retry=await call('create',{...body,color:false});assert(retry.duplicate);assert.equal(retry.order.status,'needs_review');assert.equal(sends,2);
   assert.equal((await call('create',{...body,confirmed:false})).status,400);
@@ -55,7 +62,7 @@ async function uiHarness(){
  const dom=new JSDOM('<main><section id="prospectsView"></section></main>',{runScripts:'outside-only',url:'https://test.invalid'}),w=dom.window,d=w.document,$=id=>d.getElementById(id);const calls=[],saved=[],opened=[];let selection=[],subjectHook=null;
  w.URL.createObjectURL=()=> 'blob:synthetic';w.URL.revokeObjectURL=()=>{};w.open=()=>({opener:null,location:{replace:url=>opened.push(url)},close(){}});
  w.eval(readFileSync(new URL('../admin-postgrid.js',import.meta.url),'utf8').replace(/^export /gm,'')+';window.init=initAdminPostgrid');
- const post=async(path,body)=>{calls.push({path,body});if(path.endsWith('/status'))return {connected:true};if(path.endsWith('/subject'))return subjectHook?subjectHook(body):{reviewProof:'fresh-'+body.reviewProof,address:{...address,firstName:'',lastName:''}};if(path.endsWith('/history'))return {orders:saved};if(path.endsWith('/refresh'))return {order:{...saved.find(o=>o.id===body.id),previewUrl:'https://example.com/fresh-preview.pdf'}};
+ const post=async(path,body)=>{calls.push({path,body});if(path.endsWith('/status'))return {connected:true};if(path.endsWith('/subject'))return subjectHook?subjectHook(body):{reviewProof:'fresh-'+body.reviewProof,address:{...address,firstName:'',lastName:''}};if(path.endsWith('/history'))return {orders:[...saved]};if(path.endsWith('/delete')){for(let i=saved.length-1;i>=0;i--)if(body.ids.includes(saved[i].id))saved.splice(i,1);return {deletedIds:body.ids};}if(path.endsWith('/refresh'))return {order:{...saved.find(o=>o.id===body.id),previewUrl:'https://example.com/fresh-preview.pdf'}};
   const order={id:'order-'+saved.length,postgridId:'letter_'+saved.length,recipient:body.to,sender:body.from,pdfName:body.pdfName,status:'ready',property:body.reviewProof,createdAt:'2026-10-05T12:00:00Z'};saved.unshift(order);return {order};};
  const app=w.init({$,esc:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),getSelected:()=>selection,post});
  const set=rows=>{selection=rows.map(key=>({address:key==='A'?'<script>unsafe</script>':key+' Road',reviewProof:key,listingKey:key}));app.selectionChanged();};
@@ -68,7 +75,7 @@ async function uiHarness(){
 test('mass and customized modes send the chosen PDFs, default to Golestan Team, and keep history separate',async()=>{
  const h=await uiHarness(),{$,app,dom}=h;
  try{
-  assert.equal($('mail-from-companyName').value,'Golestan Team');assert.equal($('mailHistoryView').hidden,true);
+  assert.equal($('mail-from-companyName').value,'Golestan Team');assert.equal($('mail-from-addressLine1').value,'1053 McNicoll Ave');assert.equal($('mail-from-city').value,'Toronto');assert.equal($('mail-from-postalOrZip').value,'M1W 3W6');assert.equal($('mailHistoryView').hidden,true);
   await $('mailPrepare').onclick();assert.match($('mailError').textContent,/Select qualified/);
   h.set(['A','B']);await $('mailPrepare').onclick();h.fill();assert.equal(h.d.querySelector('script'),null);assert.equal($('mailForm').hidden,false);
   $('mailCommonPdf').onchange({target:{files:[h.file('shared.pdf')]}});await $('mailForm').onsubmit({preventDefault(){}});assert.equal(h.calls.filter(x=>x.path.endsWith('/create')).length,0);
@@ -108,5 +115,21 @@ test('selection changes during recipient loading never copy a removed property n
   h.set(['B','D']);await h.wait();assert.equal($('mail-to-0-firstName').value,'Only for B');assert.equal($('mail-to-1-firstName').value,'');
   resolve({reviewProof:'late-C',address:{...address,firstName:'Only for C'}});await Promise.resolve();await Promise.resolve();
   assert.equal($('mail-to-0-firstName').value,'Only for B');assert.equal($('mail-to-1-firstName').value,'');assert.equal(h.d.querySelectorAll('.mail-recipient').length,2);
+ }finally{app.clear();dom.window.close();}
+});
+
+test('history select all spans pages, filter changes clear selections, and deletion needs explicit review',async()=>{
+ const h=await uiHarness(),{$,app,dom}=h;
+ try{
+  for(let i=0;i<12;i++)h.saved.push({id:'history-'+i,property:'Property '+i,pdfName:'letter.pdf',recipient:{firstName:'Synthetic '+i},status:'ready'});
+  await app.loadHistory(false);$('mailHistorySelectAll').checked=true;$('mailHistorySelectAll').onchange({target:$('mailHistorySelectAll')});assert.equal($('mailHistorySelectedCount').textContent,'12 selected');assert.equal(h.d.querySelectorAll('[data-history-pick]:checked').length,10);
+  $('mailHistoryNext').onclick();assert.equal(h.d.querySelectorAll('[data-history-pick]:checked').length,2);
+  $('mailHistoryDelete').onclick();assert.equal($('mailDeletePrompt').hidden,false);assert.match($('mailDeleteQuestion').textContent,/12 selected records/);assert.equal(h.calls.filter(x=>x.path.endsWith('/delete')).length,0);
+  $('mailDeleteCancel').onclick();assert.equal(h.saved.length,12);assert.equal($('mailDeletePrompt').hidden,true);
+  $('mailHistorySearch').value='Property 11';$('mailHistorySearch').oninput();assert.equal($('mailHistorySelectedCount').textContent,'0 selected');assert.equal($('mailHistoryDelete').disabled,true);
+  $('mailHistorySelectAll').checked=true;$('mailHistorySelectAll').onchange({target:$('mailHistorySelectAll')});$('mailHistoryDelete').onclick();await $('mailDeleteConfirm').onclick();
+  assert.equal(JSON.stringify(h.calls.find(x=>x.path.endsWith('/delete')).body),JSON.stringify({ids:['history-11'],confirmed:true}));assert.equal(h.saved.length,11);assert.equal(h.d.querySelectorAll('[data-history-pick]').length,0);
+  $('mailHistorySearch').value='';$('mailHistorySearch').oninput();await app.loadHistory(false);assert.match($('mailHistoryCount').textContent,/11 records/);
+  app.clear();assert.equal($('mail-from-postalOrZip').value,'M1W 3W6');assert.equal($('mailHistorySelectedCount').textContent,'0 selected');
  }finally{app.clear();dom.window.close();}
 });

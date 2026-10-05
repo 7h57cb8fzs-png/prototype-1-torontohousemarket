@@ -39,7 +39,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/postgrid-runtime-test.mjs
       - name: Inspect seller fields without exposing personal records
-        if: contains(github.event.head_commit.message, '[postgrid-inspect]')
+        if: "!contains(github.event.head_commit.message, '[postgrid-publish]')"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/postgrid-seller-inspect.mjs
@@ -48,6 +48,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PUBLISH: ${{ contains(github.event.head_commit.message, '[postgrid-publish]') }}
-          CANDIDATE_VERSION_ID: e7f52561-e3c4-45de-a612-8328540abaa4
-          CANDIDATE_PREVIEW_URL: https://e7f52561-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev
         run: node scripts/postgrid-release.mjs

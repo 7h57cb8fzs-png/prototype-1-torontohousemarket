@@ -13,6 +13,7 @@ create table public.admin_postgrid_orders (
  postgrid_id text unique,
  preview_url text,
  error text,
+ deleted_at timestamptz,
  created_at timestamptz not null default now(),
  updated_at timestamptz not null default now()
 );

@@ -7,10 +7,11 @@ import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
 async function cf(path){const r=await fetch(root+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});const d=await r.json();assert(r.ok&&d.success,'Cloudflare read failed');return d.result;}
 async function active(){const d=await cf('/workers/scripts/'+worker+'/deployments');return d.deployments[0].versions[0].version_id;}
-const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'9e9a9254-69c8-4d7b-8681-f81d02b37ab8');
+const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'e7f52561-e3c4-45de-a612-8328540abaa4');
 const nonce=randomBytes(32).toString('hex'),temp=mkdtempSync(join(tmpdir(),'thm-postgrid-probe-'));
 // A never-promoted, ten-minute test harness. All credentials remain in Worker bindings.
-// Read-only connection, recipient preparation, history and status checks; creates no orders.
+// Connection, preparation, history and status checks; creates no orders.
+// Exercises history deletion with a new random ID that matches no existing order.
 const source=String.raw`import {adminProspects} from './admin-prospects-api.mjs';
 import {adminPostgrid} from './admin-postgrid-api.mjs';
 export default {async fetch(request,env){
@@ -31,7 +32,8 @@ const s=await adminPostgrid(req('postgrid/subject',{reviewProof:qualified.review
 const historyResponse=await adminPostgrid(req('postgrid/history'),env),history=await historyResponse.json();
 const order=(history.orders||[]).find(o=>o.postgridId);let refreshed=false;
 if(order){const response=await adminPostgrid(req('postgrid/refresh',{id:order.id}),env);refreshed=response.ok;}
-return Response.json({connected:true,subjectSucceeded:true,historySucceeded:historyResponse.ok,recordDetailsAvailable:!!history.orders?.[0]?.sender,testOnly:(history.orders||[]).every(o=>o.mode==='test'),refreshSucceeded:!order||refreshed},{headers:{'Cache-Control':'private, no-store'}});
+const deletion=await adminPostgrid(req('postgrid/delete',{confirmed:true,ids:[crypto.randomUUID()]}),env),deleted=await deletion.json();
+return Response.json({connected:true,subjectSucceeded:true,historySucceeded:historyResponse.ok,deletionSucceeded:deletion.ok&&deleted.deletedIds?.length===0,recordDetailsAvailable:!!history.orders?.[0]?.sender,testOnly:(history.orders||[]).every(o=>o.mode==='test'),refreshSucceeded:!order||refreshed},{headers:{'Cache-Control':'private, no-store'}});
 }};`;
 try{
 writeFileSync(join(temp,'probe.mjs'),source,{mode:0o600});writeFileSync(join(temp,'admin-prospects-api.mjs'),readFileSync('admin-prospects-api.js'));writeFileSync(join(temp,'admin-postgrid-api.mjs'),readFileSync('admin-postgrid-api.js','utf8').replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'"));
@@ -41,6 +43,6 @@ writeFileSync(join(temp,'wrangler.json'),JSON.stringify(config),{mode:0o600});le
 try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config',join(temp,'wrangler.json')],{encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch{throw Error('Test preview upload failed; private config output withheld');}
 const preview=output.match(/Version Preview URL:\s*(https:\/\/[^\s]+)/i)?.[1];assert(preview);
 const r=await fetch(preview+'/test',{method:'POST',headers:{Authorization:'Bearer '+nonce},signal:AbortSignal.timeout(240000)});assert(r.ok,'Test preview unavailable');const result=await r.json();console.log('POSTGRID_RUNTIME_TEST',JSON.stringify(result));
-for(const key of ['connected','subjectSucceeded','historySucceeded','recordDetailsAvailable','testOnly','refreshSucceeded'])assert.equal(result[key],true,'Runtime check failed: '+key);
+for(const key of ['connected','subjectSucceeded','historySucceeded','deletionSucceeded','recordDetailsAvailable','testOnly','refreshSucceeded'])assert.equal(result[key],true,'Runtime check failed: '+key);
 assert.equal(await active(),before);console.log('Production unchanged. No physical mail; no credentials or listing records exported.');
 }finally{rmSync(temp,{recursive:true,force:true});}

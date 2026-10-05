@@ -42,7 +42,7 @@ async function pg(env,path,options={}){
  }return r.json();
 }
 function safeUrl(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password?u.href:null;}catch{return null;}}
-function orderView(row){return {id:row.id,listingKey:row.listing_key,property:row.property_address,recipient:row.recipient,sender:row.sender,printOptions:row.print_options,updatedAt:row.updated_at,pdfName:row.pdf_name,status:row.status,postgridId:row.postgrid_id,previewUrl:safeUrl(row.preview_url),createdAt:row.created_at,error:row.error,mode:'test'};}
+function orderView(row){return {id:row.id,listingKey:row.listing_key,property:row.property_address,recipient:row.recipient,sender:row.sender,printOptions:row.print_options,updatedAt:row.updated_at,deletedAt:row.deleted_at||null,pdfName:row.pdf_name,status:row.status,postgridId:row.postgrid_id,previewUrl:safeUrl(row.preview_url),createdAt:row.created_at,error:row.error,mode:'test'};}
 async function update(env,id,values){return (await db(env,'?id=eq.'+encodeURIComponent(id),'PATCH',{...values,updated_at:new Date().toISOString()}))[0];}
 async function create(body,env){
  testKey(env);if(body.mode&&body.mode!=='test')fail('Live sending is disabled.',403);if(body.confirmed!==true)fail('Review the recipient and PDF before creating a test order.');
@@ -51,9 +51,9 @@ async function create(body,env){
  const options={color:body.color,doubleSided:body.doubleSided,addressPlacement:'insert_blank_page',size:'us_letter'};
  let subject;try{subject=await mailingSubject(body.reviewProof,env);}catch{fail('The property could not be reverified. Refresh the expired/terminated search before mailing.',409);}
  const digest=await hash(bytes),fingerprint=await hash(JSON.stringify(['test',subject.propertyIdentity,to,from,digest,options]));
- const prior=await db(env,'?fingerprint=eq.'+fingerprint+'&limit=1');if(prior.length&&prior[0].status!=='rejected')return {ok:true,duplicate:true,order:orderView(prior[0])};
+ const prior=await db(env,'?fingerprint=eq.'+fingerprint+'&limit=1');if(prior.length&&prior[0].status!=='rejected'){const existing=prior[0].deleted_at?await update(env,prior[0].id,{deleted_at:null}):prior[0];return {ok:true,duplicate:true,order:orderView(existing)};}
  const id=prior[0]?.id||crypto.randomUUID(),pdfName=String(body.pdfName||'letter.pdf').replace(/[^a-zA-Z0-9 ._-]/g,'_').slice(0,120);
- const reserved=prior.length?await db(env,'?id=eq.'+encodeURIComponent(id)+'&status=eq.rejected','PATCH',{status:'submitting',error:null,updated_at:new Date().toISOString()}):await db(env,'?on_conflict=fingerprint','POST',{id,fingerprint,mode:'test',listing_key:subject.listingKey,property_address:subject.address,recipient:to,sender:from,pdf_name:pdfName,pdf_hash:digest,print_options:options,status:'submitting'},'resolution=ignore-duplicates,return=representation');
+ const reserved=prior.length?await db(env,'?id=eq.'+encodeURIComponent(id)+'&status=eq.rejected','PATCH',{status:'submitting',error:null,deleted_at:null,updated_at:new Date().toISOString()}):await db(env,'?on_conflict=fingerprint','POST',{id,fingerprint,mode:'test',listing_key:subject.listingKey,property_address:subject.address,recipient:to,sender:from,pdf_name:pdfName,pdf_hash:digest,print_options:options,status:'submitting'},'resolution=ignore-duplicates,return=representation');
  if(!reserved.length){const existing=await db(env,'?fingerprint=eq.'+fingerprint+'&limit=1');return {ok:true,duplicate:true,order:orderView(existing[0])};}
  const form=new FormData();for(const [prefix,c]of [['to',to],['from',from]])for(const [k,v]of Object.entries(c))form.append(prefix+'['+k+']',v);
  for(const [k,v]of Object.entries(options))form.append(k,String(v));form.append('pdf',new Blob([bytes],{type:'application/pdf'}),pdfName);form.append('description','THM TEST '+id);form.append('metadata[thm_job_id]',id);form.append('metadata[thm_listing_key]',subject.listingKey);
@@ -71,9 +71,16 @@ export async function adminPostgrid(request,env){
   if(path.endsWith('/status')){testKey(env);await db(env,'?select=id&limit=1');await pg(env,'/letters?limit=1');return json({ok:true,mode:'test',connected:true,liveEnabled:false});}
   if(path.endsWith('/subject')){let s;try{s=await mailingSubject(body.reviewProof,env);}catch{fail('Refresh the search: this property could not be reverified.',409);}return json({ok:true,listingKey:s.listingKey,address:s.mailingAddress,reviewProof:s.reviewProof});}
   if(path.endsWith('/create'))return json(await create(body,env));
-  if(path.endsWith('/history'))return json({ok:true,orders:(await db(env,'?mode=eq.test&order=created_at.desc&limit=100')).map(orderView)});
+  if(path.endsWith('/history'))return json({ok:true,orders:(await db(env,'?mode=eq.test&deleted_at=is.null&order=created_at.desc&limit=100')).map(orderView)});
+  if(path.endsWith('/delete')){
+   if(body.confirmed!==true)fail('Confirm deletion from mailing history.');
+   if(!Array.isArray(body.ids)||!body.ids.length||body.ids.length>100||body.ids.some(id=>typeof id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)))fail('Choose up to 100 valid history records.');
+   const ids=[...new Set(body.ids)],now=new Date().toISOString();
+   const removed=await db(env,'?mode=eq.test&deleted_at=is.null&id=in.('+ids.join(',')+')&select=id','PATCH',{deleted_at:now,updated_at:now});
+   return json({ok:true,deletedIds:removed.map(row=>row.id)});
+  }
   if(path.endsWith('/refresh')){
-   if(!/^[a-f0-9-]{36}$/.test(body.id||''))fail('Invalid order.');const rows=await db(env,'?id=eq.'+body.id+'&mode=eq.test&limit=1'),row=rows[0];if(!row)fail('Order not found.',404);
+   if(!/^[a-f0-9-]{36}$/.test(body.id||''))fail('Invalid order.');const rows=await db(env,'?id=eq.'+body.id+'&mode=eq.test&deleted_at=is.null&limit=1'),row=rows[0];if(!row)fail('Order not found.',404);
    if(!row.postgrid_id)return json({ok:true,order:orderView(row)});
    const letter=await pg(env,'/letters/'+encodeURIComponent(row.postgrid_id));if(letter.live!==false)fail('Expected a test order.',502);
    const saved=await update(env,row.id,{status:letter.status||row.status,preview_url:safeUrl(letter.url)||row.preview_url});return json({ok:true,order:orderView(saved)});

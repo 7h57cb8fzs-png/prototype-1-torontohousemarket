@@ -66,3 +66,20 @@ test('admin selection, remarks notes, filtering, estimate gate and sign-out are 
  d.getElementById('prospectConditionFilter').value='no_obvious_renovation';d.getElementById('prospectConditionFilter').dispatchEvent(new w.Event('change'));assert.equal(d.querySelectorAll('#prospectRows tr').length,0);
  app.clear();assert.equal(d.getElementById('prospectPhotoEstimate').hidden,true);assert.equal(d.getElementById('prospectSelectionCount').textContent,'0 selected');dom.window.close();
 });
+
+test('verified listing bulk selection works as results arrive and never selects unverified records',async()=>{
+ const {JSDOM}=await import(process.env.ADMIN_TEST_JSDOM_PATH||'/tmp/thm-test-deps/node_modules/jsdom/lib/api.js');
+ const dom=new JSDOM(readFileSync(new URL('../admin.html',import.meta.url),'utf8'),{runScripts:'outside-only'}),w=dom.window,d=w.document,$=id=>d.getElementById(id);let release;
+ w.eval(readFileSync(new URL('../admin-prospects.js',import.meta.url),'utf8').replace(/^export /gm,'')+';window.init=initAdminProspects');
+ const record=key=>({result:key==='U'?'unverified':'qualified',listingKey:key,reviewProof:'proof-'+key,address:key+' Road',city:'Toronto',status:'Expired',eventDate:'2026-09-15'});
+ const post=async(path,b)=>path.endsWith('/search')?{pageId:'one',scanned:3,candidates:['A','B','U'].map(key=>({listingKey:key,proof:key,address:key})),complete:true,excluded:{}}:b.proof==='B'?new Promise(r=>release=()=>r(record('B'))):record(b.proof);
+ const app=w.init({$,post,esc:String,money:String});
+ try{
+  const scan=app.start();for(let i=0;i<20&&!release;i++)await new Promise(r=>setTimeout(r,1));assert.equal(typeof release,'function');
+  assert.equal($('prospectSelectAll').disabled,false);$('prospectSelectAll').click();assert.equal(app.getSelected().length,1);assert.equal(app.getSelected()[0].listingKey,'A');
+  release();await scan;assert.equal(app.getSelected().length,1,'New arrivals are not silently selected');assert.equal($('prospectSelectCheckbox').indeterminate,true);
+  $('prospectSelectAll').click();assert.equal(app.getSelected().length,2);assert.equal($('prospectSelectCheckbox').checked,true);
+  $('prospectSearch').value='B Road';$('prospectSearch').dispatchEvent(new w.Event('input'));$('prospectSelectCheckbox').checked=false;$('prospectSelectCheckbox').dispatchEvent(new w.Event('change'));assert.equal(app.getSelected().length,1);assert.equal(app.getSelected()[0].listingKey,'A');
+  $('prospectSelectAll').click();assert.equal(app.getSelected().length,2,'Select all verified includes filtered-out verified rows');$('prospectClearSelected').click();assert.equal(app.getSelected().length,0);
+ }finally{app.clear();dom.window.close();}
+});

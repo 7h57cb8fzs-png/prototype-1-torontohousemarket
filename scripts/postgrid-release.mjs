@@ -6,10 +6,10 @@ import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',live='https://torontohousemarket.com';
 const root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
-const expectedVersion='9e9a9254-69c8-4d7b-8681-f81d02b37ab8',expectedHash='bf69231bba3db7074320186b2920983a16639146a363d3ea760157197b1fb0fa';
+const expectedVersion='e7f52561-e3c4-45de-a612-8328540abaa4',expectedHash='bf69231bba3db7074320186b2920983a16639146a363d3ea760157197b1fb0fa';
 const hash=v=>createHash('sha256').update(v).digest('hex');
-const beforeRef=execFileSync('git',['rev-parse','e38228b2b6618f3804d2426703ee576aea8dd0f9'],{encoding:'utf8'}).trim();
-const allowed=new Set(['.assetsignore','admin.html','admin-workspace.js','admin-prospects.js','admin-prospects-api.js','admin-postgrid-api.js','admin-postgrid.js','admin-postgrid.css','tests/admin-postgrid.test.mjs','tests/admin-postgrid.visual.cjs','tests/admin-prospects.test.mjs','supabase/manual/admin-postgrid-orders.sql','scripts/postgrid-seller-inspect.mjs','scripts/postgrid-inspect.mjs','scripts/postgrid-runtime-test.mjs','scripts/postgrid-release.mjs','.github/workflows/postgrid-test.yml']);
+const beforeRef=execFileSync('git',['rev-parse','01118780c883c6cda82192953d8813d49ca9d41b'],{encoding:'utf8'}).trim();
+const allowed=new Set(['.assetsignore','admin.html','admin-workspace.js','admin-prospects.js','admin-prospects-api.js','admin-postgrid-api.js','admin-postgrid.js','admin-postgrid.css','tests/admin-postgrid.test.mjs','tests/admin-condition.test.mjs','tests/admin-postgrid.visual.cjs','tests/admin-prospects.test.mjs','supabase/manual/admin-postgrid-orders.sql','scripts/postgrid-seller-inspect.mjs','scripts/postgrid-inspect.mjs','scripts/postgrid-runtime-test.mjs','scripts/postgrid-release.mjs','.github/workflows/postgrid-test.yml']);
 for(const f of execFileSync('git',['diff','--name-only',beforeRef,'HEAD'],{encoding:'utf8'}).trim().split('\n').filter(Boolean))assert(allowed.has(f),'Out-of-scope change: '+f);
 assert.equal(fs.readFileSync('worker-v22.js','utf8'),execFileSync('git',['show',beforeRef+':worker-v22.js'],{encoding:'utf8'}),'Existing worker behavior changed');
 async function cf(p,method='GET',body){const r=await fetch(root+p,{method,headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000)});const d=await r.json();assert(r.ok&&d.success,'Cloudflare request failed '+r.status);return d.result;}
@@ -46,7 +46,7 @@ assert.deepEqual(names(after),names(before));for(const [name,text] of Object.ent
 async function verify(base){
  assetCheck++; // Use a fresh cache key after promotion; preflight fetched the old deployment.
  for(const f of assets)assert.equal(hash(await bytes(base,f)),hash(fs.readFileSync(f)),'Asset mismatch: '+f);
- for(const p of ['/api/admin/postgrid/status','/api/admin/postgrid/create','/api/admin/postgrid/history','/api/admin/prospects/condition','/api/admin/prospects/options','/api/admin/prospects/search','/api/admin/prospects/verify','/api/admin/ops/counts']){const r=await fetch(base+p,{method:!p.includes('/ops/')?'POST':'GET',headers:{'Content-Type':'application/json'},...(!p.includes('/ops/')?{body:'{}'}:{}),signal:AbortSignal.timeout(20000)});assert.equal(r.status,401,'Admin auth failed: '+p);}
+ for(const p of ['/api/admin/postgrid/status','/api/admin/postgrid/create','/api/admin/postgrid/history','/api/admin/postgrid/delete','/api/admin/prospects/condition','/api/admin/prospects/options','/api/admin/prospects/search','/api/admin/prospects/verify','/api/admin/ops/counts']){const r=await fetch(base+p,{method:!p.includes('/ops/')?'POST':'GET',headers:{'Content-Type':'application/json'},...(!p.includes('/ops/')?{body:'{}'}:{}),signal:AbortSignal.timeout(20000)});assert.equal(r.status,401,'Admin auth failed: '+p);}
  const v=await fetch(base+'/api/version').then(r=>r.json());assert.equal(v.version,'version-7.6-luna-external-lookup-20260927');
  for(const f of ['admin-postgrid-api.js','admin-prospects-api.js','scripts/postgrid-runtime-test.mjs'])assert.equal((await fetch(base+'/'+f)).status,404,'Server source exposed');
  console.log('VERIFY',JSON.stringify({base,assets:assets.length,publicCodeUnchanged:true,adminAuthRequired:true}));
