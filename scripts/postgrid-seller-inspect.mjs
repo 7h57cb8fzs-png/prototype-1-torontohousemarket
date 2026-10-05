@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
 async function cf(path){const r=await fetch(root+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});const d=await r.json();assert(r.ok&&d.success,'Cloudflare read failed');return d.result;}
 async function active(){const d=await cf('/workers/scripts/'+worker+'/deployments');return d.deployments[0].versions[0].version_id;}
-const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'9e9a9254-69c8-4d7b-8681-f81d02b37ab8');
+const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'e7f52561-e3c4-45de-a612-8328540abaa4');
 const nonce=randomBytes(32).toString('hex'),temp=mkdtempSync(join(tmpdir(),'thm-postgrid-probe-'));
 // A never-promoted, ten-minute test harness. All credentials remain in Worker bindings.
 // Read-only seller-field metadata and presence counts. No names or addresses are logged.
@@ -22,11 +22,11 @@ for(const binding of ['AMPRE_VOW_TOKEN','AMPRE_TOKEN']){
  const meta=await fetch(base+'$metadata',{headers,redirect:'manual'});const xml=await meta.text();
  const block=xml.match(/<EntityType Name="Property"[^>]*>([\s\S]*?)<\/EntityType>/)?.[1]||'';
  const fields=[...block.matchAll(/<Property Name="([^"]+)"/g)].map(m=>m[1]).filter(n=>/seller|owner|vendor/i.test(n));
- result[binding]={http:meta.status,fields};
+ result[binding]={http:meta.status,fields,nameFields:[...block.matchAll(/<Property Name="([^"]+)"/g)].map(m=>m[1]).filter(n=>/name/i.test(n)),relatedEntities:[...xml.matchAll(/<EntityType Name="([^"]+)"/g)].map(m=>m[1]).filter(n=>/seller|owner|party|contact/i.test(n))};
  if(!meta.ok)continue;
  const url=base+'Property?'+new URLSearchParams({'$top':'10','$filter':"(MlsStatus eq 'Expired' or MlsStatus eq 'Terminated') and OccupantType eq 'Owner'",'$orderby':'ModificationTimestamp desc'});
  const r=await fetch(url.replaceAll('+','%20'),{headers,redirect:'manual'});const data=await r.json();
- result[binding].sampleStatus=r.status;result[binding].sampleCount=data.value?.length||0;
+ result[binding].sampleStatus=r.status;result[binding].sampleCount=data.value?.length||0;result[binding].recordNameFields=[...new Set((data.value||[]).flatMap(row=>Object.keys(row)))].filter(n=>/name|seller|owner|vendor/i.test(n));
  result[binding].populatedFields=fields.filter(n=>(data.value||[]).some(row=>typeof row[n]==='string'&&row[n].trim()));
 }
 return Response.json(result,{headers:{'Cache-Control':'private, no-store'}});
