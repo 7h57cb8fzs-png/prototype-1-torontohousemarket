@@ -20,7 +20,7 @@ for(const c of (data.candidates||[]).slice(0,10)){
  const r=await adminProspects(req('prospects/verify',{proof:c.proof}),env),d=await r.json();if(d.result!=='qualified')continue;
  const response=await adminPostgrid(req('postgrid/presentation',{reviewProof:d.reviewProof}),env),report=await response.json();
  if(!response.ok){attempts.push({http:response.status,error:report.error});if(attempts.length>=3)break;continue;}
- const photos=[];for(const sale of report.sales){if(!sale.photoUrl){photos.push({present:false});continue;}try{const r=await fetch(sale.photoUrl,{redirect:'manual',signal:AbortSignal.timeout(10000)});photos.push({present:true,http:r.status,type:r.headers.get('content-type'),cors:r.headers.get('access-control-allow-origin')});await r.body?.cancel();}catch{photos.push({present:true,available:false});}}
+ const photos=report.sales.map(s=>({present:!!s.photoData,encodedLength:s.photoData?.length||0}));
  return Response.json({ok:true,sales:report.sales.length,matchingListing:report.listingKey===d.listingKey,qrPrefillsCorrectAddress:new URL(report.sellerUrl).searchParams.get('address')===report.fullAddress,photos,attempts});
 }
 return Response.json({ok:false,candidates:data.candidates?.length||0,attempts,error:data.error});
@@ -33,6 +33,6 @@ writeFileSync(join(temp,'wrangler.json'),JSON.stringify(config),{mode:0o600});le
 try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config',join(temp,'wrangler.json')],{encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch{throw Error('Test preview upload failed; private config output withheld');}
 const preview=output.match(/Version Preview URL:\s*(https:\/\/[^\s]+)/i)?.[1];assert(preview);
 const r=await fetch(preview+'/test',{method:'POST',headers:{Authorization:'Bearer '+nonce},signal:AbortSignal.timeout(240000)});assert(r.ok,'Test preview unavailable');const result=await r.json();console.log('PRESENTATION_RUNTIME_TEST',JSON.stringify(result));
-assert.equal(result.ok,true,'No report generated from the live read-only feed');assert.equal(result.matchingListing,true);assert.equal(result.qrPrefillsCorrectAddress,true);assert.equal(result.sales,3);
+assert.equal(result.ok,true,'No report generated from the live read-only feed');assert.equal(result.matchingListing,true);assert.equal(result.qrPrefillsCorrectAddress,true);assert.equal(result.sales,3);assert(result.photos.every(p=>p.present),'Live sold images were unavailable');
 assert.equal(await active(),before);console.log('Production unchanged. No physical mail; no credentials or listing records exported.');
 }finally{rmSync(temp,{recursive:true,force:true});}

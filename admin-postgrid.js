@@ -7,7 +7,7 @@ export function initAdminPostgrid({$,post,esc,getSelected,onOpenHistory,onNewMai
  <p id="mailStatus" role="status" aria-live="polite"></p><p id="mailError" class="mail-error" role="alert"></p>
  <form id="mailForm" hidden><fieldset id="mailFields"><legend class="sr-only">Prepare test mail</legend>
  <section class="mail-step"><div class="mail-step-heading"><span>1</span><div><h3>Choose your mailing</h3><p>Every selected property keeps its own recipient name and address.</p></div></div>
- <div class="mail-mode-options"><label class="mail-mode-option"><input type="radio" name="mailingMode" id="mailModeMass" value="mass" checked><span><strong>Mass mailing</strong><small>Use the same PDF for every selected property.</small></span></label><label class="mail-mode-option"><input type="radio" name="mailingMode" id="mailModeCustom" value="custom"><span><strong>Customized letters</strong><small>Choose a different PDF for each property.</small></span></label></div>
+ <div class="mail-mode-options"><label class="mail-mode-option"><input type="radio" name="mailingMode" id="mailModeMass" value="mass" checked><span><strong>Mass mailing</strong><small>Use the same PDF for every selected property.</small></span></label><label class="mail-mode-option"><input type="radio" name="mailingMode" id="mailModeCustom" value="custom"><span><strong>Customized letters</strong><small>Generate the approved report or upload your own PDF.</small></span></label></div>
  <div id="mailSharedUpload" class="mail-upload"><label for="mailCommonPdf">PDF for all selected properties</label><input type="file" id="mailCommonPdf" accept="application/pdf"><p id="mailCommonPreview"></p></div>
  <p class="mail-help">8.5 × 11-inch pages · PDF up to 8 MB · a separate address page is added.</p>
  <div class="mail-options"><label><input type="checkbox" id="mailColor" checked> Colour</label><label><input type="checkbox" id="mailDuplex" checked> Double-sided</label></div></section>
@@ -33,17 +33,17 @@ export function initAdminPostgrid({$,post,esc,getSelected,onOpenHistory,onNewMai
  const selected=()=>getSelected().map(r=>({...r}));
  function resetReview(){$('mailConfirm').checked=false;}
  function revoke(){urls.forEach(u=>URL.revokeObjectURL(u));urls=[];}
- function preview(file){if(!file)return '';const url=URL.createObjectURL(file);urls.push(url);return `<a href="${url}" target="_blank" rel="noopener noreferrer">Preview uploaded PDF · ${esc(file.name)}</a>`;}
+ function preview(file){if(!file)return '';const url=URL.createObjectURL(file);urls.push(url);return `<a href="${url}" target="_blank" rel="noopener noreferrer">Preview PDF · ${esc(file.name)}</a>`;}
  function checkFile(file){if(file&&(!/\.pdf$/i.test(file.name)||file.size>8*1024*1024||file.size<20))throw Error('Choose a PDF of 8 MB or less.');return file||null;}
- function setBusy(value){busy=value;for(const id of ['mailPrepare','mailConnection'])$(id).disabled=!!value;$('mailFields').disabled=!!value;$('mailStop').hidden=!['prepare','send'].includes(value);}
+ function setBusy(value){busy=value;for(const id of ['mailPrepare','mailConnection'])$(id).disabled=!!value;$('mailFields').disabled=!!value;$('mailStop').hidden=!['prepare','send','generate'].includes(value);}
  function showFiles(){
   revoke();$('mailSharedUpload').hidden=mode()!=='mass';$('mailCommonPreview').innerHTML=mode()==='mass'?preview(shared):'';
-  entries.forEach((e,i)=>{const box=$('mail-custom-'+i);if(box)box.hidden=mode()!=='custom';const node=$('mail-file-'+i);if(node)node.innerHTML=mode()==='custom'?(preview(e.file)||'Choose the PDF prepared for this property.'):(shared?esc(shared.name)+' · shared PDF':'The shared PDF will be used for this recipient.');});
+  entries.forEach((e,i)=>{const box=$('mail-custom-'+i);if(box)box.hidden=mode()!=='custom';const node=$('mail-file-'+i);if(node)node.innerHTML=mode()==='custom'?((preview(e.file)+(e.presentationNote?'<br>'+esc(e.presentationNote):''))||'Generate a customized report, or upload a PDF for this property.'):(shared?esc(shared.name)+' · shared PDF':'The shared PDF will be used for this recipient.');});
   $('mailReadyCount').textContent=entries.length+' '+(entries.length===1?'recipient':'recipients')+' · '+(mode()==='mass'?'same PDF':'individual PDFs');resetReview();
  }
  function saveDrafts(){entries.forEach((e,i)=>{const box=$('mail-to-'+i);if(box)e.address=readContact(box);});}
  function renderRecipients(){
-  $('mailRecipients').innerHTML=entries.map((e,i)=>`<article class="mail-recipient"><header><div><span class="mail-recipient-number">${i+1}</span><strong>${esc(e.row.address)}</strong><small>${esc(e.row.listingKey)}</small></div><span class="mail-name-note">${e.address.firstName||e.address.companyName?'Review recipient':'Recipient name required'}</span></header><div id="mail-to-${i}" class="mail-contact">${contactForm('mail-to-'+i,e.address)}</div><div id="mail-custom-${i}" class="mail-upload"><label for="mail-pdf-${i}">PDF for this property</label><input id="mail-pdf-${i}" type="file" data-mail-file="${i}" accept="application/pdf"></div><p id="mail-file-${i}" class="mail-help"></p></article>`).join('');
+  $('mailRecipients').innerHTML=entries.map((e,i)=>`<article class="mail-recipient"><header><div><span class="mail-recipient-number">${i+1}</span><strong>${esc(e.row.address)}</strong><small>${esc(e.row.listingKey)}</small></div><span class="mail-name-note">${e.address.firstName||e.address.companyName?'Review recipient':'Recipient name required'}</span></header><div id="mail-to-${i}" class="mail-contact">${contactForm('mail-to-'+i,e.address)}</div><div id="mail-custom-${i}" class="mail-upload"><button type="button" class="primary" data-mail-generate="${i}">Generate customized presentation</button><p class="mail-help">Approved two-page design · property QR · three nearby sales · Mehrdad’s contact details.</p><label for="mail-pdf-${i}">Or upload your own PDF</label><input id="mail-pdf-${i}" type="file" data-mail-file="${i}" accept="application/pdf"></div><p id="mail-file-${i}" class="mail-help"></p></article>`).join('');
   $('mailForm').hidden=!entries.length;showFiles();
  }
  async function connection(){const epoch=generation,info=await call('status');if(epoch!==generation)return;$('mailConnectionStatus').textContent=info.connected?'Connected · test orders only':'PostGrid is not connected.';}
@@ -72,7 +72,23 @@ export function initAdminPostgrid({$,post,esc,getSelected,onOpenHistory,onNewMai
  $('mailConnection').onclick=async()=>{if(busy)return;const epoch=generation;setBusy('connection');error('');try{await connection();}catch(e){if(epoch===generation)error(e.message);}finally{if(epoch===generation)setBusy('');}};
  $('mailStop').onclick=()=>{stop=true;$('mailStatus').textContent='Stopping after the current request finishes.';};
  $('mailCommonPdf').onchange=e=>{try{shared=checkFile(e.target.files[0]);error('');showFiles();}catch(err){shared=null;e.target.value='';showFiles();error(err.message);}};
- $('mailRecipients').onchange=e=>{const index=e.target.dataset.mailFile;if(index!==undefined){try{entries[Number(index)].file=checkFile(e.target.files[0]);error('');showFiles();}catch(err){entries[Number(index)].file=null;e.target.value='';showFiles();error(err.message);}}else resetReview();};
+ async function generateReport(index){
+  if(busy||mode()!=='custom')return;const entry=entries[index];if(!entry)return;
+  saveDrafts();const epoch=generation;setBusy('generate');stop=false;error('');resetReview();
+  $('mailStatus').textContent='Finding nearby sold examples and generating the presentation for '+entry.row.address+'…';
+  try{
+   const data=await call('presentation',{reviewProof:entry.reviewProof});if(stop||epoch!==generation||entries[index]!==entry)return;
+   if(data.listingKey!==entry.row.listingKey)throw Error('The property changed. Refresh your selection before generating.');
+   const {generatePresentation}=await import('./admin-presentation-pdf.js?v=1');const result=await generatePresentation(data);
+   if(stop||epoch!==generation||entries[index]!==entry)return;
+   entry.file=checkFile(result.file);entry.reviewProof=data.reviewProof;
+   entry.presentationNote='Generated for '+data.address+' · '+new Date(data.generatedAt).toLocaleString('en-CA',{timeZone:'America/Toronto'})+(result.missingPhotos.length?' · '+result.missingPhotos.length+' listing photos unavailable. Check the preview.':' · 3 nearby sold examples.');
+   $('mail-pdf-'+index).value='';showFiles();$('mailStatus').textContent='Your customized presentation is ready. Open Preview PDF and review it before creating a test order.';
+  }catch(e){if(epoch===generation)error(e.message);}
+  finally{if(epoch===generation){setBusy('');if(stop)$('mailStatus').textContent='Generation stopped. No new PDF was attached.';}}
+ }
+ $('mailRecipients').onclick=e=>{const button=e.target.closest('[data-mail-generate]');if(button)return generateReport(Number(button.dataset.mailGenerate));};
+ $('mailRecipients').onchange=e=>{const index=e.target.dataset.mailFile;if(index!==undefined){try{entries[Number(index)].file=checkFile(e.target.files[0]);entries[Number(index)].presentationNote='';error('');showFiles();}catch(err){entries[Number(index)].file=null;e.target.value='';showFiles();error(err.message);}}else resetReview();};
  $('mailRecipients').oninput=e=>{resetReview();const card=e.target.closest('.mail-recipient');if(card){const recipient=readContact(card);card.querySelector('.mail-name-note').textContent=recipient.firstName||recipient.companyName?'Review recipient':'Recipient name required';}};$('mailSender').oninput=resetReview;$('mailColor').onchange=resetReview;$('mailDuplex').onchange=resetReview;
  for(const id of ['mailModeMass','mailModeCustom'])$(id).onchange=showFiles;
  const base64=file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('Could not read the PDF.'));reader.readAsDataURL(file);});

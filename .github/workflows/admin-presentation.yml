@@ -23,7 +23,28 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/postgrid-inspect.mjs
       - name: Verify read-only report generation with MLS data
-        if: "contains(github.event.head_commit.message, '[presentation-probe]')"
+        if: "contains(github.event.head_commit.message, '[presentation-probe]') || contains(github.event.head_commit.message, '[presentation-preview]')"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/presentation-runtime-test.mjs
+      - name: Install isolated verification dependencies
+        if: "contains(github.event.head_commit.message, '[presentation-preview]') || contains(github.event.head_commit.message, '[presentation-publish]')"
+        run: |
+          npm install --prefix /tmp/thm-presentation-deps --no-save --package-lock=false jsdom@27.0.0 playwright@1.51.1
+          /tmp/thm-presentation-deps/node_modules/.bin/playwright install --with-deps chromium
+      - name: Verify generation and existing mailing safeguards
+        if: "contains(github.event.head_commit.message, '[presentation-preview]') || contains(github.event.head_commit.message, '[presentation-publish]')"
+        env:
+          ADMIN_TEST_JSDOM_PATH: /tmp/thm-presentation-deps/node_modules/jsdom/lib/api.js
+        run: node --test tests/admin-presentation.test.mjs tests/admin-postgrid.test.mjs tests/admin-prospects.test.mjs tests/admin-condition.test.mjs tests/admin-workspace.test.mjs
+      - name: Verify presentation, mobile layout and stale selection
+        if: "contains(github.event.head_commit.message, '[presentation-preview]') || contains(github.event.head_commit.message, '[presentation-publish]')"
+        env:
+          PRESENTATION_TEST_PHOTO: marketing/thm-team-v1.png
+        run: node tests/admin-presentation.visual.cjs
+      - name: Verify and release customized presentation
+        if: "contains(github.event.head_commit.message, '[presentation-preview]') || contains(github.event.head_commit.message, '[presentation-publish]')"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PUBLISH: ${{ contains(github.event.head_commit.message, '[presentation-publish]') }}
+        run: node scripts/presentation-release.mjs

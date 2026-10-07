@@ -356,7 +356,20 @@ export async function mailingPresentation(reviewProof,env){
  while(next&&pages++<3){const data=await feed(env,trusted(next));rows.push(...pageData(data));next=data['@odata.nextLink'];if(presentationSales(s,rows).length===3)break;}
  const sales=presentationSales(s,rows);
  if(sales.length<3)throw new Unavailable(`Only ${sales.length} eligible nearby sales were found in the last 180 days. Three are needed for this template. You can still upload a customized PDF.`,409);
- for(const sale of sales){try{const photos=await assessmentMedia(env,sale.listingKey);sale.photoKey=photos[0]?.key||null;sale.photoUrl=photos[0]?.url||null;}catch{sale.photoKey=null;}}
+ for(const sale of sales){
+  sale.photoData=null;
+  try{
+   const photos=await assessmentMedia(env,sale.listingKey),photo=photos[0];if(!photo)continue;
+   // URL comes only from the authenticated MLS Media feed, never from a caller.
+   // Do not forward MLS credentials or follow redirects to another destination.
+   const r=await fetch(photo.url,{redirect:'error',signal:AbortSignal.timeout(12000)}),type=r.headers.get('content-type')?.split(';')[0].trim();
+   if(!r.ok||!['image/jpeg','image/png','image/webp'].includes(type)||Number(r.headers.get('content-length'))>2*1024*1024){await r.body?.cancel();continue;}
+   const reader=r.body?.getReader();if(!reader)continue;const chunks=[];let size=0;
+   for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>2*1024*1024){await reader.cancel();throw Error('Photo exceeds size limit');}chunks.push(value);}
+   const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
+   let raw='';for(let i=0;i<bytes.length;i+=8192)raw+=String.fromCharCode(...bytes.subarray(i,i+8192));sale.photoData='data:'+type+';base64,'+btoa(raw);
+  }catch{sale.photoData=null;}
+ }
  const a=verified.mailingAddress,fullAddress=[a.addressLine2,a.addressLine1,a.city,a.provinceOrState,a.postalOrZip].filter(Boolean).join(', ');
  return {ok:true,listingKey:verified.listingKey,reviewProof:verified.reviewProof,address:presentationAddress(s),locality:[s.CityRegion,a.city].filter(Boolean).join(' · '),fullAddress,sellerUrl:'https://torontohousemarket.com/seller?'+new URLSearchParams({address:fullAddress}),keyword:clean(s.StreetName).toUpperCase().replace(/[^A-Z0-9 ]/g,'').slice(0,18)||'PLAN',generatedAt:new Date().toISOString(),sales,templateVersion:'approved-v1'};
 }
