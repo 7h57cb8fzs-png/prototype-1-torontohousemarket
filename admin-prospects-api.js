@@ -345,15 +345,30 @@ export function presentationSales(subject,rows,today=torontoDay()){
   const coords=[subject.Latitude,subject.Longitude,r.Latitude,r.Longitude];let distance=null;
   if(coords.every(v=>v!==null&&v!==undefined&&String(v).trim()&&Number.isFinite(Number(v)))){const [a,b,c,d]=coords.map(Number),rad=Math.PI/180;distance=6371*2*Math.asin(Math.min(1,Math.sqrt(Math.sin((c-a)*rad/2)**2+Math.cos(a*rad)*Math.cos(c*rad)*Math.sin((d-b)*rad/2)**2)));if(distance>2)return null;}
   return {listingKey:clean(r.ListingKey),address:presentationAddress(r),price,date,type:clean(r.PropertySubType),sameStreet,sameType:r.PropertySubType===subject.PropertySubType,distance,identity:identity(r)};
- }).filter(Boolean).sort((a,b)=>Number(b.sameStreet)-Number(a.sameStreet)||Number(b.sameType)-Number(a.sameType)||b.date.localeCompare(a.date)||(a.distance??99)-(b.distance??99)).filter(r=>{if(seen.has(r.identity))return false;seen.add(r.identity);return true;}).slice(0,3).map(({identity,sameType,...r})=>r);
+ }).filter(Boolean).sort((a,b)=>Number(b.sameStreet)-Number(a.sameStreet)||b.date.localeCompare(a.date)||Number(b.sameType)-Number(a.sameType)||(a.distance??99)-(b.distance??99)).filter(r=>{if(seen.has(r.identity))return false;seen.add(r.identity);return true;}).slice(0,3).map(({identity,sameType,...r})=>r);
 }
 export async function mailingPresentation(reviewProof,env){
  const verified=await mailingSubject(reviewProof,env,true),s=verified.listing;
  if(!s.City||!s.StreetName||!s.PropertyType)throw new Unavailable('This listing does not have enough location information for a customized presentation.',409);
- const local=[`StreetName eq ${quoted(s.StreetName)}`,...(clean(s.CityRegion)?[`CityRegion eq ${quoted(s.CityRegion)}`]:[])].join(' or ');
- const params=new URLSearchParams({'$filter':`City eq ${quoted(s.City)} and PropertyType eq ${quoted(s.PropertyType)} and TransactionType eq 'For Sale' and (MlsStatus eq 'Sold' or StandardStatus eq 'Closed') and (${local})`,'$orderby':'PurchaseContractDate desc','$top':'500'});
- let next=BASE+'Property?'+params,rows=[],pages=0;
- while(next&&pages++<3){const data=await feed(env,trusted(next));rows.push(...pageData(data));next=data['@odata.nextLink'];if(presentationSales(s,rows).length===3)break;}
+ // Project only report fields: full MLS records can exceed the bounded response size.
+ const {fields}=await schema(env);
+ const wanted=['ListingKey','MlsStatus','StandardStatus','TransactionType','PropertyType','PropertySubType','StreetNumber','StreetName','StreetSuffix','StreetDirPrefix','StreetDirSuffix','UnitNumber','City','CityRegion','Latitude','Longitude','PurchaseContractDate','SoldDate','CloseDate','ClosePrice','SoldPrice','InternetEntireListingDisplayYN','InternetAddressDisplayYN','DDFEntireListingDisplayYN'];
+ const select=wanted.filter(name=>fields.has(name));
+ if(!select.includes('ClosePrice')&&!select.includes('SoldPrice'))throw new Unavailable('The connected MLS feed does not provide sold prices for this report.',409);
+ const streetScope=['StreetName','StreetSuffix','StreetDirPrefix','StreetDirSuffix'].filter(k=>clean(s[k])).map(k=>`${k} eq ${quoted(s[k])}`).join(' and ');
+ const scopes=[streetScope,...(clean(s.CityRegion)?[`CityRegion eq ${quoted(s.CityRegion)}`]:[])];
+ const rows=[];let remainingPages=30;
+ // Search the street first so a busy community cannot hide street sales on later pages.
+ for(const [scopeIndex,scope] of scopes.entries()){
+  const params=new URLSearchParams({'$filter':`City eq ${quoted(s.City)} and PropertyType eq ${quoted(s.PropertyType)} and TransactionType eq 'For Sale' and (MlsStatus eq 'Sold' or StandardStatus eq 'Closed') and (${scope})`,'$orderby':'PurchaseContractDate desc,ListingKey','$top':'50','$select':select.join(',')});
+  let next=BASE+'Property?'+params;
+  while(next&&remainingPages-->0){
+   const data=await feed(env,trusted(next));rows.push(...pageData(data));next=data['@odata.nextLink'];
+   const available=presentationSales(s,rows);if((scopeIndex===0?available.filter(r=>r.sameStreet):available).length===3)break;
+  }
+  if(presentationSales(s,rows).filter(r=>r.sameStreet).length===3)break;
+ }
+
  const sales=presentationSales(s,rows);
  if(sales.length<3)throw new Unavailable(`Only ${sales.length} eligible nearby sales were found in the last 180 days. Three are needed for this template. You can still upload a customized PDF.`,409);
  for(const sale of sales){

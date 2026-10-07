@@ -14,7 +14,7 @@ const fs=require('fs'),http=require('http'),path=require('path'),assert=require(
   await document.getElementById('mailPrepare').onclick();document.getElementById('mailModeCustom').checked=true;document.getElementById('mailModeCustom').onchange();
  },photoData);
  await page.locator('[data-mail-generate="0"]').click();await page.waitForFunction(()=>document.getElementById('mailStatus').textContent.includes('presentation is ready'),null,{timeout:60000});
- assert.equal(await page.evaluate(()=>calls.some(p=>p.endsWith('/create'))),false);assert.equal(await page.locator('#mailConfirm').isChecked(),false);
+ assert.equal(await page.evaluate(()=>calls.some(p=>p.endsWith('/create'))),false);assert.equal(await page.locator('#mailConfirm').isChecked(),false);assert.equal(await page.locator('#mail-file-0 iframe').count(),1);assert(await page.locator('#mail-file-0 iframe').isVisible());assert.equal(await page.locator('#mail-file-0 a[download]').count(),1);
  fs.writeFileSync('/tmp/customized-presentation.pdf',Buffer.from(await page.evaluate(async()=>Array.from(new Uint8Array(await pdfFile.arrayBuffer())))));
  await page.screenshot({path:'/tmp/presentation-panel-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});await page.screenshot({path:'/tmp/presentation-panel-mobile.png',fullPage:true});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  // A response for the removed property cannot attach its report to the new selection.

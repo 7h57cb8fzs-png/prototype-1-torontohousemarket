@@ -1,4 +1,4 @@
-import {initAdminPostgrid} from './admin-postgrid.js?v=5';
+import {initAdminPostgrid} from './admin-postgrid.js?v=6';
 import {initAdminProspects} from './admin-prospects.js?v=7';
 import {initAdminInsights} from './admin-insights.js';
 import {esc,money,human,renovation,sellerFields,valuation,cleanNotes,phone} from './admin-view-model.js';
