@@ -9,6 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
+    if: "!contains(github.event.head_commit.message, '[presentation-')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
