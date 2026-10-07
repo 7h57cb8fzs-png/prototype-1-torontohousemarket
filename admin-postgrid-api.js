@@ -1,5 +1,5 @@
 // Admin-only TEST mail. No live key, paid send, scheduler or public-site changes.
-import {mailingSubject} from './admin-prospects-api.js';
+import {mailingSubject,mailingPresentation} from './admin-prospects-api.js';
 const encoder=new TextEncoder(),API='https://api.postgrid.com/print-mail/v1';
 const MAX_PDF=8*1024*1024,MAX_BODY=12*1024*1024;
 class MailError extends Error{constructor(message,status=400){super(message);this.status=status;}}
@@ -70,6 +70,7 @@ export async function adminPostgrid(request,env){
   const body=await bodyOf(request),path=new URL(request.url).pathname;if(!body||typeof body!=='object'||Array.isArray(body))fail('Invalid request.');
   if(path.endsWith('/status')){testKey(env);await db(env,'?select=id&limit=1');await pg(env,'/letters?limit=1');return json({ok:true,mode:'test',connected:true,liveEnabled:false});}
   if(path.endsWith('/subject')){let s;try{s=await mailingSubject(body.reviewProof,env);}catch{fail('Refresh the search: this property could not be reverified.',409);}return json({ok:true,listingKey:s.listingKey,address:s.mailingAddress,reviewProof:s.reviewProof});}
+  if(path.endsWith('/presentation')){try{return json(await mailingPresentation(body.reviewProof,env));}catch(e){return json({ok:false,error:e.status?e.message:'Could not load verified sales. Refresh the selection and try again.'},e.status||502);}}
   if(path.endsWith('/create'))return json(await create(body,env));
   if(path.endsWith('/history'))return json({ok:true,orders:(await db(env,'?mode=eq.test&deleted_at=is.null&order=created_at.desc&limit=100')).map(orderView)});
   if(path.endsWith('/delete')){
