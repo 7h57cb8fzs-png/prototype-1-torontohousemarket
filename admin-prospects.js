@@ -1,5 +1,62 @@
 export function initAdminProspects({$,post,esc,money}){
  let generation=0,running=false,rows=[],seen=new Set(),scanned=0,checked=0,excluded=0,unverified=0,complete=false,optionsLoaded=false,optionsLoading=false,optionsGeneration=0,communities=[];
+ // Display grouping from TRREB's April 2026 MLS HPI community tables:
+ // https://www.taleenchouljian.com/hosted/users/48031/202604_TRREB_HPI.pdf
+ // Never rewrite MLS option values or infer search filters from these headings.
+ const communityAreas={
+  "Aurora":["Aurora Estates","Aurora Grove","Aurora Heights","Aurora Highlands","Aurora Village","Bayview Northeast","Bayview Southeast","Bayview Wellington","Hills of St Andrew","Rural Aurora"],
+  "East Gwillimbury":["Holland Landing","Mt Albert","Queensville","Rural East Gwillimbury","Sharon"],
+  "Georgina":["Baldwin","Historic Lakeshore Communities","Keswick North","Keswick South","Pefferlaw","Sutton & Jackson's Point","Virginia"],
+  "King":["King City","Nobleton","Pottageville","Rural King","Schomberg"],
+  "Markham":["Aileen-Willowbrook","Angus Glen","Bayview Fairway-Bayview Country Club","Bayview Glen","Berczy","Box Grove","Bullock","Buttonville","Cachet","Cathedraltown","Cedar Grove","Cedarwood","Commerce Valley","Cornell","Devil's Elbow","German Mills","Grandview","Greensborough","Legacy","Markham Village","Markville","Middlefield","Milliken Mills East","Milliken Mills West","Old Markham Village","Raymerville","Rouge Fairways","Rouge River Estates","Royal Orchard","Rural Markham","Sherwood-Amberglen","Thornhill","Thornlea","Unionville","Victoria Manor-Jennings Gate","Victoria Square","Village Green-South Unionville","Vinegar Hill","Wismer"],
+  "Newmarket":["Armitage","Bristol-London","Central Newmarket","Glenway Estates","Gorham-College Manor","Huron Heights-Leslie Valley","Stonehaven-Wyndham","Summerhill Estates","Woodland Hill"],
+  "Richmond Hill":["Bayview Hill","Beaver Creek Business Park","Crosby","Devonsleigh","Doncrest","Harding","Jefferson","Langstaff","Mill Pond","North Richvale","Oak Ridges","Oak Ridges Lake Wilcox","Observatory","Rouge Woods","Rural Richmond Hill","South Richvale","Westbrook"],
+  "Toronto C01":["Bay Street Corridor","Dufferin Grove","Kensington-Chinatown","Little Portugal","Niagara","Palmerston-Little Italy","Trinity Bellwoods","University","Waterfront Communities C1"],
+  "Toronto C02":["Annex","Casa Loma","Wychwood","Yonge-St. Clair"],
+  "Toronto C03":["Forest Hill South","Humewood-Cedarvale","Oakwood-Vaughan","Yonge-Eglinton"],
+  "Toronto C04":["Bedford Park-Nortown","Englemount-Lawrence","Forest Hill North","Lawrence Park North","Lawrence Park South"],
+  "Toronto C06":["Bathurst Manor","Clanton Park"],
+  "Toronto C07":["Lansing-Westgate","Newtonbrook West","Westminister-Branson","Willowdale West"],
+  "Toronto C08":["Cabbagetown-South St. Jamestown","Church-Yonge Corridor","Moss Park","North St. Jamestown","Regent Park","Waterfront Communities C8"],
+  "Toronto C09":["Rosedale-Moore Park"],
+  "Toronto C10":["Mount Pleasant East","Mount Pleasant West"],
+  "Toronto C11":["Flemingdon Park","Leaside","Thorncliffe Park"],
+  "Toronto C12":["Bridle Path-Sunnybrook-York Mills","St. Andrew-Windfields"],
+  "Toronto C13":["Banbury-Don Mills","Parkwoods-Donalda","Victoria Village"],
+  "Toronto C14":["Newtonbrook East","Willowdale East"],
+  "Toronto C15":["Bayview Village","Bayview Woods-Steeles","Don Valley Village","Henry Farm","Hillcrest Village","Pleasant View"],
+  "Toronto E01":["Blake-Jones","Greenwood-Coxwell","North Riverdale","South Riverdale"],
+  "Toronto E02":["East End-Danforth","The Beaches","Woodbine Corridor"],
+  "Toronto E03":["Broadview North","Crescent Town","Danforth","Danforth Village-East York","East York","O'Connor-Parkview","Playter Estates-Danforth","Woodbine-Lumsden"],
+  "Toronto E04":["Clairlea-Birchmount","Dorset Park","Ionview","Kennedy Park","Wexford-Maryvale"],
+  "Toronto E05":["L'Amoreaux","Steeles","Tam O'Shanter-Sullivan"],
+  "Toronto E06":["Birchcliffe-Cliffside","Oakridge"],
+  "Toronto E07":["Agincourt North","Agincourt South- Malvern West","Milliken"],
+  "Toronto E08":["Cliffcrest","Eglinton East","Guildwood","Scarborough Village"],
+  "Toronto E09":["Bendale","Morningside","Woburn"],
+  "Toronto E10":["Centennial Scarborough","Highland Creek","Rouge E10","West Hill"],
+  "Toronto E11":["Malvern","Rouge E11"],
+  "Toronto W01":["High Park-Swansea","Roncesvalles","South Parkdale"],
+  "Toronto W02":["Dovercourt-Wallace Emerson-Junction","High Park North","Junction Area","Lambton Baby Point","Runnymede-Bloor West Village"],
+  "Toronto W03":["Caledonia-Fairbank","Corso Italia-Davenport","Keelesdale-Eglinton West","Rockcliffe-Smythe","Weston-Pellam Park"],
+  "Toronto W04":["Beechborough-Greenbrook","Briar Hill-Belgravia","Brookhaven-Amesbury","Humberlea-Pelmo Park W4","Maple Leaf","Mount Dennis","Rustic","Weston","Yorkdale-Glen Park"],
+  "Toronto W05":["Black Creek","Downsview-Roding-CFB","Glenfield-Jane Heights","Humber Summit","Humberlea-Pelmo Park W5","Humbermede","York University Heights"],
+  "Toronto W06":["Alderwood","Long Branch","Mimico","New Toronto"],
+  "Toronto W07":["Stonegate-Queensway"],
+  "Toronto W08":["Edenbridge-Humber Valley","Eringate-Centennial-West Deane","Etobicoke West Mall","Islington-City Centre West","Kingsway South","Markland Woods","Princess-Rosethorn"],
+  "Toronto W09":["Humber Heights","Kingsview Village-The Westway","Willowridge-Martingrove-Richview"],
+  "Toronto W10":["Elms-Old Rexdale","Mount Olive-Silverstone-Jamestown","Rexdale-Kipling","Thistletown-Beaumond Heights","West Humber-Claireville"],
+  "Vaughan":["Beverley Glen","Brownridge","Concord","Crestwood-Springfarm-Yorkhill","East Woodbridge","Elder Mills","Glen Shields","Islington Woods","Kleinburg","Lakeview Estates","Maple","Patterson","Rural Vaughan","Sonoma Heights","Uplands","Vaughan Corporate Centre","Vaughan Grove","Vellore Village","West Woodbridge"],
+  "Whitchurch-Stouffville":["Ballantrae","Rural Whitchurch-Stouffville","Stouffville"],
+ };
+ const communityKey=name=>name.toLowerCase().replace(/[^a-z0-9]/g,'');
+ const communityAreaByName=new Map(Object.entries(communityAreas).flatMap(([area,names])=>names.map(name=>[communityKey(name),area])));
+ function showCommunityChoices(names){
+  const groups=new Map();
+  for(const name of names){const area=communityAreaByName.get(communityKey(name))||'Other MLS communities';if(!groups.has(area))groups.set(area,[]);groups.get(area).push(name);}
+  $('prospectCommunityBrowse').innerHTML='<option value="">Browse communities by area…</option>'+[...groups].sort(([a],[b])=>a==='Other MLS communities'?1:b==='Other MLS communities'?-1:a.localeCompare(b)).map(([area,values])=>`<optgroup label="${esc(area)}">${values.sort((a,b)=>a.localeCompare(b)).map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('')}</optgroup>`).join('');
+  $('prospectCommunityOptions').innerHTML=names.map(name=>`<option value="${esc(name)}" label="${esc(communityAreaByName.get(communityKey(name))||'Other MLS communities')}"></option>`).join('');
+ }
  const conditionLabels={needs_renovation:'Renovation likely needed',no_obvious_renovation:'No obvious renovation needed',unable_to_assess:'Unable to assess',unreviewed:'Not reviewed'};
  let picked=new Set(),reviewing=false,reviewGeneration=0,plans=[],selectionSignature='';const selectionListeners=new Set();
  const qualifiedPicked=()=>rows.filter(r=>r.result==='qualified'&&picked.has(r.listingKey));
@@ -109,12 +166,15 @@ export function initAdminProspects({$,post,esc,money}){
   }catch(e){if(id!==generation)return;$('prospectError').textContent=e.message;$('prospectError').hidden=false;$('prospectProgress').textContent='Search incomplete. Displayed results cover only completed checks.';}
   finally{if(id===generation){running=false;render();}}
  }
- $('prospectCommunity').addEventListener('focus',async()=>{
+ async function loadCommunityChoices(){
   if(optionsLoaded||optionsLoading)return;optionsLoading=true;const id=optionsGeneration;$('prospectOptionsNote').textContent='Loading MLS community choices…';
-  try{const data=await post('/api/admin/prospects/options',{});if(id!==optionsGeneration)return;const names=(data.communities||[]).filter(x=>typeof x==='string');$('prospectCommunityOptions').innerHTML=names.map(x=>`<option value="${esc(x)}"></option>`).join('');optionsLoaded=true;$('prospectOptionsNote').textContent=names.length?'Choose communities within your selected areas, and press Add for each.':'Enter the MLS community name, or leave blank for all.';}
+  try{const data=await post('/api/admin/prospects/options',{});if(id!==optionsGeneration)return;const names=(data.communities||[]).filter(x=>typeof x==='string');showCommunityChoices(names);optionsLoaded=true;$('prospectOptionsNote').textContent=names.length?'Choose communities within your selected areas, and press Add for each.':'Enter the MLS community name, or leave blank for all.';}
   catch{if(id===optionsGeneration)$('prospectOptionsNote').textContent='Suggestions are unavailable. Enter the MLS community name, or leave blank for all.';}
   finally{if(id===optionsGeneration)optionsLoading=false;}
- });
+ }
+ $('prospectCommunity').addEventListener('focus',loadCommunityChoices);
+ $('prospectCommunityBrowse').addEventListener('focus',loadCommunityChoices);
+ $('prospectCommunityBrowse').addEventListener('change',()=>{const choice=$('prospectCommunityBrowse');if(choice.value){$('prospectCommunity').value=choice.value;choice.value='';$('prospectCommunity').focus();}});
  $('prospectCommunityAdd').addEventListener('click',addCommunities);
  $('prospectCommunity').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();addCommunities();}});
  $('prospectCommunityChips').addEventListener('click',event=>{const button=event.target.closest('[data-community-remove]');if(button&&!running){communities.splice(Number(button.dataset.communityRemove),1);renderSelections();}});
@@ -142,5 +202,5 @@ export function initAdminProspects({$,post,esc,money}){
  $('prospectPhotoCancel').addEventListener('click',()=>{plans=[];$('prospectPhotoEstimate').hidden=true;});
  $('prospectReviewStop').addEventListener('click',()=>{reviewGeneration++;reviewing=false;plans=[];$('prospectPhotoEstimate').hidden=true;$('prospectConditionProgress').textContent='Stopped. An in-flight review may finish and be saved; load saved assessments to retrieve it.';render();});
  for(const id of ['prospectConditionFilter','prospectConditionSort'])$(id).addEventListener('change',render);
- dates();render();return {start,render,getSelected:()=>qualifiedPicked().map(r=>({...r})),subscribeSelection(listener){selectionListeners.add(listener);listener();return ()=>selectionListeners.delete(listener);},clear(){generation++;reviewGeneration++;reviewing=false;picked.clear();plans=[];$('prospectPhotoEstimate').hidden=true;$('prospectConditionProgress').textContent='';optionsGeneration++;running=false;optionsLoaded=false;optionsLoading=false;$('prospectCommunityOptions').innerHTML='';$('prospectOptionsNote').textContent='';rows=[];seen.clear();scanned=checked=excluded=unverified=0;complete=false;$('prospectProgress').textContent='';$('prospectError').hidden=true;render();}};
+ dates();render();return {start,render,getSelected:()=>qualifiedPicked().map(r=>({...r})),subscribeSelection(listener){selectionListeners.add(listener);listener();return ()=>selectionListeners.delete(listener);},clear(){generation++;reviewGeneration++;reviewing=false;picked.clear();plans=[];$('prospectPhotoEstimate').hidden=true;$('prospectConditionProgress').textContent='';optionsGeneration++;running=false;optionsLoaded=false;optionsLoading=false;$('prospectCommunityOptions').innerHTML='';$('prospectCommunityBrowse').innerHTML='<option value="">Browse communities by area…</option>';$('prospectOptionsNote').textContent='';rows=[];seen.clear();scanned=checked=excluded=unverified=0;complete=false;$('prospectProgress').textContent='';$('prospectError').hidden=true;render();}};
 }

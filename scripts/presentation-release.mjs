@@ -6,9 +6,9 @@ import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',live='https://torontohousemarket.com';
 const root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
-const expectedVersion='ba113dd0-23dc-4a16-b100-174f9f0e09c0',expectedHash='bf69231bba3db7074320186b2920983a16639146a363d3ea760157197b1fb0fa';
+const expectedVersion='0e2182e2-c6db-492c-b5d3-a0ec3a21f2b6',expectedHash='bf69231bba3db7074320186b2920983a16639146a363d3ea760157197b1fb0fa';
 const hash=v=>createHash('sha256').update(v).digest('hex');
-const beforeRef=execFileSync('git',['rev-parse','a1e24546a0d10da4dc4c5ff78e708a9eee3c4698'],{encoding:'utf8'}).trim();
+const beforeRef=execFileSync('git',['rev-parse','f993afef41a023f1dd3dd348e842edf9178309c9'],{encoding:'utf8'}).trim();
 const allowed=new Set(['.assetsignore','admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css','admin-prospects-api.js','admin-postgrid-api.js','admin-postgrid.js','admin-postgrid.css','tests/admin-postgrid.test.mjs','tests/admin-condition.test.mjs','tests/admin-postgrid.visual.cjs','tests/admin-prospects.test.mjs','supabase/manual/admin-postgrid-orders.sql','scripts/postgrid-seller-inspect.mjs','scripts/postgrid-inspect.mjs','scripts/postgrid-runtime-test.mjs','scripts/postgrid-release.mjs','.github/workflows/postgrid-test.yml']);
 for(const f of execFileSync('git',['diff','--name-only',beforeRef,'HEAD'],{encoding:'utf8'}).trim().split('\n').filter(Boolean))assert(allowed.has(f)||f.startsWith('marketing/seller-presentation/')||['admin-presentation-pdf.js','scripts/seller-presentation-client.js','scripts/build-seller-presentation-template.py','scripts/presentation-runtime-test.mjs','scripts/presentation-release.mjs','scripts/build-presentation-client.mjs','.github/workflows/admin-presentation.yml','tests/admin-presentation.test.mjs','tests/admin-presentation.visual.cjs'].includes(f),'Out-of-scope change: '+f);
 assert.equal(fs.readFileSync('worker-v22.js','utf8'),execFileSync('git',['show',beforeRef+':worker-v22.js'],{encoding:'utf8'}),'Existing worker behavior changed');
@@ -24,8 +24,8 @@ function ignored(file){return patterns.some(p=>p.endsWith('/**')?file.startsWith
 const assets=execFileSync('git',['ls-files','-z'],{encoding:'utf8'}).split('\0').filter(p=>p&&!p.startsWith('.')&&!ignored(p));
 let assetCheck=0;
 async function bytes(base,file){const r=await fetch(base+'/'+(file==='index.html'?'':file)+'?prospects='+process.env.GITHUB_SHA+'&check='+assetCheck,{signal:AbortSignal.timeout(20000)});assert(r.ok,'Asset request failed: '+file+' HTTP '+r.status);return Buffer.from(await r.arrayBuffer());}
-const changed=new Set(['admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css','admin-postgrid.js','admin-postgrid.css']),added=new Set();
-for(const f of assets.filter(p=>!added.has(p)))assert.equal(hash(await bytes(live,f)),hash(changed.has(f)?execFileSync('git',['show',beforeRef+':'+f]):fs.readFileSync(f)),'Production asset drift: '+f);
+const changed=new Set(['marketing/seller-presentation/approved-template-v1.pdf','admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css','admin-postgrid.js','admin-postgrid.css']),added=new Set();
+for(const f of assets.filter(p=>!added.has(p)))assert.equal(hash(await bytes(live,f)),hash(changed.has(f)?execFileSync('git',['show',beforeRef+':'+f],{maxBuffer:8e6}):fs.readFileSync(f)),'Production asset drift: '+f);
 for(const name of ['admin-prospects-api.mjs','admin-postgrid-api.mjs'])assert.equal(hash(beforeModules.get(name)),hash(execFileSync('git',['show',beforeRef+':'+name.replace('.mjs','.js')],{encoding:'utf8'}).replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'")),'Existing admin module drift');
 let candidate=process.env.CANDIDATE_VERSION_ID,preview=process.env.CANDIDATE_PREVIEW_URL;
 const entry="import existing from './existing.mjs';\nimport {adminPostgrid} from './admin-postgrid-api.mjs';\nexport default {...existing,fetch(request,env,ctx){if(new URL(request.url).pathname.startsWith('/api/admin/postgrid/'))return adminPostgrid(request,env);return existing.fetch(request,env,ctx);}};\n";

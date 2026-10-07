@@ -59,8 +59,18 @@ test('admin selection, remarks notes, filtering, estimate gate and sign-out are 
  const dom=new JSDOM(readFileSync(new URL('../admin.html',import.meta.url),'utf8'),{runScripts:'outside-only',url:'https://example.invalid'}),w=dom.window,d=w.document;const calls=[];
  const code=readFileSync(new URL('../admin-prospects.js',import.meta.url),'utf8').replace(/^export /gm,'');w.eval(code+';window.init=initAdminProspects');
  const esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
- const post=async(path,b)=>{calls.push([path,b]);if(path.endsWith('/search'))return {pageId:'one',scanned:1,candidates:[{listingKey:'TEST',proof:'proof',address:'Test'}],excluded:{},complete:true};if(path.endsWith('/verify'))return {result:'qualified',listingKey:'TEST',reviewProof:'qualified',address:'Test',city:'Toronto',status:'Expired',eventDate:'2026-09-15'};if(b.mode==='quote')return {quote:'estimate',photoCount:4,estimatedUsd:.1};return {assessment:{...screenRemarks(row),note:'<script>unsafe</script> Kitchen may need a refresh.'}};};
- const app=w.init({$:id=>d.getElementById(id),post,esc,money:String});await app.start();d.getElementById('prospectSelectVisible').click();assert.equal(d.getElementById('prospectRemarks').disabled,false);
+ const post=async(path,b)=>{calls.push([path,b]);if(path.endsWith('/options'))return {communities:['Crosby','Downsview-Roding-CFB','Unmapped community']};if(path.endsWith('/search'))return {pageId:'one',scanned:1,candidates:[{listingKey:'TEST',proof:'proof',address:'Test'}],excluded:{},complete:true};if(path.endsWith('/verify'))return {result:'qualified',listingKey:'TEST',reviewProof:'qualified',address:'Test',city:'Toronto',status:'Expired',eventDate:'2026-09-15'};if(b.mode==='quote')return {quote:'estimate',photoCount:4,estimatedUsd:.1};return {assessment:{...screenRemarks(row),note:'<script>unsafe</script> Kitchen may need a refresh.'}};};
+ const app=w.init({$:id=>d.getElementById(id),post,esc,money:String});
+ const browse=d.getElementById('prospectCommunityBrowse');browse.dispatchEvent(new w.Event('focus'));await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(browse.querySelector('option[value="Crosby"]').parentElement.label,'Richmond Hill');
+ assert.equal(browse.querySelector('option[value="Downsview-Roding-CFB"]').parentElement.label,'Toronto W05');
+ assert.equal(browse.querySelector('option[value="Unmapped community"]').parentElement.label,'Other MLS communities');
+ for(const name of ['Crosby','Downsview-Roding-CFB']){browse.value=name;browse.dispatchEvent(new w.Event('change'));assert.equal(d.getElementById('prospectCommunity').value,name);d.getElementById('prospectCommunityAdd').click();}
+ d.getElementById('prospectCommunity').value='Manual community';
+ await app.start();
+ assert.deepEqual(Array.from(calls.find(([path])=>path.endsWith('/search'))[1].filters.communities),['Crosby','Downsview-Roding-CFB','Manual community']);
+ assert.equal(calls.filter(([path])=>path.endsWith('/options')).length,1);
+ d.getElementById('prospectSelectVisible').click();assert.equal(d.getElementById('prospectRemarks').disabled,false);
  const wait=async()=>{for(let i=0;i<10;i++)await new Promise(r=>setTimeout(r,1));};d.getElementById('prospectRemarks').click();await wait();assert(d.getElementById('prospectRows').textContent.includes('Kitchen'));assert.equal(d.querySelector('#prospectRows script'),null);
  d.getElementById('prospectPhotoQuote').click();await wait();assert.equal(d.getElementById('prospectPhotoEstimate').hidden,false);assert(!calls.some(([,b])=>b.mode==='photos'));
  d.getElementById('prospectConditionFilter').value='no_obvious_renovation';d.getElementById('prospectConditionFilter').dispatchEvent(new w.Event('change'));assert.equal(d.querySelectorAll('#prospectRows tr').length,0);

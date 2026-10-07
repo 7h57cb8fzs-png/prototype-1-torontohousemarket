@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
 async function cf(path){const r=await fetch(root+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});const d=await r.json();assert(r.ok&&d.success,'Cloudflare read failed');return d.result;}
 async function active(){const d=await cf('/workers/scripts/'+worker+'/deployments');return d.deployments[0].versions[0].version_id;}
-const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'ba113dd0-23dc-4a16-b100-174f9f0e09c0');
+const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'0e2182e2-c6db-492c-b5d3-a0ec3a21f2b6');
 const nonce=randomBytes(32).toString('hex'),temp=mkdtempSync(join(tmpdir(),'thm-postgrid-probe-'));
 // A never-promoted, expiring read-only MLS test. No PostGrid, database, email or AI writes.
 const source=String.raw`import {adminProspects} from './admin-prospects-api.mjs';

@@ -72,7 +72,7 @@ header(1)
 txt('PREPARED FOR THE HOMEOWNER AT',42,111,9,'Bold',MUTED)
 txt('Your next chapter',40,214,31,'Serif')
 txt('starts with a plan.',40,253,31,'Serif')
-para('Thinking about your next move? We’ll help you present your home, reach buyers, make selling costs clear and save a lot of money on your selling commission.',42,304,510,11.5,17)
+para('Thinking about your next move? We’ll help you present your home, reach buyers, make selling costs clear, and save you thousands in selling commission.',42,304,510,11.5,17)
 
 txt('Recent sales on your street / neighbourhood',42,361,17,'Bold')
 
