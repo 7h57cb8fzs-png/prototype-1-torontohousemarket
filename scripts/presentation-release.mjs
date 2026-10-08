@@ -6,9 +6,9 @@ import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',live='https://torontohousemarket.com';
 const root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
-const expectedVersion='f74801c3-b413-4b35-aaf5-754194a1b9f3',expectedHash='bf69231bba3db7074320186b2920983a16639146a363d3ea760157197b1fb0fa';
+const expectedVersion='83bbb9ba-6777-484d-b7f0-c2e4889a9c4b',expectedHash='bf69231bba3db7074320186b2920983a16639146a363d3ea760157197b1fb0fa';
 const hash=v=>createHash('sha256').update(v).digest('hex');
-const beforeRef=execFileSync('git',['rev-parse','86c9a7b0d3dc9e386e44b5cfddc1d293b5c2d73d'],{encoding:'utf8'}).trim();
+const beforeRef=execFileSync('git',['rev-parse','ce1df4372d0570b2966a1deb17827f5c48dcdb31'],{encoding:'utf8'}).trim();
 const allowed=new Set(['.assetsignore','admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css','admin-prospects-api.js','admin-postgrid-api.js','admin-postgrid.js','admin-postgrid.css','tests/admin-postgrid.test.mjs','tests/admin-condition.test.mjs','tests/admin-postgrid.visual.cjs','tests/admin-prospects.test.mjs','supabase/manual/admin-postgrid-orders.sql','scripts/postgrid-seller-inspect.mjs','scripts/postgrid-inspect.mjs','scripts/postgrid-runtime-test.mjs','scripts/postgrid-release.mjs','.github/workflows/postgrid-test.yml']);
 for(const f of execFileSync('git',['diff','--name-only',beforeRef,'HEAD'],{encoding:'utf8'}).trim().split('\n').filter(Boolean))assert(allowed.has(f)||f.startsWith('marketing/seller-presentation/')||['admin-presentation-pdf.js','scripts/seller-presentation-client.js','scripts/build-seller-presentation-template.py','scripts/presentation-runtime-test.mjs','scripts/presentation-release.mjs','scripts/build-presentation-client.mjs','.github/workflows/admin-presentation.yml','tests/admin-presentation.test.mjs','tests/admin-presentation.visual.cjs'].includes(f),'Out-of-scope change: '+f);
 assert.equal(fs.readFileSync('worker-v22.js','utf8'),execFileSync('git',['show',beforeRef+':worker-v22.js'],{encoding:'utf8'}),'Existing worker behavior changed');
@@ -28,7 +28,7 @@ const changed=new Set(['marketing/seller-presentation/approved-template-v1.pdf',
 for(const f of assets.filter(p=>!added.has(p)))assert.equal(hash(await bytes(live,f)),hash(changed.has(f)?execFileSync('git',['show',beforeRef+':'+f],{maxBuffer:8e6}):fs.readFileSync(f)),'Production asset drift: '+f);
 for(const name of ['admin-prospects-api.mjs','admin-postgrid-api.mjs'])assert.equal(hash(beforeModules.get(name)),hash(execFileSync('git',['show',beforeRef+':'+name.replace('.mjs','.js')],{encoding:'utf8'}).replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'")),'Existing admin module drift');
 let candidate=process.env.CANDIDATE_VERSION_ID,preview=process.env.CANDIDATE_PREVIEW_URL;
-const entry="import existing from './existing.mjs';\nimport {adminPostgrid} from './admin-postgrid-api.mjs';\nexport default {...existing,fetch(request,env,ctx){if(new URL(request.url).pathname.startsWith('/api/admin/postgrid/'))return adminPostgrid(request,env);return existing.fetch(request,env,ctx);}};\n";
+const entry="import existing from './existing.mjs';\nimport {adminPostgrid} from './admin-postgrid-api.mjs';\nimport {adminProspects} from './admin-prospects-api.mjs';\nexport default {...existing,fetch(request,env,ctx){if(new URL(request.url).pathname.startsWith('/api/admin/prospects/'))return adminProspects(request,env);if(new URL(request.url).pathname.startsWith('/api/admin/postgrid/'))return adminPostgrid(request,env);return existing.fetch(request,env,ctx);}};\n";
 if(!candidate){
  assert.notEqual(process.env.PUBLISH,'true','A reviewed preview is required before promotion');
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'thm-prospects-'));
@@ -44,6 +44,11 @@ const after=await version(candidate),modules=new Map(after.modules.map(m=>[m.nam
 assert.equal(modules.size,4);assert.equal(hash(modules.get('existing.mjs')),expectedHash,'Public server code changed');assert.equal(hash(modules.get('admin-prospects-api.mjs')),hash(fs.readFileSync('admin-prospects-api.js')));assert.equal(hash(modules.get('entry.mjs')),hash(entry));assert.equal(hash(modules.get('admin-postgrid-api.mjs')),hash(fs.readFileSync('admin-postgrid-api.js','utf8').replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'")));
 assert.deepEqual(names(after),names(before));for(const [name,text] of Object.entries(plain))assert(after.bindings.some(b=>b.name===name&&b.type==='plain_text'&&b.text===text),'Existing setting changed');
 async function verify(base){
+ const probe=JSON.parse(fs.readFileSync('/tmp/thm-route-probe.json','utf8'));
+ const response=await fetch(probe.url+'/routing',{method:'POST',headers:{Authorization:'Bearer '+probe.nonce,'Content-Type':'application/json'},body:JSON.stringify({base}),signal:AbortSignal.timeout(120000)});
+ assert(response.ok,'Authenticated route probe unavailable');const routed=await response.json();
+ console.log('AUTHENTICATED_CLASS_ROUTES',JSON.stringify({base,...routed}));assert.equal(routed.ok,true,'Deployed search route ignored property class');
+
  assetCheck++; // Use a fresh cache key after promotion; preflight fetched the old deployment.
  for(const f of assets)assert.equal(hash(await bytes(base,f)),hash(fs.readFileSync(f)),'Asset mismatch: '+f);
  for(const p of ['/api/admin/postgrid/status','/api/admin/postgrid/presentation','/api/admin/postgrid/create','/api/admin/postgrid/history','/api/admin/postgrid/delete','/api/admin/prospects/condition','/api/admin/prospects/options','/api/admin/prospects/search','/api/admin/prospects/verify','/api/admin/ops/counts']){const r=await fetch(base+p,{method:!p.includes('/ops/')?'POST':'GET',headers:{'Content-Type':'application/json'},...(!p.includes('/ops/')?{body:'{}'}:{}),signal:AbortSignal.timeout(20000)});assert.equal(r.status,401,'Admin auth failed: '+p);}

@@ -23,7 +23,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/postgrid-inspect.mjs
       - name: Verify read-only report generation with MLS data
-        if: "contains(github.event.head_commit.message, '[presentation-probe]') || contains(github.event.head_commit.message, '[presentation-preview]')"
+        if: "contains(github.event.head_commit.message, '[presentation-probe]') || contains(github.event.head_commit.message, '[presentation-preview]') || contains(github.event.head_commit.message, '[presentation-publish]')"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: node scripts/presentation-runtime-test.mjs
@@ -47,6 +47,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PUBLISH: ${{ contains(github.event.head_commit.message, '[presentation-publish]') }}
-          CANDIDATE_VERSION_ID: 83bbb9ba-6777-484d-b7f0-c2e4889a9c4b
-          CANDIDATE_PREVIEW_URL: https://83bbb9ba-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev
         run: node scripts/presentation-release.mjs

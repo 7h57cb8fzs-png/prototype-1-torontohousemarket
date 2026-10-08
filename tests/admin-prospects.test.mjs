@@ -139,3 +139,14 @@ test('property classes scope MLS queries and signed pages without narrowing reli
   }finally{globalThis.fetch=original;}
  }
 });
+
+test('deployed entry routes listing searches to the current class-aware handler',async()=>{
+ const source=readFileSync(new URL('../scripts/presentation-release.mjs',import.meta.url),'utf8');
+ const entry=JSON.parse(source.match(/^const entry=(".*");$/m)[1]);
+ const fixture=entry.replace("import existing from './existing.mjs';","const existing={fetch:()=>new Response('legacy'),scheduled(){}};").replace("import {adminPostgrid} from './admin-postgrid-api.mjs';","const adminPostgrid=()=>new Response('mail');").replace("import {adminProspects} from './admin-prospects-api.mjs';","const adminProspects=()=>new Response('class-aware-search');");
+ const {default:router}=await import('data:text/javascript;base64,'+Buffer.from(fixture).toString('base64'));
+ assert.equal(await (await router.fetch(new Request('https://example.invalid/api/admin/prospects/search'),{})).text(),'class-aware-search');
+ assert.equal(await (await router.fetch(new Request('https://example.invalid/api/admin/prospects/verify'),{})).text(),'class-aware-search');
+ assert.equal(await (await router.fetch(new Request('https://example.invalid/api/admin/postgrid/status'),{})).text(),'mail');
+ assert.equal(await (await router.fetch(new Request('https://example.invalid/seller'),{})).text(),'legacy');assert.equal(typeof router.scheduled,'function');
+});
