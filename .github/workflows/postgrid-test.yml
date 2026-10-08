@@ -1,0 +1,54 @@
+name: THM PostGrid test integration
+on:
+  push:
+    branches: [feature/postgrid-test-20261005]
+permissions:
+  contents: read
+concurrency:
+  group: thm-postgrid-test
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: "!contains(github.event.head_commit.message, '[presentation-')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install isolated DOM test dependency
+        run: npm install --prefix /tmp/thm-test-deps --no-save --package-lock=false jsdom@27.0.0
+      - name: Test admin and mailing safeguards
+        run: node --test tests/admin-postgrid.test.mjs tests/admin-prospects.test.mjs tests/admin-condition.test.mjs tests/admin-workspace.test.mjs
+      - name: Install browser test harness
+        if: "!contains(github.event.head_commit.message, '[postgrid-inspect]')"
+        run: npm install --prefix /tmp/thm-browser-deps --no-save --package-lock=false playwright@1.51.1
+      - name: Verify desktop and mobile mailing layouts
+        if: "!contains(github.event.head_commit.message, '[postgrid-inspect]')"
+        run: node tests/admin-postgrid.visual.cjs
+      - uses: actions/upload-artifact@v4
+        if: "!contains(github.event.head_commit.message, '[postgrid-inspect]')"
+        with:
+          name: postgrid-ui-preview
+          path: /tmp/postgrid-*.png
+          retention-days: 5
+      - name: Verify test connection, recipient preparation and mailing history
+        if: "!contains(github.event.head_commit.message, '[postgrid-publish]') && !contains(github.event.head_commit.message, '[postgrid-inspect]')"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/postgrid-runtime-test.mjs
+      - name: Inspect seller fields without exposing personal records
+        if: "!contains(github.event.head_commit.message, '[postgrid-publish]')"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/postgrid-seller-inspect.mjs
+      - name: Verify and publish the tested PostGrid panel
+        if: "!contains(github.event.head_commit.message, '[postgrid-inspect]')"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PUBLISH: ${{ contains(github.event.head_commit.message, '[postgrid-publish]') }}
+          CANDIDATE_VERSION_ID: 8b9141e2-7dfa-4686-8073-cd2611bee866
+          CANDIDATE_PREVIEW_URL: https://8b9141e2-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev
+        run: node scripts/postgrid-release.mjs

@@ -1,0 +1,57 @@
+name: THM customized seller presentation
+on:
+  push:
+    branches: [feature/postgrid-test-20261005]
+permissions:
+  contents: read
+concurrency:
+  group: thm-postgrid-test
+  cancel-in-progress: false
+jobs:
+  presentation:
+    if: "contains(github.event.head_commit.message, '[presentation-')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Recover known working deployment with saved secrets
+        if: "contains(github.event.head_commit.message, '[presentation-recover]')"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/postgrid-recover.mjs
+      - name: Inspect current deployment
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/postgrid-inspect.mjs
+      - name: Verify read-only report generation with MLS data
+        if: "contains(github.event.head_commit.message, '[presentation-probe]') || contains(github.event.head_commit.message, '[presentation-preview]') || contains(github.event.head_commit.message, '[presentation-publish]')"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/presentation-runtime-test.mjs
+      - name: Install isolated verification dependencies
+        if: "contains(github.event.head_commit.message, '[presentation-preview]')"
+        run: |
+          npm install --prefix /tmp/thm-presentation-deps --no-save --package-lock=false jsdom@27.0.0 playwright@1.51.1
+          /tmp/thm-presentation-deps/node_modules/.bin/playwright install --with-deps chromium
+      - name: Verify generation and existing mailing safeguards
+        if: "contains(github.event.head_commit.message, '[presentation-preview]')"
+        env:
+          ADMIN_TEST_JSDOM_PATH: /tmp/thm-presentation-deps/node_modules/jsdom/lib/api.js
+        run: node --test tests/admin-presentation.test.mjs tests/admin-postgrid.test.mjs tests/admin-prospects.test.mjs tests/admin-condition.test.mjs tests/admin-workspace.test.mjs
+      - name: Verify presentation, mobile layout and stale selection
+        if: "contains(github.event.head_commit.message, '[presentation-preview]')"
+        env:
+          PRESENTATION_TEST_PHOTO: marketing/thm-team-v1.png
+        run: node tests/admin-presentation.visual.cjs
+      - name: Verify and release customized presentation
+        if: "contains(github.event.head_commit.message, '[presentation-preview]') || contains(github.event.head_commit.message, '[presentation-publish]')"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PUBLISH: ${{ contains(github.event.head_commit.message, '[presentation-publish]') }}
+          CANDIDATE_VERSION_ID: 8e516bad-9286-428b-a999-14fd12e4e991
+          CANDIDATE_PREVIEW_URL: https://8e516bad-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev
+        run: node scripts/presentation-release.mjs

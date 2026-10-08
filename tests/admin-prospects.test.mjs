@@ -105,12 +105,48 @@ test('admin tab navigation, scan result escaping and sign out clear private resu
  const dom=new JSDOM(readFileSync(new URL('../admin.html',import.meta.url),'utf8'),{url:'https://synthetic.invalid/admin',runScripts:'outside-only'}),w=dom.window,d=w.document;
  w.Response=Response;w.Blob=Blob;w.HTMLElement.prototype.scrollIntoView=function(){};w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
  const requests=[];w.fetch=async(path,options)=>{requests.push({path,body:options?.body?JSON.parse(options.body):null});return Response.json(path.includes('/prospects/search')?{ok:true,pageId:'one',scanned:1,candidates:[{...row,listingKey:'TEST',address:'Synthetic Rd',proof:'synthetic'}],excluded:{},complete:true}:path.includes('/prospects/verify')?{ok:true,result:'qualified',listingKey:'TEST',address:'<img onerror=alert(1)>',city:'Toronto',region:'Toronto',status:'Expired',eventDate:'2026-09-01',reason:'No later listing',checkedAt:'2026-10-01T12:00:00Z'}:path.includes('/agents')?{ok:true,agents:[]}:path.includes('/counts')?{ok:true,queue:{}}:path.includes('/settings')?{ok:true,settings:{}}:{ok:true,leads:[],total:0});};
- const files=['admin-view-model.js','admin-exports.js','admin-insights.js','admin-prospects.js','admin-workspace.js'];const code=files.map(f=>readFileSync(new URL('../'+f,import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace(/^export /gm,'')).join('\n');
+ const files=['admin-view-model.js','admin-exports.js','admin-insights.js','admin-prospects.js','admin-postgrid.js','admin-workspace.js'];const code=files.map(f=>readFileSync(new URL('../'+f,import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace(/^export /gm,'')).join('\n');
  await w.eval('(async()=>{'+code+"\nstate.token='synthetic';await loadSetup();$('login').hidden=true;$('workspace').hidden=false;await changeView('prospects');$('prospectMunicipalities').querySelector('[value=\"Richmond Hill\"]').checked=true;$('prospectMunicipalities').querySelector('[value=Vaughan]').checked=true;$('prospectDistricts').querySelector('[value=W04]').checked=true;$('prospectDistricts').querySelector('[value=W05]').checked=true;$('prospectCommunity').value='North Richvale, South Richvale, Maple';$('prospectDateFrom').value='2026-08-01';$('prospectDateTo').value='2026-08-31';$('prospectMinPrice').value='900000';$('prospectMaxPrice').value='800000';await prospects.start();window.testStart=prospects.start;})()");
  assert.equal(requests.filter(r=>r.path.includes('/prospects/search')).length,0);assert.match(d.getElementById('prospectError').textContent,/Minimum price/);
  d.getElementById('prospectMaxPrice').value='1000000';await w.testStart();
- assert.deepEqual(requests.find(r=>r.path.includes('/prospects/search')).body.filters,{municipalities:['Richmond Hill','Vaughan'],districts:['W04','W05'],communities:['North Richvale','South Richvale','Maple'],dateFrom:'2026-08-01',dateTo:'2026-08-31',status:'',minPrice:900000,maxPrice:1000000});assert.equal(d.getElementById('prospectScanFilters').disabled,false);
+ assert.deepEqual(requests.find(r=>r.path.includes('/prospects/search')).body.filters,{propertyClass:'residential',municipalities:['Richmond Hill','Vaughan'],districts:['W04','W05'],communities:['North Richvale','South Richvale','Maple'],dateFrom:'2026-08-01',dateTo:'2026-08-31',status:'',minPrice:900000,maxPrice:1000000});assert.equal(d.getElementById('prospectScanFilters').disabled,false);
  assert.equal(d.getElementById('prospectsView').hidden,false);assert.equal(d.getElementById('listView').hidden,true);assert.equal(d.querySelectorAll('#prospectRows tr').length,1);assert.equal(d.querySelector('#prospectRows img'),null);assert.equal(d.getElementById('prospectExport').disabled,false);
- assert.equal(d.querySelectorAll('[data-community-remove]').length,3);d.querySelector('[data-community-remove=\"1\"]').click();assert.equal(d.querySelectorAll('[data-community-remove]').length,2);d.querySelector('[data-prospect-days=\"30\"]').click();assert.equal(d.getElementById('prospectDateTo').value,torontoDay());d.getElementById('prospectResetFilters').click();assert.equal(d.querySelectorAll('#prospectScanFilters input:checked').length,0);assert.equal(d.querySelectorAll('[data-community-remove]').length,0);assert.equal(d.getElementById('prospectDateFrom').value,'2026-09-01');
+ assert.equal(d.querySelectorAll('[data-community-remove]').length,3);d.querySelector('[data-community-remove=\"1\"]').click();assert.equal(d.querySelectorAll('[data-community-remove]').length,2);d.querySelector('[data-prospect-days=\"30\"]').click();assert.equal(d.getElementById('prospectDateTo').value,torontoDay());d.getElementById('prospectResetFilters').click();assert.equal(d.querySelectorAll('#prospectScanFilters input[type="checkbox"]:checked').length,0);assert.equal(d.querySelectorAll('[data-community-remove]').length,0);assert.equal(d.getElementById('prospectDateFrom').value,'2026-09-01');
  d.getElementById('signOut').click();assert.equal(d.querySelectorAll('#prospectRows tr').length,0);assert.equal(d.getElementById('workspace').hidden,true);dom.window.close();
+});
+
+test('property classes scope MLS queries and signed pages without narrowing relisting history',async()=>{
+ const {mailingPresentation,mailingSubject}=await import('../admin-prospects-api.js');
+ const original=globalThis.fetch;
+ const types={freehold:'Residential Freehold',condo:'Residential Condo & Other',commercial:'Commercial'};
+ assert.equal(searchFilters().propertyClass,'residential');assert.throws(()=>searchFilters({propertyClass:"Commercial' or true"}));
+ for(const [propertyClass,PropertyType] of Object.entries(types)){
+  const chosen={...row,PropertyType,PropertySubType:propertyClass==='condo'?'Condo Apartment':propertyClass==='commercial'?'Office':'Detached',UnitNumber:propertyClass==='freehold'?'':'101'},scope=searchFilters({propertyClass});let relisted=false,page=0;const urls=[];
+  assert(classifyCandidate(chosen,torontoDay(),scope).eligible);assert(matchesFilters(chosen,scope));assert(!classifyCandidate({...chosen,OccupantType:'Tenant'},torontoDay(),scope).eligible);
+  if(propertyClass==='commercial')assert(!classifyCandidate(chosen).eligible);
+  const meta='<EntityType Name="Property">'+['ListingKey','MlsStatus','ExpirationDate','TerminationDate','OccupantType','StreetName','City','PropertyType'].map(f=>`<Property Name="${f}" Type="Edm.String"/>`).join('')+'</EntityType>';
+  globalThis.fetch=async url=>{const u=new URL(url);urls.push(u);if(u.pathname.endsWith('$metadata'))return new Response(meta);if(u.pathname.includes('Property('))return Response.json(chosen);if(u.searchParams.get('$filter')?.includes('StreetName'))return Response.json({value:relisted?[chosen,{...chosen,PropertyType:'Residential Freehold',ListingKey:'LATER',MlsStatus:'New',ListingContractDate:torontoDay()}]:[chosen],'@odata.count':relisted?2:1});page++;return Response.json({value:[chosen],'@odata.count':2,...(page===1?{'@odata.nextLink':'https://query.ampre.ca/odata/Property?$skiptoken=class-page'}:{})});};
+  const env={ADMIN_API_KEY:'class-test',AMPRE_VOW_TOKEN:'private'},request=(action,body)=>new Request('https://example.invalid/api/admin/prospects/'+action,{method:'POST',headers:{Authorization:'Bearer class-test'},body:JSON.stringify(body)});
+  try{
+   const s=await(await adminProspects(request('search',{filters:{propertyClass}}),env)).json();assert.equal(s.candidates.length,1);assert.equal(s.candidates[0].propertyClass,propertyClass);
+   assert(urls.find(u=>u.pathname.endsWith('Property')).searchParams.get('$filter').includes(`PropertyType eq '${PropertyType}'`));
+   const next=await(await adminProspects(request('search',{cursor:s.cursor,filters:{propertyClass:'wrong'}}),env)).json();assert.equal(next.filters.propertyClass,propertyClass);
+   const v=await(await adminProspects(request('verify',{proof:s.candidates[0].proof}),env)).json();assert.equal(v.result,'qualified');
+   const subject=await mailingSubject(v.reviewProof,env);assert.equal(subject.propertyClass,propertyClass);
+   if(propertyClass==='commercial'){await assert.rejects(mailingPresentation(v.reviewProof,env),/Upload a commercial PDF/);const c=await adminProspects(request('condition',{reviewProof:v.reviewProof}),env);assert.equal(c.status,409);}
+   relisted=true;const rejected=await(await adminProspects(request('verify',{proof:s.candidates[0].proof}),env)).json();assert.equal(rejected.result,'excluded');
+   assert(urls.filter(u=>u.searchParams.get('$filter')?.includes('StreetName')).every(u=>!u.searchParams.get('$filter').includes('PropertyType')));
+  }finally{globalThis.fetch=original;}
+ }
+});
+
+test('deployed entry routes listing searches to the current class-aware handler',async()=>{
+ const source=readFileSync(new URL('../scripts/presentation-release.mjs',import.meta.url),'utf8');
+ const entry=JSON.parse(source.match(/^const entry=(".*");$/m)[1]);
+ const fixture=entry.replace("import existing from './existing.mjs';","const existing={fetch:()=>new Response('legacy'),scheduled(){}};").replace("import {adminPostgrid} from './admin-postgrid-api.mjs';","const adminPostgrid=()=>new Response('mail');").replace("import {adminProspects} from './admin-prospects-api.mjs';","const adminProspects=()=>new Response('class-aware-search');");
+ const {default:router}=await import('data:text/javascript;base64,'+Buffer.from(fixture).toString('base64'));
+ assert.equal(await (await router.fetch(new Request('https://example.invalid/api/admin/prospects/search'),{})).text(),'class-aware-search');
+ assert.equal(await (await router.fetch(new Request('https://example.invalid/api/admin/prospects/verify'),{})).text(),'class-aware-search');
+ assert.equal(await (await router.fetch(new Request('https://example.invalid/api/admin/postgrid/status'),{})).text(),'mail');
+ assert.equal(await (await router.fetch(new Request('https://example.invalid/seller'),{})).text(),'legacy');assert.equal(typeof router.scheduled,'function');
 });

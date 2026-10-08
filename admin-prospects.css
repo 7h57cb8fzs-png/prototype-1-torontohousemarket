@@ -6,7 +6,7 @@
 #prospectsView .prospect-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 #prospectsView .filterbar{flex-wrap:wrap}#prospectsView .check-label{white-space:normal}
 #prospectsView td{vertical-align:top;line-height:1.65}#prospectsView small{font-size:11px}
-#prospectsView td:first-child,#prospectsView th:first-child{width:auto;min-width:200px;padding-right:14px}#prospectsView table{min-width:850px}
+#prospectsView td:first-child,#prospectsView th:first-child{width:44px;min-width:44px;padding-right:10px}#prospectsView td:nth-child(2),#prospectsView th:nth-child(2){min-width:180px}#prospectsView table{min-width:850px}
 #prospectsView #prospectProgress{min-height:24px;line-height:1.6;font-size:14px;margin:16px 0}
 @media(max-width:650px){#prospectsView .prospect-intro{padding:18px}#prospectsView .filterbar>*{flex:1 1 140px}#prospectsView .prospect-actions button{flex:1 1 120px}}
 
@@ -35,3 +35,35 @@
 #prospectsView .prospect-date-presets button{font-size:12px;padding:6px 10px;border:1px solid var(--line,#dedfd8);border-radius:20px}
 
 .prospect-condition-tools{margin:20px 0;padding:20px;background:#fff;border:1px solid var(--line,#ddd);border-radius:16px}.prospect-condition-tools h3{margin:0 0 8px}.prospect-condition-tools .prospect-actions{flex-wrap:wrap;gap:10px;margin:12px 0}.prospect-condition-tools label{display:grid;gap:6px;font-size:13px}.prospect-condition-cell{min-width:245px;max-width:330px}.prospect-quick-note{line-height:1.5;margin:8px 0}.prospect-condition-cell details{margin:10px 0;font-size:12px}.prospect-condition-cell summary{cursor:pointer;color:#536e68}.prospect-condition-cell textarea,.prospect-condition-cell select{display:block;width:100%;margin:8px 0;padding:9px;border:1px solid #ddd;border-radius:8px}.prospect-condition-cell textarea{min-height:80px;resize:vertical}.prospect-condition-cell blockquote{margin:10px 0;padding:8px;border-left:2px solid #c6ac75;background:#faf8f3}.prospect-evidence-photos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.prospect-evidence-photos a{position:relative}.prospect-evidence-photos img{width:100%;height:64px;object-fit:cover;border-radius:4px}.prospect-evidence-photos span{position:absolute;bottom:3px;left:3px;background:#fff;padding:2px 4px;color:#222}.prospect-photo-estimate{padding:14px;background:#f7f3e9;border:1px solid #c6ac75;border-radius:10px}.prospect-condition-tools button:disabled{opacity:.5}.prospect-condition-tools [hidden]{display:none!important}
+
+/* Realm-style location hierarchy; existing search values and API remain unchanged. */
+#prospectsView .prospect-location-fields{grid-column:1/-1;display:grid;gap:20px;max-width:780px;width:100%}
+#prospectsView .prospect-location-field{display:grid;gap:8px;min-width:0}
+#prospectsView .prospect-location-field>label{font-size:15px;color:#535957}
+#prospectsView .prospect-location-field>.prospect-picker{border-radius:5px;position:relative;width:100%;box-sizing:border-box}
+#prospectsView .prospect-location-field>.prospect-picker>summary{list-style:none;padding:13px 48px 13px 14px;min-height:22px;font-size:16px;font-weight:400;position:relative}
+#prospectsView .prospect-location-field>.prospect-picker>summary::-webkit-details-marker{display:none}
+#prospectsView .prospect-location-field>.prospect-picker>summary:after{content:'';position:absolute;right:18px;top:18px;width:8px;height:8px;border-right:2px solid #8b9591;border-bottom:2px solid #8b9591;transform:rotate(45deg)}
+#prospectsView .prospect-location-field>.prospect-picker[open]>summary:after{transform:rotate(225deg);top:22px}
+#prospectsView .prospect-location-field>.prospect-picker:focus-within{outline:2px solid #9ab9ae;outline-offset:1px}
+#prospectsView .prospect-location-menu{border-top:1px solid var(--line,#dedfd8);padding:10px;max-height:340px;overflow:auto}
+#prospectsView .prospect-location-menu .prospect-choices{max-height:none;padding:0;grid-template-columns:repeat(2,minmax(0,1fr))}
+#prospectsView .prospect-location-menu #prospectCommunitySearch{position:sticky;top:0;background:#fff;z-index:1;margin-bottom:8px}
+#prospectsView .prospect-community-group h4{font-size:12px;margin:14px 0 6px;padding:6px 8px;background:#edf3f0;color:#335e52}
+#prospectsView .prospect-community-options .prospect-choice{padding:9px 8px}
+#prospectsView .prospect-location-fields [hidden]{display:none!important}
+#prospectsView .prospect-manual-community{font-size:12px;color:#536e68}
+#prospectsView .prospect-manual-community>summary{cursor:pointer;padding:3px 0}
+#prospectsView .prospect-manual-community .prospect-add{margin-top:8px}
+@media(max-width:480px){#prospectsView .prospect-location-menu .prospect-choices{grid-template-columns:1fr}}
+
+#prospectsView .prospect-class{grid-column:1/-1;border:0;padding:0;margin:0;min-width:0;max-width:780px}
+#prospectsView .prospect-class legend{font-size:15px;color:#535957;margin-bottom:8px}
+#prospectsView .prospect-class-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid #cbd5cf;border-radius:5px;overflow:hidden;margin-bottom:9px}
+#prospectsView .prospect-class-options label{position:relative;display:block;cursor:pointer;border-right:1px solid #cbd5cf}
+#prospectsView .prospect-class-options label:last-child{border-right:0}
+#prospectsView .prospect-class-options input{position:absolute;opacity:0;width:1px;height:1px}
+#prospectsView .prospect-class-options span{display:flex;align-items:center;justify-content:center;text-align:center;height:100%;min-height:48px;padding:8px;box-sizing:border-box;color:#43564e;font-weight:600}
+#prospectsView .prospect-class-options input:checked+span{background:#dcebe4;color:#153f39;box-shadow:inset 0 0 0 2px #5d8c79}
+#prospectsView .prospect-class-options input:focus-visible+span{outline:3px solid #245e57;outline-offset:-4px}
+@media(max-width:480px){#prospectsView .prospect-class-options{grid-template-columns:repeat(2,minmax(0,1fr))}#prospectsView .prospect-class-options label:nth-child(2){border-right:0}#prospectsView .prospect-class-options label:nth-child(-n+2){border-bottom:1px solid #cbd5cf}}
