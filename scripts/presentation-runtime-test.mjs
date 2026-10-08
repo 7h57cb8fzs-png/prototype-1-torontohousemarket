@@ -18,8 +18,8 @@ if(new URL(request.url).pathname==='/routing'){
  const {base}=await request.json();
  if(base!=='https://torontohousemarket.com'&&!/^https:\/\/[a-f0-9]{8}-prototype-1-torontohousemarket\.7h57cb8fzs\.workers\.dev$/.test(base))return new Response('Invalid target',{status:400});
  const checks=await Promise.all(['freehold','condo','commercial','invalid-class'].map(async propertyClass=>{
-  const response=await fetch(base+'/api/admin/prospects/search',{method:'POST',headers:{Authorization:'Bearer '+env.ADMIN_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({filters:{propertyClass}}),redirect:'manual',signal:AbortSignal.timeout(60000)});
-  const data=await response.json();return {propertyClass,http:response.status,appliedClass:data.filters?.propertyClass||null,count:data.candidates?.length||0,matchingClass:(data.candidates||[]).every(row=>row.propertyClass===propertyClass)};
+  try{const response=await fetch(base+'/api/admin/prospects/search',{method:'POST',headers:{Authorization:'Bearer '+env.ADMIN_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({filters:{propertyClass}}),redirect:'manual',signal:AbortSignal.timeout(60000)});
+  const text=await response.text();let data;try{data=JSON.parse(text);}catch{return {propertyClass,http:response.status,nonJson:true,errorCode:text.match(/error code: (\d+)/i)?.[1]||null};}return {propertyClass,http:response.status,appliedClass:data.filters?.propertyClass||null,count:data.candidates?.length||0,matchingClass:(data.candidates||[]).every(row=>row.propertyClass===propertyClass)};}catch(error){return {propertyClass,http:0,error:error.name,hint:String(error.message).match(/1042|1019|same zone|fetch failed|Too many subrequests/i)?.[0]||null};}
  }));
  return Response.json({ok:checks.every(c=>c.propertyClass==='invalid-class'?c.http===400:c.http===200&&c.appliedClass===c.propertyClass&&c.matchingClass),checks});
 }
@@ -37,7 +37,7 @@ return Response.json({ok:false,classChecks,candidates:data.candidates?.length||0
 }};`;
 try{
 writeFileSync(join(temp,'probe.mjs'),source,{mode:0o600});writeFileSync(join(temp,'admin-prospects-api.mjs'),readFileSync('admin-prospects-api.js'));writeFileSync(join(temp,'admin-postgrid-api.mjs'),readFileSync('admin-postgrid-api.js','utf8').replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'"));
-const config=JSON.parse(readFileSync('wrangler.jsonc','utf8'));delete config.secrets;delete config.assets;delete config.triggers;
+const config=JSON.parse(readFileSync('wrangler.jsonc','utf8'));config.compatibility_flags=[...new Set([...(config.compatibility_flags||[]),'global_fetch_strictly_public'])];delete config.secrets;delete config.assets;delete config.triggers;
 config.main=join(temp,'probe.mjs');config.vars=Object.fromEntries(v.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));config.vars.THM_POSTGRID_PROBE=nonce;config.vars.THM_POSTGRID_PROBE_EXPIRY=String(Date.now()+600000);
 writeFileSync(join(temp,'wrangler.json'),JSON.stringify(config),{mode:0o600});let output;
 try{output=execFileSync('npx',['--yes','wrangler@4.129.0','versions','upload','--config',join(temp,'wrangler.json')],{encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch{throw Error('Test preview upload failed; private config output withheld');}
