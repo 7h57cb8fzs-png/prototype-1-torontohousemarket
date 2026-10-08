@@ -112,6 +112,7 @@ test('Realm-style area hierarchy narrows choices and preserves the existing MLS 
   choose('prospectCommunityBrowse','Crosby');await app.start();assert.deepEqual(Array.from(requests.at(-1).municipalities),['Richmond Hill']);assert.equal(requests.at(-1).districts.length,0);
   $('prospectResetFilters').click();choose('prospectAreas','York');await app.start();assert.equal(requests.at(-1).municipalities.length,9);assert(!requests.at(-1).municipalities.includes('Toronto'));
   $('prospectResetFilters').click();choose('prospectAreas','Toronto');await app.start();assert.deepEqual(Array.from(requests.at(-1).municipalities),['Toronto']);
-  $('prospectResetFilters').click();await app.start();assert.equal(requests.at(-1).municipalities.length,0);assert.equal(requests.at(-1).districts.length,0);assert.equal(requests.at(-1).communities.length,0);
+  $('prospectClass').querySelector('input[value="condo"]').checked=true;await app.start();assert.equal(requests.at(-1).propertyClass,'condo');
+  $('prospectResetFilters').click();await app.start();assert.equal(requests.at(-1).propertyClass,'residential');assert.equal(requests.at(-1).municipalities.length,0);assert.equal(requests.at(-1).districts.length,0);assert.equal(requests.at(-1).communities.length,0);
  }finally{app.clear();dom.window.close();}
 });

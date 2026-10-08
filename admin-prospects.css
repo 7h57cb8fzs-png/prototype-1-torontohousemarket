@@ -56,3 +56,14 @@
 #prospectsView .prospect-manual-community>summary{cursor:pointer;padding:3px 0}
 #prospectsView .prospect-manual-community .prospect-add{margin-top:8px}
 @media(max-width:480px){#prospectsView .prospect-location-menu .prospect-choices{grid-template-columns:1fr}}
+
+#prospectsView .prospect-class{grid-column:1/-1;border:0;padding:0;margin:0;min-width:0;max-width:780px}
+#prospectsView .prospect-class legend{font-size:15px;color:#535957;margin-bottom:8px}
+#prospectsView .prospect-class-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid #cbd5cf;border-radius:5px;overflow:hidden;margin-bottom:9px}
+#prospectsView .prospect-class-options label{position:relative;display:block;cursor:pointer;border-right:1px solid #cbd5cf}
+#prospectsView .prospect-class-options label:last-child{border-right:0}
+#prospectsView .prospect-class-options input{position:absolute;opacity:0;width:1px;height:1px}
+#prospectsView .prospect-class-options span{display:flex;align-items:center;justify-content:center;text-align:center;height:100%;min-height:48px;padding:8px;box-sizing:border-box;color:#43564e;font-weight:600}
+#prospectsView .prospect-class-options input:checked+span{background:#dcebe4;color:#153f39;box-shadow:inset 0 0 0 2px #5d8c79}
+#prospectsView .prospect-class-options input:focus-visible+span{outline:3px solid #245e57;outline-offset:-4px}
+@media(max-width:480px){#prospectsView .prospect-class-options{grid-template-columns:repeat(2,minmax(0,1fr))}#prospectsView .prospect-class-options label:nth-child(2){border-right:0}#prospectsView .prospect-class-options label:nth-child(-n+2){border-bottom:1px solid #cbd5cf}}

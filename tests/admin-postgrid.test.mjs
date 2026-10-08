@@ -68,7 +68,7 @@ async function uiHarness(){
  const post=async(path,body)=>{calls.push({path,body});if(path.endsWith('/status'))return {connected:true};if(path.endsWith('/subject'))return subjectHook?subjectHook(body):{reviewProof:'fresh-'+body.reviewProof,address:{...address,firstName:'',lastName:''}};if(path.endsWith('/history'))return {orders:[...saved]};if(path.endsWith('/delete')){for(let i=saved.length-1;i>=0;i--)if(body.ids.includes(saved[i].id))saved.splice(i,1);return {deletedIds:body.ids};}if(path.endsWith('/refresh'))return {order:{...saved.find(o=>o.id===body.id),previewUrl:'https://example.com/fresh-preview.pdf'}};
   const order={id:'order-'+saved.length,postgridId:'letter_'+saved.length,recipient:body.to,sender:body.from,pdfName:body.pdfName,status:'ready',property:body.reviewProof,createdAt:'2026-10-05T12:00:00Z'};saved.unshift(order);return {order};};
  const app=w.init({$,esc:v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),getSelected:()=>selection,post});
- const set=rows=>{selection=rows.map(key=>({address:key==='A'?'<script>unsafe</script>':key+' Road',reviewProof:key,listingKey:key}));app.selectionChanged();};
+ const set=(rows,propertyClass)=>{selection=rows.map(key=>({propertyClass,address:key==='A'?'<script>unsafe</script>':key+' Road',reviewProof:key,listingKey:key}));app.selectionChanged();};
  const fill=()=>{for(const [key,value]of Object.entries(address))if($('mail-from-'+key))$('mail-from-'+key).value=value;selection.forEach((_,i)=>{if($('mail-to-'+i+'-firstName'))$('mail-to-'+i+'-firstName').value='Recipient '+i;});};
  const file=name=>new w.File(['%PDF-1.4 synthetic document\n%%EOF'],name,{type:'application/pdf'});
  const submit=async()=>{$('mailConfirm').checked=true;await $('mailForm').onsubmit({preventDefault(){}});};
@@ -135,4 +135,10 @@ test('history select all spans pages, filter changes clear selections, and delet
   $('mailHistorySearch').value='';$('mailHistorySearch').oninput();await app.loadHistory(false);assert.match($('mailHistoryCount').textContent,/11 records/);
   app.clear();assert.equal($('mail-from-postalOrZip').value,'M1W 3W6');assert.equal($('mailHistorySelectedCount').textContent,'0 selected');
  }finally{app.clear();dom.window.close();}
+});
+
+
+test('commercial mailing offers PDF upload without a residential report or homeowner greeting',async()=>{
+ const h=await uiHarness(),{$,app,dom}=h;
+ try{h.set(['COMMERCIAL'],'commercial');await $('mailPrepare').onclick();$('mailModeCustom').checked=true;$('mailModeCustom').onchange();assert.equal($('mail-to-0-firstName').value,'Current Property Owner');assert.equal(h.d.querySelectorAll('[data-mail-generate]').length,0);assert.equal(h.d.querySelectorAll('[data-mail-file]').length,1);assert.match($('mailRecipients').textContent,/upload your commercial presentation/i);assert.equal(h.calls.filter(c=>c.path.endsWith('/create')).length,0);}finally{app.clear();dom.window.close();}
 });

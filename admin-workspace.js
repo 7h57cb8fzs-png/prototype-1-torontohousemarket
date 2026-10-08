@@ -1,5 +1,5 @@
-import {initAdminPostgrid} from './admin-postgrid.js?v=6';
-import {initAdminProspects} from './admin-prospects.js?v=9';
+import {initAdminPostgrid} from './admin-postgrid.js?v=7';
+import {initAdminProspects} from './admin-prospects.js?v=10';
 import {initAdminInsights} from './admin-insights.js';
 import {esc,money,human,renovation,sellerFields,valuation,cleanNotes,phone} from './admin-view-model.js';
 const $=id=>document.getElementById(id),state={token:'',view:'leads',rows:[],agents:[],counts:{},page:1,size:25,total:0,selected:new Set(),lead:null,detailTab:'overview',request:0,detailRequest:0,copyRequest:0,manualKey:null};

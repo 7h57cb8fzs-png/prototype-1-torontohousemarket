@@ -35,6 +35,14 @@ export function identity(row){
  const road=street([row.StreetName,row.StreetSuffix,row.StreetDirPrefix,row.StreetDirSuffix].filter(Boolean).join(' '));
  return [city,number,road,u].join('|');
 }
+const PROPERTY_CLASSES={freehold:['Residential Freehold'],condo:['Residential Condo & Other','Residential Condo','Residential Condominium'],commercial:['Commercial']};
+export function propertyClass(row){
+ const type=norm(row.PropertyType);
+ return Object.entries(PROPERTY_CLASSES).find(([,types])=>types.some(value=>norm(value)===type))?.[0]||(/^residential(?: income)?$/.test(type)?'residential':'unknown');
+}
+function matchesClass(row,selection='residential'){
+ const actual=propertyClass(row);return selection==='residential'?['freehold','condo','residential'].includes(actual):actual===selection;
+}
 export function classifyCandidate(row,today=torontoDay(),window={dateFrom:SINCE,dateTo:today}){
  const event=endEvent(row);
  if(!event)return {eligible:false,reason:'Other listing status'};
@@ -43,13 +51,13 @@ export function classifyCandidate(row,today=torontoDay(),window={dateFrom:SINCE,
  if(!region(row))return {eligible:false,reason:'Outside Toronto / York'};
  if(!owner(row))return {eligible:false,reason:'Owner occupancy not explicitly recorded'};
  if(!/^for sale$|^sale$/i.test(clean(row.TransactionType)))return {eligible:false,reason:'Not a sale listing'};
- if(!/^residential(?: freehold| condo(?: & other)?| income| condominium)?$/i.test(clean(row.PropertyType)))return {eligible:false,reason:'Not a residential listing'};
+ if(!matchesClass(row,window.propertyClass||'residential'))return {eligible:false,reason:'Outside selected property class'};
  if(!identity(row))return {eligible:false,reason:'Property / unit identity incomplete'};
  return {eligible:true,event};
 }
 function summary(row,event=endEvent(row)){
  const address=[row.StreetNumber,row.StreetName,row.StreetSuffix,row.StreetDirPrefix,row.StreetDirSuffix].filter(Boolean).join(' ');
- return {listingKey:clean(row.ListingKey),address:address+(clean(row.UnitNumber)?' #'+clean(row.UnitNumber):''),city:clean(row.City),community:clean(row.CityRegion),region:region(row),status:event?.status,eventDate:event?.date,eventField:event?.field,occupancy:clean(row.OccupantType),propertyType:clean(row.PropertySubType||row.PropertyType),askingPrice:Number(row.ListPrice)>0?Number(row.ListPrice):null};
+ return {listingKey:clean(row.ListingKey),address:address+(clean(row.UnitNumber)?' #'+clean(row.UnitNumber):''),city:clean(row.City),community:clean(row.CityRegion),region:region(row),status:event?.status,eventDate:event?.date,eventField:event?.field,occupancy:clean(row.OccupantType),propertyClass:propertyClass(row),propertyType:clean(row.PropertySubType||row.PropertyType),askingPrice:Number(row.ListPrice)>0?Number(row.ListPrice):null};
 }
 const SELECT='ListingKey,MlsStatus,StandardStatus,ExpirationDate,TerminatedDate,OccupantType,TransactionType,PropertyType,PropertySubType,StreetNumber,StreetName,StreetSuffix,StreetDirPrefix,StreetDirSuffix,UnitNumber,City,CityRegion,PostalCode,ListPrice,ListingContractDate,OriginalEntryTimestamp,BackOnMarketEntryTimestamp,ParcelNumber';
 const KEEP=['ListingKey','MlsStatus','StandardStatus','ExpirationDate','TerminationDate','TerminatedDate','CancellationDate','OccupantType','TransactionType','PropertyType','PropertySubType','StreetNumber','StreetName','StreetSuffix','StreetDirPrefix','StreetDirSuffix','UnitNumber','City','CityRegion','PostalCode','ListPrice','ListingContractDate','OnMarketDate','OriginalEntryTimestamp','BackOnMarketEntryTimestamp','ParcelNumber'];
@@ -92,13 +100,15 @@ export function searchFilters(value={},today=torontoDay()){
  const date=(v,fallback)=>{const d=v===undefined?fallback:clean(v);if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||day(d)!==d||d<'1900-01-01'||d>today)throw new Unavailable('Choose valid dates from 1900 through today.',400);return d;};
  const dateFrom=date(value.dateFrom,SINCE),dateTo=date(value.dateTo,today);
  if(dateFrom>dateTo)throw new Unavailable('The start date must not be after the end date.',400);
+ const propertyClass=clean(value.propertyClass)||'residential';if(!['residential','freehold','condo','commercial'].includes(propertyClass))throw new Unavailable('Choose a valid property class.',400);
  const status=clean(value.status);if(!['','Expired','Terminated'].includes(status))throw new Unavailable('Choose Expired, Terminated or both statuses.',400);
  const price=(value,label)=>{if(value==null||value==='')return null;const n=typeof value==='number'?value:typeof value==='string'&&/^\d+(?:\.\d{1,2})?$/.test(value.trim())?Number(value):NaN;if(!Number.isFinite(n)||n<0||n>1e10)throw new Unavailable('Enter a valid '+label+' asking price.',400);return n;};
  const minPrice=price(value.minPrice,'minimum'),maxPrice=price(value.maxPrice,'maximum');
  if(minPrice!==null&&maxPrice!==null&&minPrice>maxPrice)throw new Unavailable('Minimum price must not exceed maximum price.',400);
- return {municipalities,districts,communities,dateFrom,dateTo,status,minPrice,maxPrice};
+ return {municipalities,districts,communities,dateFrom,dateTo,status,minPrice,maxPrice,propertyClass};
 }
 export function matchesFilters(row,filters){
+ if(!matchesClass(row,filters.propertyClass))return false;
  const inMunicipality=filters.municipalities.some(v=>v==='Toronto'?region(row)==='Toronto':norm(row.City)===norm(v));
  const inDistrict=filters.districts.some(v=>norm(row.City)===norm('Toronto '+v));
  if((filters.municipalities.length||filters.districts.length)&&!inMunicipality&&!inDistrict)return false;
@@ -137,6 +147,7 @@ async function firstPage(env,filters){
  const areas=[...selected.map(city=>`contains(City,${quoted(city)})`),...filters.districts.map(d=>`City eq ${quoted('Toronto '+d)}`)];
  const scope=areas.join(' or ');
  const extra=[];
+ if(filters.propertyClass!=='residential'){if(!fields.has('PropertyType'))throw new Unavailable('The connected MLS feed does not provide the property class field.');extra.push('('+PROPERTY_CLASSES[filters.propertyClass].map(value=>`PropertyType eq ${quoted(value)}`).join(' or ')+')');}
  if(filters.communities.length)extra.push('('+filters.communities.map(v=>`tolower(CityRegion) eq ${quoted(v.toLowerCase())}`).join(' or ')+')');
  if(filters.minPrice!==null)extra.push(`ListPrice ge ${filters.minPrice}`);
  if(filters.maxPrice!==null)extra.push(`ListPrice le ${filters.maxPrice}`);
@@ -156,6 +167,7 @@ export function evaluateHistory(subject,rows,complete,today=torontoDay()){
   }
   if(clean(r.ListingKey)===clean(subject.ListingKey)){
    seen=true;const e=endEvent(r);
+   if(propertyClass(r)!==propertyClass(subject))return {result:'excluded',reason:'Listing property class changed'};
    if(!e||e.status!==event?.status||e.date!==event?.date||!owner(r))return {result:'excluded',reason:'Listing status or occupancy changed'};
    if(day(r.OnMarketDate)>event.date||day(r.BackOnMarketEntryTimestamp)>=event.date)return {result:'excluded',reason:'Same MLS listing returned to market after its end date'};
    continue;
@@ -283,7 +295,9 @@ export function validatePhotoAssessment(value,photos){
 }
 async function conditionReview(body,env){
  const mode=body.mode||'remarks';if(!['remarks','quote','photos','manual'].includes(mode))throw new Unavailable('Choose a valid review action.',400);
- const {listing,proof,fingerprint}=await assessmentSubject(body,env),key=clean(listing.ListingKey),cached=await cachedAssessment(env,key,fingerprint);
+ const {listing,proof,fingerprint}=await assessmentSubject(body,env);
+ if(propertyClass(listing)==='commercial')throw new Unavailable('Renovation review is available for residential properties only.',409);
+ const key=clean(listing.ListingKey),cached=await cachedAssessment(env,key,fingerprint);
  if(mode==='manual'){
   if(!Object.hasOwn(CONDITION_LABELS,body.category)||typeof body.note!=='string'||!body.note.trim()||body.note.length>400)throw new Unavailable('Choose a category and enter a short note (400 characters maximum).',400);
   const assessment={category:body.category,label:CONDITION_LABELS[body.category],note:body.note.trim(),reason:'Manually reviewed by the admin.',source:'manual',confidence:'not rated',reviewedAt:new Date().toISOString(),version:CONDITION_VERSION,areas:[],previousAssessment:cached?.source==='manual'?cached.previousAssessment:cached};
@@ -349,6 +363,7 @@ export function presentationSales(subject,rows,today=torontoDay()){
 }
 export async function mailingPresentation(reviewProof,env){
  const verified=await mailingSubject(reviewProof,env,true),s=verified.listing;
+ if(propertyClass(s)==='commercial')throw new Unavailable('The customized seller presentation is for residential properties. Upload a commercial PDF instead.',409);
  if(!s.City||!s.StreetName||!s.PropertyType)throw new Unavailable('This listing does not have enough location information for a customized presentation.',409);
  // Project only report fields: full MLS records can exceed the bounded response size.
  const {fields}=await schema(env);
