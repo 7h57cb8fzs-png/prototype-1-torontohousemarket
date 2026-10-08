@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
 async function cf(path){const r=await fetch(root+path,{headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN}});const d=await r.json();assert(r.ok&&d.success,'Cloudflare read failed');return d.result;}
 async function active(){const d=await cf('/workers/scripts/'+worker+'/deployments');return d.deployments[0].versions[0].version_id;}
-const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'83bbb9ba-6777-484d-b7f0-c2e4889a9c4b');
+const before=await active(),v=await cf('/workers/workers/'+worker+'/versions/'+before+'?include=modules');assert.equal(before,'d7b6b714-1e70-49f3-8f9a-6aad4cae7533');
 const nonce=randomBytes(32).toString('hex'),temp=mkdtempSync(join(tmpdir(),'thm-postgrid-probe-'));
 // A never-promoted, expiring read-only MLS test. No PostGrid, database, email or AI writes.
 const source=String.raw`import {adminProspects} from './admin-prospects-api.mjs';
@@ -21,7 +21,12 @@ if(new URL(request.url).pathname==='/routing'){
   try{const response=await fetch(base+'/api/admin/prospects/search',{method:'POST',headers:{Authorization:'Bearer '+env.ADMIN_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({filters:{propertyClass}}),redirect:'manual',signal:AbortSignal.timeout(60000)});
   const text=await response.text();let data;try{data=JSON.parse(text);}catch{return {propertyClass,http:response.status,nonJson:true,errorCode:text.match(/error code: (\d+)/i)?.[1]||null};}return {propertyClass,http:response.status,appliedClass:data.filters?.propertyClass||null,count:data.candidates?.length||0,matchingClass:(data.candidates||[]).every(row=>row.propertyClass===propertyClass)};}catch(error){return {propertyClass,http:0,error:error.name,hint:String(error.message).match(/1042|1019|same zone|fetch failed|Too many subrequests/i)?.[0]||null};}
  }));
- return Response.json({ok:checks.every(c=>c.propertyClass==='invalid-class'?c.http===400:c.http===200&&c.appliedClass===c.propertyClass&&c.matchingClass),checks});
+ const mailChecks=await Promise.all(['test','live'].map(async mode=>{
+ const r=await fetch(base+'/api/admin/postgrid/status',{method:'POST',headers:{Authorization:'Bearer '+env.ADMIN_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({mode}),redirect:'manual'});const d=await r.json();return {mode,http:r.status,ok:r.ok&&d.mode===mode&&d.connected===true};
+ }));
+ const blocked=await fetch(base+'/api/admin/postgrid/create',{method:'POST',headers:{Authorization:'Bearer '+env.ADMIN_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({mode:'live',confirmed:true,paidConfirmed:false}),redirect:'manual'});
+ mailChecks.push({check:'paidConsentRequired',http:blocked.status,ok:blocked.status===403});
+ return Response.json({ok:checks.every(c=>c.propertyClass==='invalid-class'?c.http===400:c.http===200&&c.appliedClass===c.propertyClass&&c.matchingClass),checks,mailChecks});
 }
 const req=(action,body={})=>new Request('https://internal.invalid/api/admin/'+action,{method:'POST',headers:{Authorization:'Bearer '+env.ADMIN_API_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
 const classChecks=await Promise.all(['freehold','condo','commercial'].map(async propertyClass=>{const r=await adminProspects(req('prospects/search',{filters:{propertyClass}}),env),d=await r.json();return {propertyClass,http:r.status,count:d.candidates?.length,matchingClass:(d.candidates||[]).every(c=>c.propertyClass===propertyClass),error:d.error};}));

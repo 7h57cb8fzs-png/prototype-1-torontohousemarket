@@ -1,7 +1,7 @@
 create table public.admin_postgrid_orders (
  id uuid primary key,
  fingerprint text not null unique,
- mode text not null check (mode = 'test'),
+ mode text not null check (mode in ('test', 'live')),
  listing_key text not null,
  property_address text not null,
  recipient jsonb not null,
@@ -21,4 +21,4 @@ create index admin_postgrid_orders_created on public.admin_postgrid_orders (crea
 alter table public.admin_postgrid_orders enable row level security;
 revoke all on public.admin_postgrid_orders from public, anon, authenticated;
 grant select, insert, update on public.admin_postgrid_orders to service_role;
-comment on table public.admin_postgrid_orders is 'Private admin-only PostGrid TEST orders. No PDFs, keys or live mail. Durable duplicate protection.';
+comment on table public.admin_postgrid_orders is 'Private admin-only PostGrid test and live orders. No PDFs or keys. Durable duplicate protection.';

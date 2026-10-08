@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {adminPostgrid,pdfBytes,contact} from '../admin-postgrid-api.js';
 import {adminProspects} from '../admin-prospects-api.js';
-const env={ADMIN_API_KEY:'test-admin',POSTGRID_TEST_API_KEY:'test_sk_synthetic',AMPRE_VOW_TOKEN:'synthetic-feed',SUPABASE_SERVICE_ROLE_KEY:'synthetic-db'};
+const env={ADMIN_API_KEY:'test-admin',POSTGRID_TEST_API_KEY:'test_sk_synthetic',POSTGRID_LIVE_API_KEY:'live_sk_synthetic',AMPRE_VOW_TOKEN:'synthetic-feed',SUPABASE_SERVICE_ROLE_KEY:'synthetic-db'};
 const address={firstName:'Synthetic',lastName:'Recipient',addressLine1:'123 Synthetic Rd',city:'Toronto',provinceOrState:'ON',postalOrZip:'M5V 2T6'};
 const row={ListingKey:'SYNTHETIC-MAIL',MlsStatus:'Expired',StandardStatus:'Expired',ExpirationDate:'2026-09-15',OccupantType:'Owner',TransactionType:'For Sale',PropertyType:'Residential Freehold',StreetNumber:'123',StreetName:'Synthetic',StreetSuffix:'Rd',City:'Toronto C01',PostalCode:'M5V 2T6',ListingContractDate:'2026-08-01'};
 const pdf=Buffer.from('%PDF-1.4\nSynthetic test document\n%%EOF').toString('base64');
@@ -13,13 +13,13 @@ test('PDF limits handle large uploads; Canadian addresses validate and discard e
  const large=Buffer.alloc(8*1024*1024,32);large.write('%PDF-1.4');assert.equal(pdfBytes(large.toString('base64')).length,large.length);
  assert.equal(contact({...address,postalOrZip:'m5v2t6',secret:'drop'}).postalOrZip,'M5V 2T6');assert.equal(contact({...address,secret:'drop'}).secret,undefined);assert.throws(()=>contact({...address,postalOrZip:'invalid'}));
 });
-test('auth, test-only gating, revalidation, atomic duplicate reservation and uncertain outcomes',async()=>{
+test('auth, paid consent, mode isolation, revalidation, atomic duplicate reservation and uncertain outcomes',async()=>{
  const original=globalThis.fetch,db=new Map();let sends=0,reads=0,relisted=false,providerFails=false,providerRejects=false;
  globalThis.fetch=async(url,init={})=>{
   const u=new URL(url);reads++;
   if(u.hostname==='api.postgrid.com'){
-   assert.equal(init.headers['x-api-key'],env.POSTGRID_TEST_API_KEY);assert.equal(init.redirect,'manual');
-   if(init.method==='POST'){sends++;assert(init.headers['Idempotency-Key']);assert.equal(init.body.get('to[countryCode]'),'CA');assert.equal(init.body.get('addressPlacement'),'insert_blank_page');assert.equal(init.body.get('pdf').type,'application/pdf');if(providerRejects){await new Promise(r=>setTimeout(r,20));return Response.json({error:{message:'PDF page size invalid '+env.POSTGRID_TEST_API_KEY}},{status:400});}if(providerFails)throw Error('synthetic private error');return Response.json({id:'letter_synthetic'+sends,live:false,status:'ready',url:'https://example.com/preview.pdf'});}
+   assert([env.POSTGRID_TEST_API_KEY,env.POSTGRID_LIVE_API_KEY].includes(init.headers['x-api-key']));assert.equal(init.redirect,'manual');
+   if(init.method==='POST'){sends++;assert(init.headers['Idempotency-Key']);assert.equal(init.body.get('to[countryCode]'),'CA');assert.equal(init.body.get('addressPlacement'),'insert_blank_page');assert.equal(init.body.get('pdf').type,'application/pdf');if(providerRejects){await new Promise(r=>setTimeout(r,20));return Response.json({error:{message:'PDF page size invalid '+env.POSTGRID_TEST_API_KEY}},{status:400});}if(providerFails)throw Error('synthetic private error');return Response.json({id:'letter_synthetic'+sends,live:init.headers['x-api-key']===env.POSTGRID_LIVE_API_KEY,status:'ready',url:'https://example.com/preview.pdf'});}
    return Response.json({data:[]});
   }
   if(u.hostname.endsWith('supabase.co')){
@@ -58,6 +58,16 @@ test('auth, test-only gating, revalidation, atomic duplicate reservation and unc
   assert.equal((await call('create',{...body,confirmed:false})).status,400);
   providerFails=false;providerRejects=true;const bad={...body,doubleSided:false};const rejection=await call('create',bad);assert.equal(rejection.status,422);assert.match(rejection.error,/PDF page size invalid/);assert(!rejection.error.includes(env.POSTGRID_TEST_API_KEY));assert.equal([...db.values()].filter(x=>x.status==='rejected').length,1);
   const previous=sends;await Promise.all([call('create',bad),call('create',bad)]);assert.equal(sends,previous+1,'Concurrent rejected retries reserve once');
+  providerRejects=false;
+  assert.equal((await call('create',{...body,mode:'live',paidConfirmed:false})).status,403);
+  assert.equal((await call('create',{...body,mode:'invalid'})).status,400);
+  assert.equal((await call('create',{...body,mode:'live',paidConfirmed:true},{...env,POSTGRID_LIVE_API_KEY:env.POSTGRID_TEST_API_KEY})).status,503);
+  const liveBefore=sends,liveBody={...body,mode:'live',paidConfirmed:true};
+  const liveResults=await Promise.all([call('create',liveBody),call('create',liveBody)]);
+  assert(liveResults.every(r=>r.ok&&r.order.mode==='live'));assert.equal(sends,liveBefore+1);assert.equal(liveResults.filter(r=>r.duplicate).length,1);
+  const history=await call('history');assert(history.orders.some(r=>r.mode==='test'));assert(history.orders.some(r=>r.mode==='live'));
+  const liveStatus=await call('status',{mode:'live'});assert.equal(liveStatus.liveEnabled,true);assert.equal(liveStatus.mode,'live');
+
  }finally{globalThis.fetch=original;}
 });
 async function uiHarness(){
@@ -141,4 +151,18 @@ test('history select all spans pages, filter changes clear selections, and delet
 test('commercial mailing offers PDF upload without a residential report or homeowner greeting',async()=>{
  const h=await uiHarness(),{$,app,dom}=h;
  try{h.set(['COMMERCIAL'],'commercial');await $('mailPrepare').onclick();$('mailModeCustom').checked=true;$('mailModeCustom').onchange();assert.equal($('mail-to-0-firstName').value,'Current Property Owner');assert.equal(h.d.querySelectorAll('[data-mail-generate]').length,0);assert.equal(h.d.querySelectorAll('[data-mail-file]').length,1);assert.match($('mailRecipients').textContent,/upload your commercial presentation/i);assert.equal(h.calls.filter(c=>c.path.endsWith('/create')).length,0);}finally{app.clear();dom.window.close();}
+});
+
+test('live UI requires paid confirmation and does not submit on cancel',async()=>{
+ const h=await uiHarness(),{$,dom,w}=h;
+ try{
+ h.set(['A']);await $('mailPrepare').onclick();h.fill();
+ await $('mailCommonPdf').onchange({target:{files:[h.file('approved.pdf')]}});
+ $('mailEnvironment').value='live';$('mailEnvironment').onchange();
+ assert.equal($('mailConfirm').checked,false);assert.match($('mailCreate').textContent,/Send paid/);assert.match($('mailModeBadge').textContent,/LIVE/);
+ w.confirm=()=>false;await h.submit();assert.equal(h.calls.filter(c=>c.path.endsWith('/create')).length,0);
+ w.confirm=message=>{assert.match(message,/1 paid physical letter/);return true;};await h.submit();
+ const create=h.calls.find(c=>c.path.endsWith('/create'));assert.equal(create.body.mode,'live');assert.equal(create.body.paidConfirmed,true);
+ $('mailEnvironment').value='test';$('mailEnvironment').onchange();assert.equal($('mailConfirm').checked,false);
+ }finally{dom.window.close();}
 });

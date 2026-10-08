@@ -6,17 +6,17 @@ import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 const worker='prototype-1-torontohousemarket',live='https://torontohousemarket.com';
 const root='https://api.cloudflare.com/client/v4/accounts/80022b7ed0560b75d96cc593b0cfaf22';
-const expectedVersion='83bbb9ba-6777-484d-b7f0-c2e4889a9c4b',expectedHash='bf69231bba3db7074320186b2920983a16639146a363d3ea760157197b1fb0fa';
+const expectedVersion='d7b6b714-1e70-49f3-8f9a-6aad4cae7533',expectedHash='bf69231bba3db7074320186b2920983a16639146a363d3ea760157197b1fb0fa';
 const hash=v=>createHash('sha256').update(v).digest('hex');
-const beforeRef=execFileSync('git',['rev-parse','ce1df4372d0570b2966a1deb17827f5c48dcdb31'],{encoding:'utf8'}).trim();
-const allowed=new Set(['.assetsignore','admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css','admin-prospects-api.js','admin-postgrid-api.js','admin-postgrid.js','admin-postgrid.css','tests/admin-postgrid.test.mjs','tests/admin-condition.test.mjs','tests/admin-postgrid.visual.cjs','tests/admin-prospects.test.mjs','supabase/manual/admin-postgrid-orders.sql','scripts/postgrid-seller-inspect.mjs','scripts/postgrid-inspect.mjs','scripts/postgrid-runtime-test.mjs','scripts/postgrid-release.mjs','.github/workflows/postgrid-test.yml']);
+const beforeRef=execFileSync('git',['rev-parse','88ef73430ab5acd8621a79895a1f6ef319b56bfe'],{encoding:'utf8'}).trim();
+const allowed=new Set(['.assetsignore','admin.html','admin-workspace.js','admin-prospects.js','admin-prospects.css','admin-prospects-api.js','admin-postgrid-api.js','admin-postgrid.js','admin-postgrid.css','tests/admin-postgrid.test.mjs','tests/admin-condition.test.mjs','tests/admin-postgrid.visual.cjs','tests/admin-prospects.test.mjs','supabase/manual/admin-postgrid-orders.sql','scripts/postgrid-seller-inspect.mjs','scripts/postgrid-inspect.mjs','scripts/postgrid-recover.mjs','scripts/postgrid-runtime-test.mjs','scripts/postgrid-release.mjs','.github/workflows/postgrid-test.yml']);
 for(const f of execFileSync('git',['diff','--name-only',beforeRef,'HEAD'],{encoding:'utf8'}).trim().split('\n').filter(Boolean))assert(allowed.has(f)||f.startsWith('marketing/seller-presentation/')||['admin-presentation-pdf.js','scripts/seller-presentation-client.js','scripts/build-seller-presentation-template.py','scripts/presentation-runtime-test.mjs','scripts/presentation-release.mjs','scripts/build-presentation-client.mjs','.github/workflows/admin-presentation.yml','tests/admin-presentation.test.mjs','tests/admin-presentation.visual.cjs'].includes(f),'Out-of-scope change: '+f);
 assert.equal(fs.readFileSync('worker-v22.js','utf8'),execFileSync('git',['show',beforeRef+':worker-v22.js'],{encoding:'utf8'}),'Existing worker behavior changed');
 async function cf(p,method='GET',body){const r=await fetch(root+p,{method,headers:{Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000)});const d=await r.json();assert(r.ok&&d.success,'Cloudflare request failed '+r.status);return d.result;}
 async function active(){const d=await cf(`/workers/scripts/${worker}/deployments`);assert.equal(d.deployments[0].versions.length,1);assert.equal(d.deployments[0].versions[0].percentage,100);return d.deployments[0].versions[0].version_id;}
 const version=id=>cf(`/workers/workers/${worker}/versions/${id}?include=modules`);
 const beforeId=await active(),before=await version(beforeId),schedule=await cf(`/workers/scripts/${worker}/schedules`);
-assert.equal(beforeId,expectedVersion,'Production changed; stop and reconcile');assert.equal(before.modules.length,4);const beforeModules=new Map(before.modules.map(m=>[m.name,Buffer.from(m.content_base64,'base64')]));const existing=beforeModules.get('existing.mjs');assert.equal(hash(existing),expectedHash);assert(before.bindings.some(b=>b.name==='POSTGRID_TEST_API_KEY'&&b.type==='secret_text'),'Test secret missing');
+assert.equal(beforeId,expectedVersion,'Production changed; stop and reconcile');assert.equal(before.modules.length,4);const beforeModules=new Map(before.modules.map(m=>[m.name,Buffer.from(m.content_base64,'base64')]));const existing=beforeModules.get('existing.mjs');assert.equal(hash(existing),expectedHash);assert(before.bindings.some(b=>b.name==='POSTGRID_LIVE_API_KEY'&&b.type==='secret_text'),'Live secret missing');assert(before.bindings.some(b=>b.name==='POSTGRID_TEST_API_KEY'&&b.type==='secret_text'),'Test secret missing');
 const plain=Object.fromEntries(before.bindings.filter(b=>b.type==='plain_text').map(b=>[b.name,b.text]));
 const names=v=>v.bindings.filter(b=>b.name!=='ASSETS').map(b=>b.name+':'+b.type).sort();
 const patterns=fs.readFileSync('.assetsignore','utf8').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
@@ -47,7 +47,7 @@ async function verify(base){
  const probe=JSON.parse(fs.readFileSync('/tmp/thm-route-probe.json','utf8'));
  const response=await fetch(probe.url+'/routing',{method:'POST',headers:{Authorization:'Bearer '+probe.nonce,'Content-Type':'application/json'},body:JSON.stringify({base}),signal:AbortSignal.timeout(120000)});
  assert(response.ok,'Authenticated route probe unavailable');const routed=await response.json();
- console.log('AUTHENTICATED_CLASS_ROUTES',JSON.stringify({base,...routed}));assert.equal(routed.ok,true,'Deployed search route ignored property class');
+ console.log('AUTHENTICATED_CLASS_ROUTES',JSON.stringify({base,...routed}));assert.equal(routed.ok,true,'Deployed search route ignored property class');assert(routed.mailChecks.every(c=>c.ok),'Deployed live mailing connection/consent check failed');
 
  assetCheck++; // Use a fresh cache key after promotion; preflight fetched the old deployment.
  for(const f of assets)assert.equal(hash(await bytes(base,f)),hash(fs.readFileSync(f)),'Asset mismatch: '+f);
