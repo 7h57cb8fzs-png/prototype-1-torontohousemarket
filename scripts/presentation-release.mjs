@@ -29,8 +29,16 @@ for(const f of assets.filter(p=>!added.has(p)))assert.equal(hash(await bytes(liv
 for(const name of ['admin-prospects-api.mjs','admin-postgrid-api.mjs'])assert.equal(hash(beforeModules.get(name)),hash(execFileSync('git',['show',beforeRef+':'+name.replace('.mjs','.js')],{encoding:'utf8'}).replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'")),'Existing admin module drift');
 let candidate=process.env.CANDIDATE_VERSION_ID,preview=process.env.CANDIDATE_PREVIEW_URL;
 const entry="import existing from './existing.mjs';\nimport {adminPostgrid} from './admin-postgrid-api.mjs';\nimport {adminProspects} from './admin-prospects-api.mjs';\nexport default {...existing,fetch(request,env,ctx){if(new URL(request.url).pathname.startsWith('/api/admin/prospects/'))return adminProspects(request,env);if(new URL(request.url).pathname.startsWith('/api/admin/postgrid/'))return adminPostgrid(request,env);return existing.fetch(request,env,ctx);}};\n";
-if(!candidate){
- assert.notEqual(process.env.PUBLISH,'true','A reviewed preview is required before promotion');
+if(process.env.PUBLISH==='true'){
+ assert(candidate&&preview,'A reviewed preview is required before promotion');
+ const reviewed=await version(candidate),reviewedModules=new Map(reviewed.modules.map(m=>[m.name,Buffer.from(m.content_base64,'base64')]));
+ assert.equal(hash(reviewedModules.get('existing.mjs')),expectedHash);
+ assert.equal(hash(reviewedModules.get('admin-prospects-api.mjs')),hash(fs.readFileSync('admin-prospects-api.js')));
+ assert.equal(hash(reviewedModules.get('admin-postgrid-api.mjs')),hash(fs.readFileSync('admin-postgrid-api.js','utf8').replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'")));
+ await verify(preview);
+}
+// Upload the reviewed production bundle last so later dashboard secret saves cannot activate a diagnostic version.
+if(!candidate||process.env.PUBLISH==='true'){
  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'thm-prospects-'));
  try{
   fs.writeFileSync(path.join(temp,'existing.mjs'),existing,{mode:0o600});fs.writeFileSync(path.join(temp,'admin-prospects-api.mjs'),fs.readFileSync('admin-prospects-api.js'));fs.writeFileSync(path.join(temp,'admin-postgrid-api.mjs'),fs.readFileSync('admin-postgrid-api.js','utf8').replace("'./admin-prospects-api.js'","'./admin-prospects-api.mjs'"));fs.writeFileSync(path.join(temp,'entry.mjs'),entry);
