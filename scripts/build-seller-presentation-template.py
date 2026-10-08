@@ -74,7 +74,7 @@ txt('Your next chapter',40,214,31,'Serif')
 txt('starts with a plan.',40,253,31,'Serif')
 para('Thinking about your next move? We’ll help you present your home, reach buyers, make selling costs clear, and save you thousands in selling commission.',42,304,510,11.5,17)
 
-txt('Recent sales on your street / neighbourhood',42,361,17,'Bold')
+txt('Recent sales in your neighbourhood',42,361,17,'Bold')
 
 rect(42,645,528,90,GREEN,r=4)
 txt('CALL OR TEXT MEHRDAD',58,655,10,'Bold',white)

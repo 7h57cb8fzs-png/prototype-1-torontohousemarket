@@ -61,11 +61,11 @@ test('admin selection, remarks notes, filtering, estimate gate and sign-out are 
  const esc=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
  const post=async(path,b)=>{calls.push([path,b]);if(path.endsWith('/options'))return {communities:['Crosby','Downsview-Roding-CFB','Unmapped community']};if(path.endsWith('/search'))return {pageId:'one',scanned:1,candidates:[{listingKey:'TEST',proof:'proof',address:'Test'}],excluded:{},complete:true};if(path.endsWith('/verify'))return {result:'qualified',listingKey:'TEST',reviewProof:'qualified',address:'Test',city:'Toronto',status:'Expired',eventDate:'2026-09-15'};if(b.mode==='quote')return {quote:'estimate',photoCount:4,estimatedUsd:.1};return {assessment:{...screenRemarks(row),note:'<script>unsafe</script> Kitchen may need a refresh.'}};};
  const app=w.init({$:id=>d.getElementById(id),post,esc,money:String});
- const browse=d.getElementById('prospectCommunityBrowse');browse.dispatchEvent(new w.Event('focus'));await new Promise(resolve=>setTimeout(resolve,0));
- assert.equal(browse.querySelector('option[value="Crosby"]').parentElement.label,'Richmond Hill');
- assert.equal(browse.querySelector('option[value="Downsview-Roding-CFB"]').parentElement.label,'Toronto W05');
- assert.equal(browse.querySelector('option[value="Unmapped community"]').parentElement.label,'Other MLS communities');
- for(const name of ['Crosby','Downsview-Roding-CFB']){browse.value=name;browse.dispatchEvent(new w.Event('change'));assert.equal(d.getElementById('prospectCommunity').value,name);d.getElementById('prospectCommunityAdd').click();}
+ const browse=d.getElementById('prospectCommunityBrowse');d.getElementById('prospectCommunitySearch').dispatchEvent(new w.Event('focus'));await new Promise(resolve=>setTimeout(resolve,0));
+ assert.equal(browse.querySelector('input[value="Crosby"]').closest('.prospect-community-group').querySelector('h4').textContent,'Richmond Hill');
+ assert.equal(browse.querySelector('input[value="Downsview-Roding-CFB"]').closest('.prospect-community-group').querySelector('h4').textContent,'Toronto W05');
+ assert.equal(browse.querySelector('input[value="Unmapped community"]').closest('.prospect-community-group').querySelector('h4').textContent,'Other MLS communities');
+ for(const name of ['Crosby','Downsview-Roding-CFB']){const choice=Array.from(browse.querySelectorAll('input')).find(input=>input.value===name);choice.checked=true;choice.dispatchEvent(new w.Event('change',{bubbles:true}));}
  d.getElementById('prospectCommunity').value='Manual community';
  await app.start();
  assert.deepEqual(Array.from(calls.find(([path])=>path.endsWith('/search'))[1].filters.communities),['Crosby','Downsview-Roding-CFB','Manual community']);
@@ -91,5 +91,27 @@ test('verified listing bulk selection works as results arrive and never selects 
   $('prospectSelectAll').click();assert.equal(app.getSelected().length,2);assert.equal($('prospectSelectCheckbox').checked,true);
   $('prospectSearch').value='B Road';$('prospectSearch').dispatchEvent(new w.Event('input'));$('prospectSelectCheckbox').checked=false;$('prospectSelectCheckbox').dispatchEvent(new w.Event('change'));assert.equal(app.getSelected().length,1);assert.equal(app.getSelected()[0].listingKey,'A');
   $('prospectSelectAll').click();assert.equal(app.getSelected().length,2,'Select all verified includes filtered-out verified rows');$('prospectClearSelected').click();assert.equal(app.getSelected().length,0);
+ }finally{app.clear();dom.window.close();}
+});
+
+
+test('Realm-style area hierarchy narrows choices and preserves the existing MLS search contract',async()=>{
+ const {JSDOM}=await import(process.env.ADMIN_TEST_JSDOM_PATH||'/tmp/thm-test-deps/node_modules/jsdom/lib/api.js');
+ const dom=new JSDOM(readFileSync(new URL('../admin.html',import.meta.url),'utf8'),{runScripts:'outside-only'}),w=dom.window,d=w.document,$=id=>d.getElementById(id),requests=[];
+ w.eval(readFileSync(new URL('../admin-prospects.js',import.meta.url),'utf8').replace(/^export /gm,'')+';window.init=initAdminProspects');
+ const post=async(path,body)=>{if(path.endsWith('/options'))return {communities:['Crosby','Downsview-Roding-CFB','Annex','Aurora Grove']};assert(path.endsWith('/search'));requests.push(body.filters);return {scanned:0,candidates:[],excluded:{},complete:true};};
+ const app=w.init({$,post,esc:String,money:String});
+ const choose=(id,value,checked=true)=>{const input=Array.from($(id).querySelectorAll('input')).find(i=>i.value===value);assert(input,value);input.checked=checked;input.dispatchEvent(new w.Event('change',{bubbles:true}));};
+ const choices=()=>Array.from($('prospectCommunityBrowse').querySelectorAll('input'),i=>i.value);
+ try{
+  $('prospectCommunitySearch').dispatchEvent(new w.Event('focus'));await new Promise(r=>setTimeout(r,0));
+  choose('prospectAreas','Toronto');choose('prospectDistricts','W05');assert.deepEqual(choices(),['Downsview-Roding-CFB']);
+  choose('prospectCommunityBrowse','Downsview-Roding-CFB');await app.start();
+  assert.deepEqual(Array.from(requests.at(-1).districts),['W05']);assert.equal(requests.at(-1).municipalities.length,0);assert.deepEqual(Array.from(requests.at(-1).communities),['Downsview-Roding-CFB']);
+  $('prospectResetFilters').click();choose('prospectAreas','York');choose('prospectMunicipalities','Richmond Hill');assert.deepEqual(choices(),['Crosby']);assert.equal($('prospectDistricts').hidden,true);
+  choose('prospectCommunityBrowse','Crosby');await app.start();assert.deepEqual(Array.from(requests.at(-1).municipalities),['Richmond Hill']);assert.equal(requests.at(-1).districts.length,0);
+  $('prospectResetFilters').click();choose('prospectAreas','York');await app.start();assert.equal(requests.at(-1).municipalities.length,9);assert(!requests.at(-1).municipalities.includes('Toronto'));
+  $('prospectResetFilters').click();choose('prospectAreas','Toronto');await app.start();assert.deepEqual(Array.from(requests.at(-1).municipalities),['Toronto']);
+  $('prospectResetFilters').click();await app.start();assert.equal(requests.at(-1).municipalities.length,0);assert.equal(requests.at(-1).districts.length,0);assert.equal(requests.at(-1).communities.length,0);
  }finally{app.clear();dom.window.close();}
 });

@@ -1,5 +1,5 @@
 export function initAdminProspects({$,post,esc,money}){
- let generation=0,running=false,rows=[],seen=new Set(),scanned=0,checked=0,excluded=0,unverified=0,complete=false,optionsLoaded=false,optionsLoading=false,optionsGeneration=0,communities=[];
+ let generation=0,running=false,rows=[],seen=new Set(),scanned=0,checked=0,excluded=0,unverified=0,complete=false,optionsLoaded=false,optionsLoading=false,optionsGeneration=0,communities=[],communityNames=[];
  // Display grouping from TRREB's April 2026 MLS HPI community tables:
  // https://www.taleenchouljian.com/hosted/users/48031/202604_TRREB_HPI.pdf
  // Never rewrite MLS option values or infer search filters from these headings.
@@ -51,11 +51,30 @@ export function initAdminProspects({$,post,esc,money}){
  };
  const communityKey=name=>name.toLowerCase().replace(/[^a-z0-9]/g,'');
  const communityAreaByName=new Map(Object.entries(communityAreas).flatMap(([area,names])=>names.map(name=>[communityKey(name),area])));
- function showCommunityChoices(names){
-  const groups=new Map();
-  for(const name of names){const area=communityAreaByName.get(communityKey(name))||'Other MLS communities';if(!groups.has(area))groups.set(area,[]);groups.get(area).push(name);}
-  $('prospectCommunityBrowse').innerHTML='<option value="">Browse communities by area…</option>'+[...groups].sort(([a],[b])=>a==='Other MLS communities'?1:b==='Other MLS communities'?-1:a.localeCompare(b)).map(([area,values])=>`<optgroup label="${esc(area)}">${values.sort((a,b)=>a.localeCompare(b)).map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('')}</optgroup>`).join('');
+ const yorkMunicipalities=Object.keys(communityAreas).filter(area=>!area.startsWith('Toronto '));
+ function locationScope(){
+  const areas=selected('prospectAreas'),municipalities=selected('prospectMunicipalities'),districts=selected('prospectDistricts');
+  return {areas,municipalities,districts};
+ }
+ function showCommunityChoices(names=communityNames){
+  communityNames=names;
+  const {areas,municipalities,districts}=locationScope(),q=$('prospectCommunitySearch').value.trim().toLowerCase(),groups=new Map();
+  for(const name of names){
+   const area=communityAreaByName.get(communityKey(name)),isToronto=area?.startsWith('Toronto ');
+   if(!area&&(areas.length||municipalities.length||districts.length))continue;
+   if(area&&areas.length&&!areas.includes(isToronto?'Toronto':'York'))continue;
+   if(area&&(municipalities.length||districts.length)&&!(isToronto?(municipalities.includes('Toronto')||districts.includes(area.slice(8))):municipalities.includes(area)))continue;
+   const heading=area||'Other MLS communities';if(q&&!`${heading} ${name}`.toLowerCase().includes(q))continue;
+   if(!groups.has(heading))groups.set(heading,[]);groups.get(heading).push(name);
+  }
+  $('prospectCommunityBrowse').innerHTML=[...groups].sort(([a],[b])=>a==='Other MLS communities'?1:b==='Other MLS communities'?-1:a.localeCompare(b)).map(([area,values])=>`<div class="prospect-community-group"><h4>${esc(area)}</h4>${values.sort((a,b)=>a.localeCompare(b)).map(name=>`<label class="prospect-choice"><input type="checkbox" data-community-choice value="${esc(name)}" ${communities.some(v=>v.toLowerCase()===name.toLowerCase())?'checked':''}><span>${esc(name)}</span></label>`).join('')}</div>`).join('')||(optionsLoaded?'<p class="footnote">No matching communities. You can enter a community name below.</p>':'');
   $('prospectCommunityOptions').innerHTML=names.map(name=>`<option value="${esc(name)}" label="${esc(communityAreaByName.get(communityKey(name))||'Other MLS communities')}"></option>`).join('');
+ }
+ function updateLocationChoices(){
+  const areas=selected('prospectAreas');
+  for(const input of $('prospectMunicipalities').querySelectorAll('input'))input.closest('label').hidden=areas.length>0&&!areas.includes(input.value==='Toronto'?'Toronto':'York');
+  $('prospectDistricts').hidden=areas.length>0&&!areas.includes('Toronto');
+  showCommunityChoices();
  }
  const conditionLabels={needs_renovation:'Renovation likely needed',no_obvious_renovation:'No obvious renovation needed',unable_to_assess:'Unable to assess',unreviewed:'Not reviewed'};
  let picked=new Set(),reviewing=false,reviewGeneration=0,plans=[],selectionSignature='';const selectionListeners=new Set();
@@ -106,9 +125,11 @@ export function initAdminProspects({$,post,esc,money}){
  const selected=id=>Array.from($(id).querySelectorAll('input:checked'),input=>input.value);
  const problem=message=>{$('prospectError').textContent=message;$('prospectError').hidden=false;};
  function renderSelections(){
-  const label=values=>values.length?values.length<=3?values.join(' + '):values.length+' selected':'None selected';
-  $('prospectMunicipalitySummary').textContent=label(selected('prospectMunicipalities'));
-  $('prospectDistrictSummary').textContent=label(selected('prospectDistricts'));
+  const label=values=>values.length?values.length<=3?values.join(' + '):values.length+' selected':'Select…';
+  $('prospectAreaSummary').textContent=label(selected('prospectAreas'));
+  $('prospectMunicipalitySummary').textContent=label([...selected('prospectMunicipalities'),...selected('prospectDistricts').map(v=>'Toronto '+v)]);
+  $('prospectCommunitySummary').textContent=label(communities);
+  updateLocationChoices();
   $('prospectCommunityChips').innerHTML=communities.map((name,i)=>`<button type="button" class="prospect-chip" data-community-remove="${i}" aria-label="Remove ${esc(name)}">${esc(name)} <span aria-hidden="true">×</span></button>`).join('');
   $('prospectDateWindow').textContent=($('prospectDateFrom').value||'Choose start')+' → '+($('prospectDateTo').value||'Choose end');
  }
@@ -141,7 +162,9 @@ export function initAdminProspects({$,post,esc,money}){
   if(min.value!==''&&max.value!==''&&Number(min.value)>Number(max.value)){problem('Minimum price must not exceed maximum price.');return;}
   if(from.value>to.value){problem('The start date must not be after the end date.');return;}
   if(!addCommunities())return;
-  const filters={municipalities:selected('prospectMunicipalities'),districts:selected('prospectDistricts'),communities:[...communities],dateFrom:from.value,dateTo:to.value,status:$('prospectScanStatus').value,minPrice:min.value===''?null:Number(min.value),maxPrice:max.value===''?null:Number(max.value)};
+  const scope=locationScope();
+  const areaDefaults=scope.areas.flatMap(area=>area==='Toronto'?['Toronto']:yorkMunicipalities);
+  const filters={municipalities:scope.municipalities.length||scope.districts.length?scope.municipalities:areaDefaults,districts:scope.districts,communities:[...communities],dateFrom:from.value,dateTo:to.value,status:$('prospectScanStatus').value,minPrice:min.value===''?null:Number(min.value),maxPrice:max.value===''?null:Number(max.value)};
   const scanLabel=[[...filters.municipalities,...filters.districts].join(' + ')||'Toronto + York',filters.communities.join(' + ')||'all communities',filters.dateFrom+' → '+filters.dateTo,filters.status||'both statuses',filters.minPrice!==null||filters.maxPrice!==null?(filters.minPrice!==null?money(filters.minPrice):'No minimum')+' – '+(filters.maxPrice!==null?money(filters.maxPrice):'no maximum'):'all prices'].join(' · ');
   const id=++generation;reviewGeneration++;picked.clear();plans=[];$('prospectPhotoEstimate').hidden=true;$('prospectConditionProgress').textContent='';running=true;rows=[];seen=new Set();scanned=checked=excluded=unverified=0;complete=false;$('prospectError').hidden=true;render();let cursor=null;const cursors=new Set();
   try{
@@ -168,19 +191,36 @@ export function initAdminProspects({$,post,esc,money}){
  }
  async function loadCommunityChoices(){
   if(optionsLoaded||optionsLoading)return;optionsLoading=true;const id=optionsGeneration;$('prospectOptionsNote').textContent='Loading MLS community choices…';
-  try{const data=await post('/api/admin/prospects/options',{});if(id!==optionsGeneration)return;const names=(data.communities||[]).filter(x=>typeof x==='string');showCommunityChoices(names);optionsLoaded=true;$('prospectOptionsNote').textContent=names.length?'Choose communities within your selected areas, and press Add for each.':'Enter the MLS community name, or leave blank for all.';}
+  try{const data=await post('/api/admin/prospects/options',{});if(id!==optionsGeneration)return;const names=(data.communities||[]).filter(x=>typeof x==='string');optionsLoaded=true;showCommunityChoices(names);$('prospectOptionsNote').textContent=names.length?'Select one or several communities.':'Enter the MLS community name, or leave blank for all.';}
   catch{if(id===optionsGeneration)$('prospectOptionsNote').textContent='Suggestions are unavailable. Enter the MLS community name, or leave blank for all.';}
   finally{if(id===optionsGeneration)optionsLoading=false;}
  }
  $('prospectCommunity').addEventListener('focus',loadCommunityChoices);
- $('prospectCommunityBrowse').addEventListener('focus',loadCommunityChoices);
- $('prospectCommunityBrowse').addEventListener('change',()=>{const choice=$('prospectCommunityBrowse');if(choice.value){$('prospectCommunity').value=choice.value;choice.value='';$('prospectCommunity').focus();}});
+ $('prospectCommunityPicker').addEventListener('toggle',()=>{if($('prospectCommunityPicker').open)loadCommunityChoices();});
+ $('prospectCommunitySearch').addEventListener('focus',loadCommunityChoices);
+ $('prospectCommunitySearch').addEventListener('input',()=>showCommunityChoices());
+ $('prospectCommunityBrowse').addEventListener('change',event=>{
+  const choice=event.target.closest('[data-community-choice]');if(!choice||running)return;
+  if(choice.checked){const input=$('prospectCommunity'),pending=input.value;input.value=choice.value;const added=addCommunities();input.value=pending;if(!added)choice.checked=false;}
+  else{communities=communities.filter(name=>name.toLowerCase()!==choice.value.toLowerCase());renderSelections();}
+  Array.from($('prospectCommunityBrowse').querySelectorAll('input')).find(input=>input.value===choice.value)?.focus();
+ });
+ $('prospectAreas').addEventListener('change',()=>{
+  const areas=selected('prospectAreas');
+  if(areas.length){for(const input of $('prospectMunicipalities').querySelectorAll('input'))if(!areas.includes(input.value==='Toronto'?'Toronto':'York'))input.checked=false;if(!areas.includes('Toronto'))for(const input of $('prospectDistricts').querySelectorAll('input'))input.checked=false;}
+  renderSelections();
+ });
+ for(const picker of document.querySelectorAll('.prospect-location-fields > .prospect-location-field > .prospect-picker')){
+  picker.addEventListener('toggle',()=>{if(picker.open)for(const other of document.querySelectorAll('.prospect-location-fields .prospect-picker'))if(other!==picker)other.open=false;});
+  picker.addEventListener('keydown',event=>{if(event.key==='Escape'){picker.open=false;picker.querySelector('summary').focus();}});
+ }
+
  $('prospectCommunityAdd').addEventListener('click',addCommunities);
  $('prospectCommunity').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();addCommunities();}});
  $('prospectCommunityChips').addEventListener('click',event=>{const button=event.target.closest('[data-community-remove]');if(button&&!running){communities.splice(Number(button.dataset.communityRemove),1);renderSelections();}});
  for(const id of ['prospectMunicipalities','prospectDistricts','prospectDateFrom','prospectDateTo'])$(id).addEventListener('change',renderSelections);
  for(const button of $('prospectScanFilters').querySelectorAll('[data-prospect-days]'))button.addEventListener('click',()=>{if(!running)dates(button.dataset.prospectDays);});
- $('prospectResetFilters').addEventListener('click',()=>{if(running)return;for(const input of $('prospectScanFilters').querySelectorAll('input[type="checkbox"]'))input.checked=false;communities=[];$('prospectCommunity').value='';$('prospectMinPrice').value='';$('prospectMaxPrice').value='';$('prospectScanStatus').value='';$('prospectError').hidden=true;dates();});
+ $('prospectResetFilters').addEventListener('click',()=>{if(running)return;for(const input of $('prospectScanFilters').querySelectorAll('input[type="checkbox"]'))input.checked=false;communities=[];$('prospectCommunity').value='';$('prospectCommunitySearch').value='';$('prospectMinPrice').value='';$('prospectMaxPrice').value='';$('prospectScanStatus').value='';$('prospectError').hidden=true;dates();});
  $('prospectStart').addEventListener('click',start);
  $('prospectStop').addEventListener('click',()=>{generation++;running=false;complete=false;$('prospectProgress').textContent='Stopped. Results cover only the checks completed so far. Start again for a fresh full scan.';render();});
  for(const id of ['prospectRegion','prospectStatus','prospectReview','prospectSearch'])$(id).addEventListener('input',render);
@@ -202,5 +242,5 @@ export function initAdminProspects({$,post,esc,money}){
  $('prospectPhotoCancel').addEventListener('click',()=>{plans=[];$('prospectPhotoEstimate').hidden=true;});
  $('prospectReviewStop').addEventListener('click',()=>{reviewGeneration++;reviewing=false;plans=[];$('prospectPhotoEstimate').hidden=true;$('prospectConditionProgress').textContent='Stopped. An in-flight review may finish and be saved; load saved assessments to retrieve it.';render();});
  for(const id of ['prospectConditionFilter','prospectConditionSort'])$(id).addEventListener('change',render);
- dates();render();return {start,render,getSelected:()=>qualifiedPicked().map(r=>({...r})),subscribeSelection(listener){selectionListeners.add(listener);listener();return ()=>selectionListeners.delete(listener);},clear(){generation++;reviewGeneration++;reviewing=false;picked.clear();plans=[];$('prospectPhotoEstimate').hidden=true;$('prospectConditionProgress').textContent='';optionsGeneration++;running=false;optionsLoaded=false;optionsLoading=false;$('prospectCommunityOptions').innerHTML='';$('prospectCommunityBrowse').innerHTML='<option value="">Browse communities by area…</option>';$('prospectOptionsNote').textContent='';rows=[];seen.clear();scanned=checked=excluded=unverified=0;complete=false;$('prospectProgress').textContent='';$('prospectError').hidden=true;render();}};
+ dates();render();return {start,render,getSelected:()=>qualifiedPicked().map(r=>({...r})),subscribeSelection(listener){selectionListeners.add(listener);listener();return ()=>selectionListeners.delete(listener);},clear(){generation++;reviewGeneration++;reviewing=false;picked.clear();plans=[];$('prospectPhotoEstimate').hidden=true;$('prospectConditionProgress').textContent='';optionsGeneration++;running=false;optionsLoaded=false;optionsLoading=false;$('prospectCommunityOptions').innerHTML='';communityNames=[];$('prospectCommunityBrowse').innerHTML='';$('prospectCommunitySearch').value='';$('prospectOptionsNote').textContent='';rows=[];seen.clear();scanned=checked=excluded=unverified=0;complete=false;$('prospectProgress').textContent='';$('prospectError').hidden=true;render();}};
 }
