@@ -6,7 +6,7 @@ async function cf(p){const r=await fetch(root+p,{headers:{Authorization:'Bearer 
 const d=await cf(`/workers/scripts/${worker}/deployments`),active=d.deployments[0];
 assert(active.versions.length===1&&active.versions[0].percentage===100,'Split deployment needs review');
 const id=active.versions[0].version_id,v=await cf(`/workers/workers/${worker}/versions/${id}?include=modules`);
-console.log('THM_POSTGRID_INSPECT',JSON.stringify({activeVersion:id,created:active.created_on,testSecretPresent:v.bindings.some(b=>b.name==='POSTGRID_TEST_API_KEY'&&b.type==='secret_text'),modules:v.modules.map(m=>({name:m.name,sha256:createHash('sha256').update(Buffer.from(m.content_base64,'base64')).digest('hex')}))}));
+console.log('THM_POSTGRID_INSPECT',JSON.stringify({activeVersion:id,created:active.created_on,liveSecretPresent:v.bindings.some(b=>b.name==='POSTGRID_LIVE_API_KEY'&&b.type==='secret_text'),testSecretPresent:v.bindings.some(b=>b.name==='POSTGRID_TEST_API_KEY'&&b.type==='secret_text'),modules:v.modules.map(m=>({name:m.name,sha256:createHash('sha256').update(Buffer.from(m.content_base64,'base64')).digest('hex')}))}));
 const live='https://torontohousemarket.com';
 const vr=await fetch(live+'/api/version');console.log('PUBLIC_VERSION',vr.status,await vr.text());
 for(const p of ['/api/admin/prospects/options','/api/admin/ops/counts']){const r=await fetch(live+p,{method:p.includes('prospects')?'POST':'GET',...(p.includes('prospects')?{headers:{'Content-Type':'application/json'},body:'{}'}:{})});console.log('AUTH_STATUS',p,r.status);}
