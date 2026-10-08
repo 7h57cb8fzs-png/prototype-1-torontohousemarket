@@ -47,4 +47,6 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PUBLISH: ${{ contains(github.event.head_commit.message, '[presentation-publish]') }}
+          CANDIDATE_VERSION_ID: 53bc2016-28c9-4548-a14d-91ed0fa3b118
+          CANDIDATE_PREVIEW_URL: https://53bc2016-prototype-1-torontohousemarket.7h57cb8fzs.workers.dev
         run: node scripts/presentation-release.mjs
